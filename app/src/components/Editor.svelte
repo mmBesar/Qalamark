@@ -3,11 +3,12 @@
 <script lang="ts">
   import { onMount, untrack } from 'svelte';
   import { cycleHeading, insertLink, insertTable, toggleLinePrefix, toggleWrap } from '../editor/commands.ts';
-  import { createEditor, type Editor } from '../editor/editor.ts';
+  import { createEditor, type Editor, type ViewMode } from '../editor/editor.ts';
   import type { TableLabels } from '../editor/tables.ts';
   import type { NoteMeta } from '../lib/server.ts';
   import { type LinkStatus, NoteSession } from '../lib/session.ts';
   import { store } from '../lib/store.svelte.ts';
+  import HelpDialog from './HelpDialog.svelte';
   import ShareDialog from './ShareDialog.svelte';
 
   let { note, onMenu }: { note: NoteMeta; onMenu: () => void } = $props();
@@ -20,6 +21,24 @@
   const first = untrack(() => note);
   let title = $state(first.title);
   let sharing = $state(false);
+  let help = $state(false);
+  let mode = $state<ViewMode>((() => {
+    try {
+      const m = localStorage.getItem('qm.mode');
+      return m === 'read' || m === 'source' ? m : 'live';
+    } catch {
+      return 'live';
+    }
+  })());
+  function setMode(m: ViewMode) {
+    mode = m;
+    editor.setMode(m);
+    try {
+      localStorage.setItem('qm.mode', m);
+    } catch {
+      /* fine */
+    }
+  }
   let menu = $state(false);
   let err = $state('');
   let session: NoteSession;
@@ -37,6 +56,7 @@
     formulas: t('formulas'),
     formulasHelp: t('formulasHelp'),
     editSource: t('editSource'),
+    help: t('help'),
   };
 
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -64,8 +84,10 @@
       readOnly,
       labels: () => labels,
       hint: '',
+      mode,
       onChange: changed,
     });
+    host.addEventListener('qalamark-help', () => (help = true));
     changed();
     return () => {
       clearTimeout(timer);
@@ -113,6 +135,13 @@
   );
 </script>
 
+<svelte:window
+  onpointerdown={(e) => {
+    if (menu && !(e.target as Element).closest('.menu-wrap')) menu = false;
+  }}
+  onkeydown={(e) => e.key === 'Escape' && (menu = false)}
+/>
+
 <section class="editor-pane">
   <header class="topbar">
     <button class="icon menu-btn" aria-label={t('menu')} onclick={onMenu}>☰</button>
@@ -125,6 +154,11 @@
       onkeydown={(e) => e.key === 'Enter' && (e.currentTarget as HTMLInputElement).blur()}
     />
     <span class="status {status}" title={statusText}><i></i><span class="label">{statusText}</span></span>
+    <div class="seg" role="group" aria-label={t('viewMode')}>
+      <button class:on={mode === 'live'} onclick={() => setMode('live')}>{t('modeLive')}</button>
+      <button class:on={mode === 'read'} onclick={() => setMode('read')}>{t('modeRead')}</button>
+      <button class:on={mode === 'source'} onclick={() => setMode('source')}>{t('modeSource')}</button>
+    </div>
     {#if readOnly}<span class="pill">{t('readOnly')}</span>{/if}
     {#if store.mode === 'server' && note.role === 'owner'}
       <button class="ghost small" onclick={() => (sharing = true)}>👥 {t('share')}</button>
@@ -133,6 +167,7 @@
       <button class="icon" aria-label={t('menu')} aria-expanded={menu} onclick={() => (menu = !menu)}>⋯</button>
       {#if menu}
         <div class="menu" role="menu">
+          <button role="menuitem" onclick={() => ((help = true), (menu = false))}>{t('help')} · ƒ</button>
           <button role="menuitem" onclick={exportMd}>{t('export')}</button>
           <button role="menuitem" class="danger" onclick={remove}>{note.role === 'owner' || store.mode === 'local' ? t('delete') : t('leave')}</button>
         </div>
@@ -140,7 +175,7 @@
     </div>
   </header>
 
-  {#if !readOnly}
+  {#if !readOnly && mode !== 'read'}
     <div class="toolbar" role="toolbar">
       <button title="{t('bold')} (Ctrl+B)" onclick={run((v) => toggleWrap(v, '**'))}><b>B</b></button>
       <button title="{t('italic')} (Ctrl+I)" onclick={run((v) => toggleWrap(v, '*'))}><i>I</i></button>
@@ -154,6 +189,7 @@
       <span class="sep"></span>
       <button title={t('link')} onclick={run(insertLink)}>🔗</button>
       <button title={t('table')} onclick={run(insertTable)}>▦</button>
+      <button title={t('help')} onclick={() => (help = true)}>ƒ?</button>
     </div>
   {/if}
 
@@ -166,6 +202,10 @@
     {#if store.mode === 'server' && note.role !== 'owner'}<span>· {t('sharedByOther', { name: note.owner })}</span>{/if}
   </footer>
 </section>
+
+{#if help}
+  <HelpDialog onClose={() => (help = false)} />
+{/if}
 
 {#if sharing}
   <ShareDialog {note} onClose={() => (sharing = false)} />

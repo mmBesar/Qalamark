@@ -9,7 +9,7 @@ import { markdown, markdownKeymap, markdownLanguage } from '@codemirror/lang-mar
 import { languages } from '@codemirror/language-data';
 import { bracketMatching, HighlightStyle, indentOnInput, syntaxHighlighting } from '@codemirror/language';
 import { highlightSelectionMatches, searchKeymap } from '@codemirror/search';
-import { EditorState } from '@codemirror/state';
+import { Compartment, EditorState, type Extension } from '@codemirror/state';
 import { drawSelection, dropCursor, EditorView, keymap, placeholder } from '@codemirror/view';
 import { tags as t } from '@lezer/highlight';
 import { yCollab, yUndoManagerKeymap } from 'y-codemirror.next';
@@ -18,7 +18,7 @@ import type { Awareness } from 'y-protocols/awareness';
 import type * as Y from 'yjs';
 import { cycleHeading, toggleWrap } from './commands.ts';
 import { autoCalc } from './autocalc.ts';
-import { livePreview } from './livepreview.ts';
+import { livePreview, readingMode } from './livepreview.ts';
 import { type TableLabels, tablesExtension } from './tables.ts';
 
 // Colours for code inside code blocks (other Markdown looks come from live preview).
@@ -32,6 +32,19 @@ const codeStyle = HighlightStyle.define([
   { tag: [t.propertyName, t.attributeName], color: 'var(--c-property)' },
 ]);
 
+// Colours for Source mode (plain Markdown text, nicely coloured).
+const sourceStyle = HighlightStyle.define([
+  { tag: t.heading, color: 'var(--accent)', fontWeight: '700' },
+  { tag: t.strong, fontWeight: '700' },
+  { tag: t.emphasis, fontStyle: 'italic' },
+  { tag: t.strikethrough, textDecoration: 'line-through' },
+  { tag: [t.link, t.url], color: 'var(--c-function)' },
+  { tag: [t.processingInstruction, t.contentSeparator, t.meta], color: 'var(--muted)' },
+  { tag: t.quote, color: 'var(--muted)' },
+  { tag: t.monospace, color: 'var(--c-string)' },
+  { tag: t.labelName, color: 'var(--c-type)' },
+]);
+
 export interface EditorOptions {
   parent: HTMLElement;
   ytext: Y.Text;
@@ -39,22 +52,34 @@ export interface EditorOptions {
   readOnly: boolean;
   labels: () => TableLabels;
   hint: string;
+  mode: ViewMode;
   onChange?: () => void;
 }
 
+export type ViewMode = 'live' | 'read' | 'source';
+
 export interface Editor {
   view: EditorView;
+  setMode(mode: ViewMode): void;
   destroy(): void;
 }
 
 export function createEditor(o: EditorOptions): Editor {
   const undo = new UndoManager(o.ytext);
+  const tables = tablesExtension(o.labels);
+  const modeSlot = new Compartment();
+  // What changes between the three ways of looking at a note.
+  const forMode = (mode: ViewMode): Extension => {
+    const locked = o.readOnly || mode === 'read';
+    const common = [EditorState.readOnly.of(locked), EditorView.editable.of(!o.readOnly && mode !== 'read')];
+    if (mode === 'source') return [common, syntaxHighlighting(sourceStyle), EditorView.editorAttributes.of({ class: 'cm-source' })];
+    return [common, livePreview, tables, readingMode.of(mode === 'read')];
+  };
   const extensions = [
+    modeSlot.of(forMode(o.mode)),
     yCollab(o.ytext, o.awareness, { undoManager: undo }),
     markdown({ base: markdownLanguage, codeLanguages: languages, addKeymap: true }),
     syntaxHighlighting(codeStyle),
-    livePreview,
-    tablesExtension(o.labels),
     autoCalc(o.awareness),
     drawSelection(),
     dropCursor(),
@@ -65,8 +90,6 @@ export function createEditor(o: EditorOptions): Editor {
     highlightSelectionMatches(),
     EditorView.lineWrapping,
     EditorView.perLineTextDirection.of(true), // Arabic and English lines each get their own direction
-    EditorState.readOnly.of(o.readOnly),
-    EditorView.editable.of(!o.readOnly),
     placeholder(o.hint),
     keymap.of([
       { key: 'Mod-b', run: (v) => toggleWrap(v, '**') },
@@ -87,5 +110,9 @@ export function createEditor(o: EditorOptions): Editor {
     }),
   ];
   const view = new EditorView({ parent: o.parent, state: EditorState.create({ doc: o.ytext.toString(), extensions }) });
-  return { view, destroy: () => view.destroy() };
+  return {
+    view,
+    setMode: (mode) => view.dispatch({ effects: modeSlot.reconfigure(forMode(mode)) }),
+    destroy: () => view.destroy(),
+  };
 }

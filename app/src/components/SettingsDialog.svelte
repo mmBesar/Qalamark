@@ -3,6 +3,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { store, type Theme } from '../lib/store.svelte.ts';
+  import { ACCENTS, PALETTES, THEME_LIST, themeName } from '../lib/theme.ts';
 
   let { onClose }: { onClose: () => void } = $props();
   const t = store.t;
@@ -67,11 +68,19 @@
     <label>
       {t('theme')}
       <select value={store.s.theme} onchange={(e) => store.setTheme(e.currentTarget.value as Theme)}>
-        <option value="auto">{t('themeAuto')}</option>
-        <option value="light">{t('themeLight')}</option>
-        <option value="dark">{t('themeDark')}</option>
+        {#each THEME_LIST as id (id)}
+          <option value={id}>{themeName(id, t)}</option>
+        {/each}
       </select>
     </label>
+  </div>
+
+  <h3>{t('accent')}</h3>
+  <div class="swatches" role="group" aria-label={t('accent')}>
+    <button class:on={store.s.accent === 'default'} title={t('accentDefault')} aria-label={t('accentDefault')} style="background: conic-gradient(var(--accent), var(--gold), var(--accent))" onclick={() => store.setAccent('default')}></button>
+    {#each ACCENTS as a (a)}
+      <button class:on={store.s.accent === a} title={a} aria-label={a} style="background: {PALETTES.mocha.accents[a]}" onclick={() => store.setAccent(a)}></button>
+    {/each}
   </div>
 
   {#if store.mode === 'server'}

@@ -116,7 +116,9 @@ there becomes a note. More in **[docs/SELF-HOSTING.md](docs/SELF-HOSTING.md)**
 - **Files edited from outside** (Syncthing, a text editor) are merged in and shown live.
 - **Works offline.** The app installs as a PWA; a note you opened keeps working without internet and syncs when you are back.
 - **Without any server** the same app keeps notes on your device. This is what the GitHub Pages **preview** shows. Real use is your own server.
-- **English and Arabic** interface, right-to-left, light and dark themes.
+- **Themes:** all four Catppuccin flavours with the 14 accent colours to choose from, AMOLED, your system's own colours, and two of our own (Paper and Nile). Android dynamic colour comes with the Android app.
+- **Three ways to view a note:** Live preview (like Obsidian), Reading, and Source.
+- **English and Arabic** interface, right-to-left.
 
 ## Try the pieces from source
 

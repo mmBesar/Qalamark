@@ -1,0 +1,156 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 mmBesar
+//
+// Colour themes: the four Catppuccin flavours (with all 14 accents to pick
+// from), AMOLED, the system's own colours, and two themes of our own.
+// A theme is a list of colours; applyTheme() turns it into CSS variables.
+
+export type ThemeId = 'auto' | 'system' | 'latte' | 'frappe' | 'macchiato' | 'mocha' | 'amoled' | 'paper' | 'nile';
+
+export const ACCENTS = [
+  'rosewater', 'flamingo', 'pink', 'mauve', 'red', 'maroon', 'peach',
+  'yellow', 'green', 'teal', 'sky', 'sapphire', 'blue', 'lavender',
+] as const;
+export type Accent = (typeof ACCENTS)[number] | 'default';
+
+type Colors = Record<(typeof ACCENTS)[number], string>;
+
+interface Palette {
+  name: string;
+  dark: boolean;
+  base: string;
+  mantle: string;
+  crust: string;
+  surface0: string;
+  surface1: string;
+  overlay0: string;
+  subtext0: string;
+  text: string;
+  accents: Colors;
+  /** Accent used when the person has not chosen one. */
+  accent: (typeof ACCENTS)[number] | string;
+  code?: string; // background of code and table headers
+}
+
+const latteAccents: Colors = {
+  rosewater: '#dc8a78', flamingo: '#dd7878', pink: '#ea76cb', mauve: '#8839ef', red: '#d20f39', maroon: '#e64553', peach: '#fe640b',
+  yellow: '#df8e1d', green: '#40a02b', teal: '#179299', sky: '#04a5e5', sapphire: '#209fb5', blue: '#1e66f5', lavender: '#7287fd',
+};
+const frappeAccents: Colors = {
+  rosewater: '#f2d5cf', flamingo: '#eebebe', pink: '#f4b8e4', mauve: '#ca9ee6', red: '#e78284', maroon: '#ea999c', peach: '#ef9f76',
+  yellow: '#e5c890', green: '#a6d189', teal: '#81c8be', sky: '#99d1db', sapphire: '#85c1dc', blue: '#8caaee', lavender: '#babbf1',
+};
+const macchiatoAccents: Colors = {
+  rosewater: '#f4dbd6', flamingo: '#f0c6c6', pink: '#f5bde6', mauve: '#c6a0f6', red: '#ed8796', maroon: '#ee99a0', peach: '#f5a97f',
+  yellow: '#eed49f', green: '#a6da95', teal: '#8bd5ca', sky: '#91d7e3', sapphire: '#7dc4e4', blue: '#8aadf4', lavender: '#b7bdf8',
+};
+const mochaAccents: Colors = {
+  rosewater: '#f5e0dc', flamingo: '#f2cdcd', pink: '#f5c2e7', mauve: '#cba6f7', red: '#f38ba8', maroon: '#eba0ac', peach: '#fab387',
+  yellow: '#f9e2af', green: '#a6e3a1', teal: '#94e2d5', sky: '#89dceb', sapphire: '#74c7ec', blue: '#89b4fa', lavender: '#b4befe',
+};
+
+export const PALETTES: Record<Exclude<ThemeId, 'auto' | 'system'>, Palette> = {
+  latte: { name: 'Catppuccin Latte', dark: false, base: '#eff1f5', mantle: '#e6e9ef', crust: '#dce0e8', surface0: '#ccd0da', surface1: '#bcc0cc', overlay0: '#9ca0b0', subtext0: '#6c6f85', text: '#4c4f69', accents: latteAccents, accent: 'mauve', code: '#e6e9ef' },
+  frappe: { name: 'Catppuccin Frappé', dark: true, base: '#303446', mantle: '#292c3c', crust: '#232634', surface0: '#414559', surface1: '#51576d', overlay0: '#737994', subtext0: '#a5adce', text: '#c6d0f5', accents: frappeAccents, accent: 'mauve' },
+  macchiato: { name: 'Catppuccin Macchiato', dark: true, base: '#24273a', mantle: '#1e2030', crust: '#181926', surface0: '#363a4f', surface1: '#494d64', overlay0: '#6e738d', subtext0: '#a5adcb', text: '#cad3f5', accents: macchiatoAccents, accent: 'mauve' },
+  mocha: { name: 'Catppuccin Mocha', dark: true, base: '#1e1e2e', mantle: '#181825', crust: '#11111b', surface0: '#313244', surface1: '#45475a', overlay0: '#6c7086', subtext0: '#a6adc8', text: '#cdd6f4', accents: mochaAccents, accent: 'mauve' },
+  // Pure black for OLED screens (Mocha accents).
+  amoled: { name: 'AMOLED', dark: true, base: '#000000', mantle: '#000000', crust: '#000000', surface0: '#161618', surface1: '#26262a', overlay0: '#6c7086', subtext0: '#a6adc8', text: '#e4e7f5', accents: mochaAccents, accent: 'mauve', code: '#121214' },
+  // Our own: warm paper, and the Nile at night.
+  paper: { name: 'Paper', dark: false, base: '#fffdf8', mantle: '#ebe5d6', crust: '#f4efe4', surface0: '#ddd5c4', surface1: '#cfc6b2', overlay0: '#9a9282', subtext0: '#7b7367', text: '#2a2622', accents: { ...latteAccents, green: '#1f5c4d', teal: '#1f6f78' }, accent: '#1f5c4d', code: '#efe9db' },
+  nile: { name: 'Nile', dark: true, base: '#0f1f20', mantle: '#0a1718', crust: '#071112', surface0: '#193234', surface1: '#244547', overlay0: '#5f8083', subtext0: '#9ab8b6', text: '#e3efe9', accents: { ...mochaAccents, yellow: '#e8c46a', peach: '#f0a868', teal: '#5ed1b9', green: '#9fdc8e' }, accent: '#e8c46a', code: '#152a2b' },
+};
+
+export const THEME_LIST: ThemeId[] = ['auto', 'system', 'latte', 'frappe', 'macchiato', 'mocha', 'amoled', 'paper', 'nile'];
+
+function setVars(vars: Record<string, string>) {
+  const root = document.documentElement;
+  for (const [k, v] of Object.entries(vars)) root.style.setProperty(k, v);
+}
+
+function paletteVars(p: Palette, accent: Accent): Record<string, string> {
+  const a = accent === 'default' ? (p.accents[p.accent as keyof Colors] ?? p.accent) : p.accents[accent];
+  const lum = (hex: string) => {
+    const n = parseInt(hex.slice(1), 16);
+    return (0.299 * (n >> 16) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255)) / 255;
+  };
+  const dangerOk = p.dark ? { danger: p.accents.red, ok: p.accents.green } : { danger: p.accents.red, ok: p.accents.green };
+  return {
+    '--bg': p.crust,
+    '--surface': p.base,
+    '--side': p.mantle,
+    '--ink': p.text,
+    '--muted': p.subtext0,
+    '--line': p.surface0,
+    '--accent': a,
+    '--accent-soft': `color-mix(in srgb, ${a} 18%, ${p.base})`,
+    '--accent-ink': lum(a) > 0.6 ? '#11111b' : '#ffffff',
+    '--gold': p.accents.yellow,
+    '--danger': dangerOk.danger,
+    '--ok': dangerOk.ok,
+    '--code-bg': p.code ?? p.surface0,
+    '--formula-bg': `color-mix(in srgb, ${a} 14%, ${p.base})`,
+    '--shadow': p.dark ? '0 8px 30px rgba(0,0,0,0.55)' : '0 8px 30px rgba(40,40,60,0.18)',
+    '--c-keyword': p.accents.mauve,
+    '--c-string': p.accents.green,
+    '--c-number': p.accents.peach,
+    '--c-comment': p.overlay0,
+    '--c-function': p.accents.blue,
+    '--c-type': p.accents.yellow,
+    '--c-property': p.accents.teal,
+    'color-scheme': p.dark ? 'dark' : 'light',
+  };
+}
+
+/** The colours of the operating system itself (CSS system colours). */
+function systemVars(accent: Accent): Record<string, string> {
+  const a = accent === 'default' ? 'AccentColor' : mochaAccents[accent];
+  return {
+    '--bg': 'color-mix(in srgb, Canvas 94%, CanvasText)',
+    '--surface': 'Canvas',
+    '--side': 'color-mix(in srgb, Canvas 92%, CanvasText)',
+    '--ink': 'CanvasText',
+    '--muted': 'color-mix(in srgb, CanvasText 58%, Canvas)',
+    '--line': 'color-mix(in srgb, CanvasText 16%, Canvas)',
+    '--accent': a,
+    '--accent-soft': `color-mix(in srgb, ${a} 18%, Canvas)`,
+    '--accent-ink': 'AccentColorText',
+    '--gold': '#d9a21b',
+    '--danger': '#d23b3b',
+    '--ok': '#2f9e5a',
+    '--code-bg': 'color-mix(in srgb, Canvas 90%, CanvasText)',
+    '--formula-bg': `color-mix(in srgb, ${a} 14%, Canvas)`,
+    '--shadow': '0 8px 30px rgba(0,0,0,0.25)',
+    '--c-keyword': '#a3359b',
+    '--c-string': '#2b8a4b',
+    '--c-number': '#c0620a',
+    '--c-comment': 'color-mix(in srgb, CanvasText 50%, Canvas)',
+    '--c-function': '#2f6fd0',
+    '--c-type': '#a0701a',
+    '--c-property': '#0b7a8f',
+    'color-scheme': 'light dark',
+  };
+}
+
+export function applyTheme(theme: ThemeId, accent: Accent): void {
+  const dark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+  let vars: Record<string, string>;
+  let meta = '#eff1f5';
+  if (theme === 'system') {
+    vars = systemVars(accent);
+    meta = dark ? '#1e1e1e' : '#ffffff';
+  } else {
+    const id = theme === 'auto' ? (dark ? 'mocha' : 'latte') : theme;
+    const p = PALETTES[id];
+    vars = paletteVars(p, accent);
+    meta = p.base;
+  }
+  setVars(vars);
+  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', meta);
+}
+
+export function themeName(id: ThemeId, t: (k: 'themeAuto' | 'themeSystem') => string): string {
+  if (id === 'auto') return t('themeAuto');
+  if (id === 'system') return t('themeSystem');
+  return PALETTES[id].name;
+}

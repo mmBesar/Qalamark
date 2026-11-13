@@ -30,57 +30,6 @@
   --mono: ui-monospace, 'JetBrains Mono', 'Cascadia Code', Consolas, monospace;
   color-scheme: light;
 }
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme='light']) {
-    --bg: #141918;
-    --surface: #1b2120;
-    --side: #101514;
-    --ink: #e7e3d8;
-    --muted: #98988d;
-    --line: #2b3331;
-    --accent: #62b79f;
-    --accent-soft: #1f3a33;
-    --accent-ink: #0c1412;
-    --danger: #e9806f;
-    --ok: #6cc592;
-    --code-bg: #222a28;
-    --formula-bg: #1d3530;
-    --shadow: 0 8px 30px rgba(0, 0, 0, 0.5);
-    --c-keyword: #d08ad6;
-    --c-string: #8bc98f;
-    --c-number: #e8a25c;
-    --c-comment: #7f8a85;
-    --c-function: #7fb4ee;
-    --c-type: #e0a36a;
-    --c-property: #6cc3d8;
-    color-scheme: dark;
-  }
-}
-:root[data-theme='dark'] {
-  --bg: #141918;
-  --surface: #1b2120;
-  --side: #101514;
-  --ink: #e7e3d8;
-  --muted: #98988d;
-  --line: #2b3331;
-  --accent: #62b79f;
-  --accent-soft: #1f3a33;
-  --accent-ink: #0c1412;
-  --danger: #e9806f;
-  --ok: #6cc592;
-  --code-bg: #222a28;
-  --formula-bg: #1d3530;
-  --shadow: 0 8px 30px rgba(0, 0, 0, 0.5);
-  --c-keyword: #d08ad6;
-  --c-string: #8bc98f;
-  --c-number: #e8a25c;
-  --c-comment: #7f8a85;
-  --c-function: #7fb4ee;
-  --c-type: #e0a36a;
-  --c-property: #6cc3d8;
-  color-scheme: dark;
-}
-
 /* ---------- basics ---------- */
 * {
   box-sizing: border-box;
@@ -565,8 +514,10 @@ dialog label {
   padding: 0;
   unicode-bidi: plaintext;
 }
-.cm-cursor {
-  border-inline-start-color: var(--accent);
+.cm-editor .cm-cursor,
+.cm-editor .cm-dropCursor {
+  border-left: 2px solid var(--accent) !important;
+  margin-left: -1px;
 }
 .cm-selectionBackground,
 .cm-editor.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground {
@@ -889,4 +840,85 @@ dialog label {
   .grid2 {
     grid-template-columns: 1fr;
   }
+}
+
+/* ---------- view modes, help, small additions ---------- */
+.cm-source .cm-content,
+.cm-source .cm-line {
+  font-family: var(--mono);
+  font-size: 0.95rem;
+}
+.seg {
+  display: inline-flex;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.seg button {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  padding: 0.25rem 0.6rem;
+  font-size: 0.85rem;
+}
+.seg button.on {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+.qt-formulas-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-top: 0.3rem;
+}
+.swatches button {
+  width: 1.7rem;
+  height: 1.7rem;
+  padding: 0;
+  border-radius: 50%;
+  border: 2px solid transparent;
+}
+.swatches button.on {
+  border-color: var(--ink);
+  box-shadow: 0 0 0 2px var(--surface) inset;
+}
+.help h3 {
+  margin-top: 1rem;
+}
+.help code {
+  background: var(--code-bg);
+  border-radius: 4px;
+  padding: 0.05em 0.35em;
+  font-family: var(--mono);
+  font-size: 0.9em;
+  direction: ltr;
+  unicode-bidi: isolate;
+}
+.help table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 0.9rem;
+}
+.help td {
+  border-top: 1px solid var(--line);
+  padding: 0.3rem 0.4rem;
+  vertical-align: top;
+}
+.help pre {
+  background: var(--code-bg);
+  border-radius: 8px;
+  padding: 0.6rem 0.8rem;
+  overflow-x: auto;
+  direction: ltr;
+  text-align: left;
+  font-size: 0.85rem;
+}
+dialog.wide {
+  width: min(44rem, calc(100vw - 1.5rem));
+  max-height: calc(100vh - 2rem);
 }

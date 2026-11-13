@@ -7,6 +7,7 @@
 
 import { describeTables, editCell, setFormulas, tableOp, type TableOp, type TableView } from '@qalamark/tables';
 import { type EditorState, type Range, StateField } from '@codemirror/state';
+import { readingMode } from './livepreview.ts';
 import { Decoration, type DecorationSet, EditorView, WidgetType } from '@codemirror/view';
 
 export interface TableLabels {
@@ -17,6 +18,7 @@ export interface TableLabels {
   formulas: string;
   formulasHelp: string;
   editSource: string;
+  help: string;
 }
 
 /** Change only what differs, so other people's edits in the same note are not disturbed. */
@@ -196,7 +198,12 @@ class TableWidget extends WidgetType {
       if (readOnly || area.value.trim() === v.formulaText.join('\n').trim()) return;
       run(setFormulas(mdNow(), index, area.value));
     });
-    box.append(el('div', 'qt-formulas-title', 'ƒ ' + labels.formulas), area);
+    const head = el('div', 'qt-formulas-head');
+    head.append(
+      el('span', 'qt-formulas-title', 'ƒ ' + labels.formulas),
+      button(labels.help, '?', 'qt-btn', () => root.dispatchEvent(new CustomEvent('qalamark-help', { bubbles: true }))),
+    );
+    box.append(head, area);
     for (const p of v.problems) box.append(el('div', 'qt-problem', p));
 
     if (!readOnly) {
@@ -230,7 +237,7 @@ function build(state: EditorState, labels: () => TableLabels): DecorationSet {
     const from = state.doc.line(v.fromLine + 1).from;
     const to = state.doc.line(v.toLine + 1).to;
     // While the cursor is inside, show the plain text so it can be edited by hand.
-    if (state.selection.ranges.some((r) => r.from <= to && r.to >= from)) return;
+    if (!state.facet(readingMode) && state.selection.ranges.some((r) => r.from <= to && r.to >= from)) return;
     ranges.push(Decoration.replace({ widget: new TableWidget(i, v, L), block: true }).range(from, to));
   });
   return Decoration.set(ranges, true);

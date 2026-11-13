@@ -7,10 +7,11 @@
 
 import { translate, type Key, type Lang } from './i18n.ts';
 import { Api, ApiError, cleanBase, type NoteMeta } from './server.ts';
+import { type Accent, applyTheme, type ThemeId } from './theme.ts';
 import { deleteStored, readStoredText, writeStoredText } from './session.ts';
 
 export type Mode = 'boot' | 'login' | 'local' | 'server';
-export type Theme = 'auto' | 'light' | 'dark';
+export type Theme = ThemeId;
 
 const SETTINGS = 'qm.settings';
 const LOCAL_NOTES = 'qm.local.notes';
@@ -34,6 +35,7 @@ function write(key: string, value: unknown): void {
 interface Settings {
   lang: Lang;
   theme: Theme;
+  accent: Accent;
   serverUrl: string;
   token: string;
   username: string;
@@ -46,7 +48,7 @@ function defaultLang(): Lang {
 }
 
 class Store {
-  s = $state<Settings>({ lang: 'en', theme: 'auto', serverUrl: '', token: '', username: '', admin: false, wantsLocal: false, ...read<Partial<Settings>>(SETTINGS, { lang: defaultLang() }) });
+  s = $state<Settings>({ lang: 'en', theme: 'auto', accent: 'default', serverUrl: '', token: '', username: '', admin: false, wantsLocal: false, ...read<Partial<Settings>>(SETTINGS, { lang: defaultLang() }) });
   mode = $state<Mode>('boot');
   serverReachable = $state(false);
   setupNeeded = $state(false);
@@ -74,9 +76,16 @@ class Store {
     const root = document.documentElement;
     root.lang = this.s.lang;
     root.dir = this.s.lang === 'ar' ? 'rtl' : 'ltr';
-    if (this.s.theme === 'auto') root.removeAttribute('data-theme');
-    else root.dataset.theme = this.s.theme;
+    // Older versions stored 'light' and 'dark'.
+    const legacy: Record<string, Theme> = { light: 'paper', dark: 'mocha' };
+    if (legacy[this.s.theme as string]) this.s.theme = legacy[this.s.theme as string]!;
+    applyTheme(this.s.theme, this.s.accent);
+    if (!this.watching) {
+      this.watching = true;
+      window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => applyTheme(this.s.theme, this.s.accent));
+    }
   }
+  private watching = false;
 
   setLang(l: Lang) {
     this.s.lang = l;
@@ -85,6 +94,11 @@ class Store {
   }
   setTheme(t: Theme) {
     this.s.theme = t;
+    this.save();
+    this.applyLook();
+  }
+  setAccent(a: Accent) {
+    this.s.accent = a;
     this.save();
     this.applyLook();
   }

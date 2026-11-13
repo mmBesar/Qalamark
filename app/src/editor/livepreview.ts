@@ -6,11 +6,14 @@
 // Nothing here changes the text itself - only how it is drawn.
 
 import { syntaxTree } from '@codemirror/language';
-import type { EditorState, Range } from '@codemirror/state';
+import { Facet, type EditorState, type Range } from '@codemirror/state';
 import type { SyntaxNode } from '@lezer/common';
 import { Decoration, type DecorationSet, EditorView, ViewPlugin, type ViewUpdate, WidgetType } from '@codemirror/view';
 
 const hide = Decoration.replace({});
+
+/** In reading mode every mark stays hidden, wherever the cursor is. */
+export const readingMode = Facet.define<boolean, boolean>({ combine: (v) => v.some(Boolean) });
 
 class BulletWidget extends WidgetType {
   toDOM() {
@@ -90,6 +93,7 @@ class ImageWidget extends WidgetType {
 
 /** Is any part of the selection inside [from, to] ? */
 function touched(state: EditorState, from: number, to: number): boolean {
+  if (state.facet(readingMode)) return false;
   return state.selection.ranges.some((r) => r.from <= to && r.to >= from);
 }
 

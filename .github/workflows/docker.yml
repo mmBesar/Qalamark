@@ -52,7 +52,7 @@ jobs:
       - name: Smoke test
         run: |
           mkdir -p data
-          docker run -d --name q -p 8080:8080 -e PUID=$(id -u) -e PGID=$(id -g) -e TZ=Africa/Cairo -v "$PWD/data:/data" qalamark:test
+          docker run -d --name qalamark-ci -p 8080:8080 -e PUID=$(id -u) -e PGID=$(id -g) -e TZ=Africa/Cairo -v "$PWD/data:/data" qalamark:test
           for i in $(seq 1 30); do
             curl -fsS http://localhost:8080/api/status && break
             sleep 1
@@ -65,8 +65,8 @@ jobs:
           # The file must belong to the chosen user, not to root.
           test "$(stat -c %u data/notes/ci/Hello.md)" = "$(id -u)"
           curl -fsS localhost:8080/ | grep -q "<title>Qalamark</title>"
-          docker logs q
-          docker rm -f q
+          docker logs qalamark-ci
+          docker rm -f qalamark-ci
 
       # 2) Publish this architecture (only for tags and manual runs).
       - name: Log in to the registry

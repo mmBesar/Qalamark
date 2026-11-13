@@ -1,0 +1,120 @@
+# Builds the container image for amd64 and arm64 - each on its own native
+# runner (no emulation) - and publishes it to GitHub's container registry.
+#
+#   - pull request:        build + smoke test only (nothing is published)
+#   - tag v1.2.3:          publishes 1.2.3, 1.2 and latest   (stable)
+#   - "Run workflow":      publishes the tag "edge"          (testing)
+#
+# Docker is used through its own command line, so no third-party actions are needed.
+
+name: Container
+
+on:
+  push:
+    tags: ['v*']
+  pull_request:
+    paths:
+      - 'Dockerfile'
+      - 'docker/**'
+      - 'server/**'
+      - 'app/**'
+      - 'packages/tables/**'
+      - '.github/workflows/docker.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  # GitHub needs lower case image names.
+  IMAGE: ghcr.io/mmbesar/qalamark
+
+jobs:
+  build:
+    name: Build ${{ matrix.arch }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v6
+
+      # 1) Build for this machine and try it: start it, sign up, make a note.
+      - name: Build (for the smoke test)
+        run: docker build --tag qalamark:test .
+
+      - name: Smoke test
+        run: |
+          mkdir -p data
+          docker run -d --name q -p 8080:8080 -e PUID=$(id -u) -e PGID=$(id -g) -e TZ=Africa/Cairo -v "$PWD/data:/data" qalamark:test
+          for i in $(seq 1 30); do
+            curl -fsS http://localhost:8080/api/status && break
+            sleep 1
+          done
+          TOKEN=$(curl -fsS -X POST localhost:8080/api/register -H 'content-type: application/json' \
+            -d '{"username":"ci","password":"ci-password-123"}' | sed -E 's/.*"token":"([^"]+)".*/\1/')
+          curl -fsS -X POST localhost:8080/api/notes -H "authorization: Bearer $TOKEN" \
+            -H 'content-type: application/json' -d '{"title":"Hello","content":"# Hi\n"}'
+          test -f data/notes/ci/Hello.md
+          # The file must belong to the chosen user, not to root.
+          test "$(stat -c %u data/notes/ci/Hello.md)" = "$(id -u)"
+          curl -fsS localhost:8080/ | grep -q "<title>Qalamark</title>"
+          docker logs q
+          docker rm -f q
+
+      # 2) Publish this architecture (only for tags and manual runs).
+      - name: Log in to the registry
+        if: github.event_name != 'pull_request'
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Push (by digest)
+        if: github.event_name != 'pull_request'
+        run: |
+          docker buildx build --platform linux/${{ matrix.arch }} --provenance=false \
+            --output type=image,name=${IMAGE},push-by-digest=true,name-canonical=true,push=true \
+            --metadata-file meta.json .
+          mkdir -p digests
+          python3 -c "import json; print(json.load(open('meta.json'))['containerimage.digest'])" > digests/${{ matrix.arch }}
+
+      - uses: actions/upload-artifact@v6
+        if: github.event_name != 'pull_request'
+        with:
+          name: digest-${{ matrix.arch }}
+          path: digests/${{ matrix.arch }}
+          retention-days: 1
+
+  # Join the two architectures under one tag.
+  publish:
+    if: github.event_name != 'pull_request'
+    needs: build
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v7
+        with:
+          pattern: digest-*
+          path: digests
+          merge-multiple: true
+
+      - name: Log in to the registry
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Create the tags
+        run: |
+          if [ "${{ github.ref_type }}" = "tag" ]; then
+            V="${GITHUB_REF_NAME#v}"
+            TAGS="${V} ${V%.*} latest"
+          else
+            TAGS="edge"
+          fi
+          SOURCES=""
+          for f in digests/*; do SOURCES="$SOURCES ${IMAGE}@$(cat $f)"; done
+          for t in $TAGS; do
+            docker buildx imagetools create --tag "${IMAGE}:${t}" $SOURCES
+          done
+          docker buildx imagetools inspect "${IMAGE}:$(echo $TAGS | cut -d' ' -f1)"

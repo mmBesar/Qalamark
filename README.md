@@ -6,6 +6,9 @@
 Your notes stay plain `.md` files. Self-hosted. Web, Linux and Android.
 
 [![Tables engine](https://github.com/mmBesar/Qalamark/actions/workflows/tables.yml/badge.svg)](https://github.com/mmBesar/Qalamark/actions/workflows/tables.yml)
+[![Server](https://github.com/mmBesar/Qalamark/actions/workflows/server.yml/badge.svg)](https://github.com/mmBesar/Qalamark/actions/workflows/server.yml)
+[![App](https://github.com/mmBesar/Qalamark/actions/workflows/app.yml/badge.svg)](https://github.com/mmBesar/Qalamark/actions/workflows/app.yml)
+[![Container](https://github.com/mmBesar/Qalamark/actions/workflows/docker.yml/badge.svg)](https://github.com/mmBesar/Qalamark/actions/workflows/docker.yml)
 [![License: AGPL v3+](https://img.shields.io/badge/license-AGPL--3.0--or--later-blue.svg)](LICENSE)
 [![Status](https://img.shields.io/badge/status-early%20development-orange.svg)](#roadmap)
 
@@ -13,10 +16,10 @@ Your notes stay plain `.md` files. Self-hosted. Web, Linux and Android.
 
 > [!WARNING]
 > **This is a personal project under heavy development.**
-> Right now only the **table formula engine** exists (with a command line tool
-> and tests). There is **no app and no server yet**. Expect big changes, and
-> don't rely on it for anything important. Releases and stability promises
-> will come later.
+> The server, the web app and the container work and are tested, but nothing
+> here is stable yet: expect big changes and rough edges, and keep backups
+> (easy, your notes are just `.md` files). The Linux and Android apps are not
+> built yet.
 
 > [!NOTE]
 > **Made with the help of AI.** Qalamark is built by [mmBesar](https://github.com/mmBesar)
@@ -84,33 +87,65 @@ columns by header name (`[Price]`), functions such as `IF`, `ROUND`, `AVG` and
 **Full guide: [docs/TABLE-FORMULAS.md](docs/TABLE-FORMULAS.md)**. More examples
 are in [`examples/`](examples), including an Arabic one.
 
-## Try it today
+## Run your own server
 
-Only the table engine is usable so far. You need Node 22.18 or newer.
+One container: the server, the web app and your notes.
 
 ```bash
-git clone https://github.com/mmBesar/Qalamark.git
-cd Qalamark/packages/tables
-npm ci
-npm test
-
-node src/cli.ts recalc ../../examples/grades.md      # print a worked-out note
-node src/cli.ts recalc my-note.md --write             # change your own file
-node src/cli.ts eval "ROUND(10/3, 2)"                 # try a formula
+docker run -d --name qalamark -p 8080:8080 \
+  -e PUID=1000 -e PGID=1000 -e TZ=Africa/Cairo \
+  -v ./qalamark-data:/data \
+  ghcr.io/mmbesar/qalamark:latest
 ```
 
-Every push also runs the type check, the tests, the build and a check of the
-example notes on Node 22 and 24 in GitHub Actions (see the badge above).
+Open `http://your-server:8080`. The **first account you create is the admin**;
+the admin adds everyone else (Settings, "Add a user"). Your notes appear as
+plain files in `qalamark-data/notes/<username>/`, and any `.md` file you drop
+there becomes a note. More in **[docs/SELF-HOSTING.md](docs/SELF-HOSTING.md)**
+(compose file, reverse proxy, backups).
+
+> Images are published when a release tag is made. Until the first release you
+> can build it yourself: `docker build -t qalamark .`
+
+## What works today
+
+- **Notes as `.md` files**, per user, with rename, delete (to a trash folder), import and export.
+- **Live preview editor** (CodeMirror 6): headings, bold, italic, strikethrough, code, fenced code with colours, quotes, lists, task checkboxes, links, images, rules. The text is never rewritten, only drawn nicely.
+- **Tables you can type in**, with formulas, results and a formula box (see below).
+- **Users, sharing, real-time co-editing.** Share a note with someone as *can edit* or *can view*; you both see each other's typing and cursors live.
+- **Files edited from outside** (Syncthing, a text editor) are merged in and shown live.
+- **Works offline.** The app installs as a PWA; a note you opened keeps working without internet and syncs when you are back.
+- **Without any server** the same app keeps notes on your device. This is what the GitHub Pages **preview** shows. Real use is your own server.
+- **English and Arabic** interface, right-to-left, light and dark themes.
+
+## Try the pieces from source
+
+```bash
+# 1) the server (Rust) and the web app (Node 22+)
+(cd app && npm ci && npm run build)
+(cd server && cargo run --release)          # then open http://localhost:8080
+
+# 2) all the tests
+(cd packages/tables && npm ci && npm test)  # table engine
+(cd e2e && npm ci && npm test)              # real server + real co-editing clients
+(cd e2e && npx playwright install chromium && npm run test:browser)  # real browser
+
+# 3) the table engine alone, from the command line
+node packages/tables/src/cli.ts recalc examples/grades.md
+```
+
+Everything also runs in GitHub Actions on every push (see the badges).
 
 ## Roadmap
 
 - [x] **1. Skeleton:** licence, docs, repo layout
 - [x] **2. Table formula engine:** parser, evaluator, command line tool, tests, CI
-- [ ] **3. Server:** Rust; users, notes stored as `.md` files, sharing, live sync
-- [ ] **4. Editor:** CodeMirror live preview, table editing helpers
-- [ ] **5. Collaboration and offline:** real-time co-editing, sync when back online
-- [ ] **6. Container:** Docker image with `PUID`/`PGID`/`TZ`, multi-arch builds on GitHub Actions
-- [ ] **7. Apps:** installable web app first, then Linux and Android shells (Tauri)
+- [x] **3. Server:** Rust; users, notes as `.md` files, sharing, live sync
+- [x] **4. Editor:** CodeMirror live preview, editable tables with formulas
+- [x] **5. Collaboration and offline:** real-time co-editing, works offline (PWA)
+- [x] **6. Container:** Docker image with `PUID`/`PGID`/`TZ`, amd64 + arm64 on native runners
+- [ ] **7. Apps:** Linux desktop and Android shells (Tauri) that sync with your server
+- [ ] **Later:** folders, search inside notes, offline note creation, riscv64 image, version history
 
 Design decisions and the reasons behind them are in
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
@@ -118,10 +153,14 @@ Design decisions and the reasons behind them are in
 ## What is in the repository
 
 ```
+server/             The server (Rust): accounts, notes, sharing, live sync
+app/                The web app (Svelte + CodeMirror), base of the desktop/Android apps
 packages/tables/    Table formula engine (TypeScript, no dependencies)
+e2e/                End-to-end tests: real server, real clients, real browser
+docker/ Dockerfile  The container image
 examples/           Example notes, kept up to date by the tests
-docs/               Formula guide and architecture notes
-.github/workflows/  GitHub Actions: build and test
+docs/               Formula guide, architecture, self-hosting
+.github/workflows/  GitHub Actions: build, test, publish
 LICENSE             GNU AGPL v3 or later
 ```
 

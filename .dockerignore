@@ -1,0 +1,11 @@
+# Keep the build context small.
+.git
+**/node_modules
+**/target
+**/dist
+data
+*.db*
+.github
+docs
+examples
+e2e

@@ -16,6 +16,7 @@ export interface Rule {
   col: number;
   row: number | null;
   ast: Node | null;
+  source: string; // the formula text as written (without the leading "=")
   error: string | null; // why the formula could not be read, if it could not
   code: string; // error code shown in the cell in that case
 }
@@ -32,6 +33,34 @@ type CallNode = Extract<Node, { t: 'call' }>;
 
 /** Functions whose arguments may be whole columns or ranges. */
 const AGGREGATES = new Set(['SUM', 'AVG', 'AVERAGE', 'MIN', 'MAX', 'COUNT', 'PRODUCT', 'MEDIAN']);
+
+/** True when a formula totals a column or range (SUM(D), AVG(B2:B9) ...). */
+function usesAggregate(node: Node): boolean {
+  switch (node.t) {
+    case 'call':
+      return (
+        (AGGREGATES.has(node.name) && node.args.some((a) => a.t === 'col' || a.t === 'range')) ||
+        node.args.some(usesAggregate)
+      );
+    case 'unary':
+    case 'pct':
+      return usesAggregate(node.x);
+    case 'bin':
+      return usesAggregate(node.l) || usesAggregate(node.r);
+    default:
+      return false;
+  }
+}
+
+/** Header text -> column index, using comparable names. */
+export function nameMap(header: string[]): Map<string, number> {
+  const map = new Map<string, number>();
+  header.forEach((h, i) => {
+    const n = normName(h);
+    if (n !== '' && !map.has(n)) map.set(n, i);
+  });
+  return map;
+}
 
 /** Make header names comparable: ignore case, bold marks and extra spaces. */
 export function normName(s: string): string {
@@ -146,7 +175,8 @@ export class Evaluator {
       if (r.row === null) this.colRules.set(r.col, r);
       else {
         this.cellRules.set(this.key(r.row, r.col), r);
-        this.summaryRows.add(r.row);
+        // Only rows with a total formula are skipped by column formulas.
+        if (r.ast && usesAggregate(r.ast)) this.summaryRows.add(r.row);
       }
     }
   }
@@ -252,6 +282,16 @@ export class Evaluator {
       default:
         return;
     }
+  }
+
+  /** The formula that drives a cell, if any. */
+  ruleAt(row: number, col: number): Rule | undefined {
+    return this.ruleFor(row, col);
+  }
+
+  /** Rows with a total formula, in order. */
+  summaryRowList(): number[] {
+    return [...this.summaryRows].sort((a, b) => a - b);
   }
 
   /** Every cell that gets its value from a formula. */

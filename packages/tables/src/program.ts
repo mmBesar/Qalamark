@@ -47,7 +47,7 @@ export function splitStatements(text: string): string[] {
   return out.map((s) => s.trim()).filter((s) => s !== '');
 }
 
-interface RawTarget {
+export interface RawTarget {
   col: number | null;
   name: string | null;
   row: number | null;
@@ -55,7 +55,7 @@ interface RawTarget {
 }
 
 /** Read "D", "D5" or "[Header]" from the start of a statement. */
-function readTarget(text: string): RawTarget | null {
+export function readTarget(text: string): RawTarget | null {
   if (text.startsWith('[')) {
     const j = text.indexOf(']');
     if (j < 0) return null;
@@ -166,7 +166,7 @@ export function parseProgram(
         code = e.code;
         diagnostics.push({ line: lineNo, message: `"${st}": ${e.message}` });
       }
-      rules.push({ col: target.col, row: target.row, ast, error, code });
+      rules.push({ col: target.col, row: target.row, ast, source: expr, error, code });
     }
   });
 

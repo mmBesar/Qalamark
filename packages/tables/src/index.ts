@@ -17,3 +17,6 @@ export type { Node } from './parser.ts';
 
 export { CellError, ERR, toText } from './value.ts';
 export type { Scalar } from './value.ts';
+
+export { describeTables, editCell, setFormulas, tableOp, escapeCell } from './edit.ts';
+export type { TableView, TableOp, CellFormula } from './edit.ts';

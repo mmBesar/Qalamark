@@ -9,7 +9,7 @@
 //   2. Type it into a cell starting with "=" (for one cell) or "==" (for the
 //      whole column). It is moved into the comment and the cell shows the result.
 
-import { Evaluator, normName } from './evaluator.ts';
+import { Evaluator, nameMap } from './evaluator.ts';
 import {
   applyEdits,
   findTables,
@@ -47,15 +47,6 @@ export interface RecalcOptions {
 
 const HAS_BLOCK = /<!--\s*qalamark\b/i;
 const HAS_INLINE = /\|\s*=/;
-
-function nameMap(header: string[]): Map<string, number> {
-  const map = new Map<string, number>();
-  header.forEach((h, i) => {
-    const n = normName(h);
-    if (n !== '' && !map.has(n)) map.set(n, i);
-  });
-  return map;
-}
 
 function formatFor(formats: FormatRule[], col: number, row: number): NumberFormat | null {
   let colFormat: NumberFormat | null = null;

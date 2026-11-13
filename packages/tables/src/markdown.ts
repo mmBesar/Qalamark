@@ -337,23 +337,39 @@ function pad(s: string, width: number, align: Align): string {
   return s + ' '.repeat(extra);
 }
 
-/** Tidy one table: pipes lined up, delimiter row as wide as the column. */
-export function formatTable(lines: string[], t: TableInfo): string[] {
+/** Lay out a table from its cell texts (row 0 = header): pipes lined up, delimiter row added. */
+export function renderTable(texts: string[][], align: Align[], indent: string): string[] {
+  const ncols = Math.max(...texts.map((r) => r.length), align.length, 1);
+  const rows = texts.map((r) => {
+    const cells = [...r];
+    while (cells.length < ncols) cells.push('');
+    return cells;
+  });
+  const al = Array.from({ length: ncols }, (_, i): Align => align[i] ?? 'none');
+  const widths = Array.from({ length: ncols }, (_, c) =>
+    Math.max(3, ...rows.map((r) => displayWidth(r[c]!))),
+  );
+  const row = (cells: string[]) =>
+    `${indent}| ${cells.map((s, c) => pad(s, widths[c]!, al[c]!)).join(' | ')} |`;
+  const delim = widths.map((w, c) => delimiterCell(w, al[c]!));
+  return [row(rows[0]!), `${indent}| ${delim.join(' | ')} |`, ...rows.slice(1).map(row)];
+}
+
+/** Cell texts of a table exactly as written (trimmed, escapes kept), header row first. */
+export function rawGrid(lines: string[], t: TableInfo): string[][] {
   const ncols = Math.max(t.ncols, ...t.rows.map((r) => r.cells.length));
-  const texts = t.rows.map((r) => {
+  return t.rows.map((r) => {
     const line = lines[r.line]!;
     const cells = r.cells.map((c) => line.slice(c.start, c.end).trim());
     while (cells.length < ncols) cells.push('');
     return cells;
   });
-  const align = Array.from({ length: ncols }, (_, i): Align => t.align[i] ?? 'none');
-  const widths = Array.from({ length: ncols }, (_, c) =>
-    Math.max(3, ...texts.map((r) => displayWidth(r[c]!))),
-  );
-  const row = (cells: string[]) =>
-    `${t.indent}| ${cells.map((s, c) => pad(s, widths[c]!, align[c]!)).join(' | ')} |`;
-  const delim = widths.map((w, c) => delimiterCell(w, align[c]!));
-  return [row(texts[0]!), `${t.indent}| ${delim.join(' | ')} |`, ...texts.slice(1).map(row)];
+}
+
+/** Tidy one table: pipes lined up, delimiter row as wide as the column. */
+export function formatTable(lines: string[], t: TableInfo): string[] {
+  const texts = rawGrid(lines, t);
+  return renderTable(texts, t.align, t.indent);
 }
 
 export interface FormatResult {

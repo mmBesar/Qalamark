@@ -1,0 +1,543 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 mmBesar
+//
+// The HTTP API: accounts, notes, sharing.
+
+use crate::auth::{check_password, hash_password, new_token, token_hash, user_for_token, User};
+use crate::db::now;
+use crate::state::{Shared, Signup};
+use crate::text::{safe_name, valid_username};
+use axum::{
+    extract::{ws::{Message as WsMessage, WebSocket, WebSocketUpgrade}, Path, Query, State},
+    http::StatusCode,
+    response::{IntoResponse, Response},
+    Json,
+};
+use futures_util::{SinkExt, StreamExt};
+use rusqlite::{params, OptionalExtension};
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::path::PathBuf;
+
+type ApiResult<T> = Result<Json<T>, (StatusCode, String)>;
+
+fn err<T>(code: StatusCode, msg: &str) -> Result<T, (StatusCode, String)> {
+    Err((code, msg.to_string()))
+}
+
+fn internal<E: std::fmt::Display>(e: E) -> (StatusCode, String) {
+    tracing::error!("{e}");
+    (StatusCode::INTERNAL_SERVER_ERROR, "Something went wrong on the server".into())
+}
+
+// ------------------------------------------------------------- accounts
+
+#[derive(Serialize)]
+pub struct Status {
+    setup: bool,
+    signup: bool,
+    version: &'static str,
+}
+
+pub async fn status(State(s): State<Shared>) -> ApiResult<Status> {
+    let count = user_count(&s);
+    Ok(Json(Status {
+        setup: count == 0,
+        signup: count == 0 || s.cfg.signup == Signup::Open,
+        version: env!("CARGO_PKG_VERSION"),
+    }))
+}
+
+fn user_count(s: &Shared) -> i64 {
+    s.db.lock().unwrap().query_row("SELECT COUNT(*) FROM users", [], |r| r.get(0)).unwrap_or(0)
+}
+
+#[derive(Deserialize)]
+pub struct Credentials {
+    username: String,
+    password: String,
+    #[serde(default)]
+    label: String,
+}
+
+#[derive(Serialize)]
+pub struct Session {
+    token: String,
+    username: String,
+    admin: bool,
+}
+
+fn open_session(s: &Shared, user_id: i64, label: &str) -> Result<String, (StatusCode, String)> {
+    let token = new_token();
+    s.db.lock()
+        .unwrap()
+        .execute(
+            "INSERT INTO sessions (token_hash, user_id, label, created) VALUES (?1, ?2, ?3, ?4)",
+            params![token_hash(&token), user_id, label, now()],
+        )
+        .map_err(internal)?;
+    Ok(token)
+}
+
+pub async fn register(State(s): State<Shared>, Json(c): Json<Credentials>) -> ApiResult<Session> {
+    let first = user_count(&s) == 0;
+    if !first && s.cfg.signup != Signup::Open {
+        return err(StatusCode::FORBIDDEN, "Sign-up is closed. Ask the admin to create your account.");
+    }
+    create_user(&s, &c.username, &c.password, first)?;
+    login(State(s), Json(c)).await
+}
+
+fn create_user(s: &Shared, name: &str, pw: &str, admin: bool) -> Result<i64, (StatusCode, String)> {
+    let name = name.trim().to_lowercase();
+    if !valid_username(&name) {
+        return err(StatusCode::BAD_REQUEST, "Username: 2-32 characters, a-z 0-9 . _ -");
+    }
+    if pw.chars().count() < 8 {
+        return err(StatusCode::BAD_REQUEST, "The password needs at least 8 characters");
+    }
+    let hash = hash_password(pw).map_err(internal)?;
+    let db = s.db.lock().unwrap();
+    match db.execute(
+        "INSERT INTO users (username, pass_hash, is_admin, created) VALUES (?1, ?2, ?3, ?4)",
+        params![name, hash, admin as i64, now()],
+    ) {
+        Ok(_) => Ok(db.last_insert_rowid()),
+        Err(rusqlite::Error::SqliteFailure(e, _)) if e.code == rusqlite::ErrorCode::ConstraintViolation => {
+            err(StatusCode::CONFLICT, "That username is taken")
+        }
+        Err(e) => Err(internal(e)),
+    }
+}
+
+pub async fn login(State(s): State<Shared>, Json(c): Json<Credentials>) -> ApiResult<Session> {
+    let name = c.username.trim().to_lowercase();
+    let row: Option<(i64, String, String, i64)> = s
+        .db
+        .lock()
+        .unwrap()
+        .query_row(
+            "SELECT id, username, pass_hash, is_admin FROM users WHERE username = ?1",
+            [&name],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+        )
+        .optional()
+        .map_err(internal)?;
+    let ok = match &row {
+        Some((_, _, hash, _)) => check_password(&c.password, hash),
+        None => false,
+    };
+    if !ok {
+        tokio::time::sleep(std::time::Duration::from_millis(400)).await; // slows down guessing
+        return err(StatusCode::UNAUTHORIZED, "Wrong username or password");
+    }
+    let (id, username, _, admin) = row.unwrap();
+    let token = open_session(&s, id, &c.label)?;
+    Ok(Json(Session { token, username, admin: admin != 0 }))
+}
+
+pub async fn logout(State(s): State<Shared>, headers: axum::http::HeaderMap) -> StatusCode {
+    if let Some(t) = headers.get("authorization").and_then(|v| v.to_str().ok()).and_then(|v| v.strip_prefix("Bearer ")) {
+        let _ = s.db.lock().unwrap().execute("DELETE FROM sessions WHERE token_hash = ?1", [token_hash(t)]);
+    }
+    StatusCode::NO_CONTENT
+}
+
+#[derive(Serialize)]
+pub struct Me {
+    username: String,
+    admin: bool,
+}
+
+pub async fn me(user: User) -> Json<Me> {
+    Json(Me { username: user.username, admin: user.is_admin })
+}
+
+#[derive(Deserialize)]
+pub struct NewUser {
+    username: String,
+    password: String,
+    #[serde(default)]
+    admin: bool,
+}
+
+pub async fn admin_create_user(State(s): State<Shared>, user: User, Json(n): Json<NewUser>) -> ApiResult<Me> {
+    if !user.is_admin {
+        return err(StatusCode::FORBIDDEN, "Only the admin can add users");
+    }
+    create_user(&s, &n.username, &n.password, n.admin)?;
+    Ok(Json(Me { username: n.username.trim().to_lowercase(), admin: n.admin }))
+}
+
+pub async fn admin_list_users(State(s): State<Shared>, user: User) -> ApiResult<Vec<Me>> {
+    if !user.is_admin {
+        return err(StatusCode::FORBIDDEN, "Only the admin can list users");
+    }
+    let db = s.db.lock().unwrap();
+    let mut st = db.prepare("SELECT username, is_admin FROM users ORDER BY username").map_err(internal)?;
+    let rows = st
+        .query_map([], |r| Ok(Me { username: r.get(0)?, admin: r.get::<_, i64>(1)? != 0 }))
+        .map_err(internal)?
+        .filter_map(Result::ok)
+        .collect();
+    Ok(Json(rows))
+}
+
+#[derive(Deserialize)]
+pub struct PasswordChange {
+    old: String,
+    new: String,
+}
+
+pub async fn change_password(State(s): State<Shared>, user: User, Json(p): Json<PasswordChange>) -> ApiResult<()> {
+    let stored: String = s
+        .db
+        .lock()
+        .unwrap()
+        .query_row("SELECT pass_hash FROM users WHERE id = ?1", [user.id], |r| r.get(0))
+        .map_err(internal)?;
+    if !check_password(&p.old, &stored) {
+        return err(StatusCode::UNAUTHORIZED, "The old password is wrong");
+    }
+    if p.new.chars().count() < 8 {
+        return err(StatusCode::BAD_REQUEST, "The password needs at least 8 characters");
+    }
+    let hash = hash_password(&p.new).map_err(internal)?;
+    s.db.lock().unwrap().execute("UPDATE users SET pass_hash = ?2 WHERE id = ?1", params![user.id, hash]).map_err(internal)?;
+    Ok(Json(()))
+}
+
+// ---------------------------------------------------------------- notes
+
+#[derive(Serialize, Clone)]
+pub struct NoteMeta {
+    id: String,
+    title: String,
+    owner: String,
+    role: &'static str, // owner | edit | view
+    updated: i64,
+}
+
+fn title_of(path: &str) -> String {
+    let file = path.rsplit('/').next().unwrap_or(path);
+    file.strip_suffix(".md").unwrap_or(file).to_string()
+}
+
+/// Notes that appear as .md files in a user's folder become notes automatically.
+fn adopt_files(s: &Shared, user: &User) {
+    let dir = s.cfg.notes_dir().join(&user.username);
+    let Ok(rd) = std::fs::read_dir(&dir) else { return };
+    let db = s.db.lock().unwrap();
+    for e in rd.flatten() {
+        let name = e.file_name().to_string_lossy().to_string();
+        if !name.ends_with(".md") || !e.path().is_file() {
+            continue;
+        }
+        let rel = format!("{}/{}", user.username, name);
+        let exists: bool = db.query_row("SELECT 1 FROM notes WHERE path = ?1", [&rel], |_| Ok(true)).unwrap_or(false);
+        if !exists {
+            let t = now();
+            let _ = db.execute(
+                "INSERT INTO notes (id, owner_id, path, created, updated) VALUES (?1, ?2, ?3, ?4, ?4)",
+                params![uuid::Uuid::new_v4().to_string(), user.id, rel, t],
+            );
+        }
+    }
+}
+
+/// Notes whose file was deleted outside disappear from the list.
+fn forget_missing(s: &Shared, notes: &[(String, String)]) {
+    for (id, path) in notes {
+        if !s.cfg.notes_dir().join(path).exists() && s.rooms.get(id).is_none() {
+            let _ = s.db.lock().unwrap().execute("DELETE FROM notes WHERE id = ?1", [id]);
+        }
+    }
+}
+
+pub async fn list_notes(State(s): State<Shared>, user: User) -> ApiResult<Vec<NoteMeta>> {
+    adopt_files(&s, &user);
+    let rows: Vec<(String, String, String, &'static str, i64)> = {
+        let db = s.db.lock().unwrap();
+        let mut st = db
+            .prepare(
+                "SELECT n.id, n.path, o.username,
+                        CASE WHEN n.owner_id = ?1 THEN 'owner' ELSE sh.role END, n.updated
+                 FROM notes n
+                 JOIN users o ON o.id = n.owner_id
+                 LEFT JOIN shares sh ON sh.note_id = n.id AND sh.user_id = ?1
+                 WHERE n.owner_id = ?1 OR sh.user_id IS NOT NULL
+                 ORDER BY n.updated DESC",
+            )
+            .map_err(internal)?;
+        st.query_map([user.id], |r| {
+            let role: String = r.get(3)?;
+            let role: &'static str = match role.as_str() {
+                "owner" => "owner",
+                "edit" => "edit",
+                _ => "view",
+            };
+            Ok((r.get(0)?, r.get(1)?, r.get(2)?, role, r.get(4)?))
+        })
+        .map_err(internal)?
+        .filter_map(Result::ok)
+        .collect()
+    };
+    forget_missing(&s, &rows.iter().map(|r| (r.0.clone(), r.1.clone())).collect::<Vec<_>>());
+    let out = rows
+        .into_iter()
+        .filter(|r| s.cfg.notes_dir().join(&r.1).exists() || s.rooms.get(&r.0).is_some())
+        .map(|(id, path, owner, role, updated)| NoteMeta { id, title: title_of(&path), owner, role, updated })
+        .collect();
+    Ok(Json(out))
+}
+
+struct Access {
+    role: &'static str,
+    owner: String,
+    path: String,
+    updated: i64,
+}
+
+fn access(s: &Shared, user: &User, id: &str) -> Result<Access, (StatusCode, String)> {
+    let db = s.db.lock().unwrap();
+    let row: Option<(i64, String, String, i64)> = db
+        .query_row(
+            "SELECT n.owner_id, o.username, n.path, n.updated FROM notes n JOIN users o ON o.id = n.owner_id WHERE n.id = ?1",
+            [id],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+        )
+        .optional()
+        .map_err(internal)?;
+    let Some((owner_id, owner, path, updated)) = row else {
+        return err(StatusCode::NOT_FOUND, "Note not found");
+    };
+    let role = if owner_id == user.id {
+        "owner"
+    } else {
+        let r: Option<String> = db
+            .query_row("SELECT role FROM shares WHERE note_id = ?1 AND user_id = ?2", params![id, user.id], |r| r.get(0))
+            .optional()
+            .map_err(internal)?;
+        match r.as_deref() {
+            Some("edit") => "edit",
+            Some(_) => "view",
+            None => return err(StatusCode::NOT_FOUND, "Note not found"), // do not reveal it exists
+        }
+    };
+    Ok(Access { role, owner, path, updated })
+}
+
+/// Find a file name that is not used yet: "Title.md", "Title 2.md", ...
+fn free_path(s: &Shared, username: &str, title: &str) -> String {
+    let base = safe_name(title);
+    let db = s.db.lock().unwrap();
+    for n in 1.. {
+        let name = if n == 1 { base.clone() } else { format!("{base} {n}") };
+        let rel = format!("{username}/{name}.md");
+        let taken: bool = db.query_row("SELECT 1 FROM notes WHERE path = ?1", [&rel], |_| Ok(true)).unwrap_or(false);
+        if !taken && !s.cfg.notes_dir().join(&rel).exists() {
+            return rel;
+        }
+    }
+    unreachable!()
+}
+
+#[derive(Deserialize)]
+pub struct NewNote {
+    title: String,
+    #[serde(default)]
+    content: String,
+}
+
+pub async fn create_note(State(s): State<Shared>, user: User, Json(n): Json<NewNote>) -> ApiResult<NoteMeta> {
+    let rel = free_path(&s, &user.username, &n.title);
+    let full: PathBuf = s.cfg.notes_dir().join(&rel);
+    std::fs::create_dir_all(full.parent().unwrap()).map_err(internal)?;
+    std::fs::write(&full, &n.content).map_err(internal)?;
+    let id = uuid::Uuid::new_v4().to_string();
+    let t = now();
+    s.db.lock()
+        .unwrap()
+        .execute("INSERT INTO notes (id, owner_id, path, created, updated) VALUES (?1, ?2, ?3, ?4, ?4)", params![id, user.id, rel, t])
+        .map_err(internal)?;
+    Ok(Json(NoteMeta { id, title: title_of(&rel), owner: user.username, role: "owner", updated: t }))
+}
+
+#[derive(Serialize)]
+pub struct NoteFull {
+    #[serde(flatten)]
+    meta: NoteMeta,
+    content: String,
+}
+
+pub async fn get_note(State(s): State<Shared>, user: User, Path(id): Path<String>) -> ApiResult<NoteFull> {
+    let a = access(&s, &user, &id)?;
+    let content = match s.rooms.get(&id) {
+        Some(room) => room.text(),
+        None => std::fs::read_to_string(s.cfg.notes_dir().join(&a.path)).unwrap_or_default(),
+    };
+    Ok(Json(NoteFull {
+        meta: NoteMeta { id, title: title_of(&a.path), owner: a.owner, role: a.role, updated: a.updated },
+        content,
+    }))
+}
+
+#[derive(Deserialize)]
+pub struct Rename {
+    title: String,
+}
+
+pub async fn rename_note(State(s): State<Shared>, user: User, Path(id): Path<String>, Json(r): Json<Rename>) -> ApiResult<NoteMeta> {
+    let a = access(&s, &user, &id)?;
+    if a.role != "owner" {
+        return err(StatusCode::FORBIDDEN, "Only the owner can rename a note");
+    }
+    let rel = free_path(&s, &a.owner, &r.title);
+    if rel != a.path {
+        let from = s.cfg.notes_dir().join(&a.path);
+        let to = s.cfg.notes_dir().join(&rel);
+        if from.exists() {
+            std::fs::rename(&from, &to).map_err(internal)?;
+        }
+        s.db.lock().unwrap().execute("UPDATE notes SET path = ?2 WHERE id = ?1", params![id, rel]).map_err(internal)?;
+    }
+    Ok(Json(NoteMeta { id, title: title_of(&rel), owner: a.owner, role: "owner", updated: a.updated }))
+}
+
+pub async fn delete_note(State(s): State<Shared>, user: User, Path(id): Path<String>) -> ApiResult<()> {
+    let a = access(&s, &user, &id)?;
+    if a.role != "owner" {
+        return err(StatusCode::FORBIDDEN, "Only the owner can delete a note");
+    }
+    // Keep a copy in the trash folder instead of erasing it for good.
+    let from = s.cfg.notes_dir().join(&a.path);
+    if from.exists() {
+        let trash = s.cfg.data.join("trash");
+        std::fs::create_dir_all(&trash).map_err(internal)?;
+        let name = format!("{}-{}-{}.md", now(), a.owner, title_of(&a.path));
+        std::fs::rename(&from, trash.join(name)).map_err(internal)?;
+    }
+    s.rooms.drop_room(&id);
+    s.db.lock().unwrap().execute("DELETE FROM notes WHERE id = ?1", [&id]).map_err(internal)?;
+    Ok(Json(()))
+}
+
+// -------------------------------------------------------------- sharing
+
+#[derive(Serialize)]
+pub struct ShareInfo {
+    username: String,
+    role: String,
+}
+
+pub async fn list_shares(State(s): State<Shared>, user: User, Path(id): Path<String>) -> ApiResult<Vec<ShareInfo>> {
+    let a = access(&s, &user, &id)?;
+    if a.role != "owner" {
+        return err(StatusCode::FORBIDDEN, "Only the owner can see who has access");
+    }
+    let db = s.db.lock().unwrap();
+    let mut st = db
+        .prepare("SELECT u.username, sh.role FROM shares sh JOIN users u ON u.id = sh.user_id WHERE sh.note_id = ?1 ORDER BY u.username")
+        .map_err(internal)?;
+    let rows = st
+        .query_map([&id], |r| Ok(ShareInfo { username: r.get(0)?, role: r.get(1)? }))
+        .map_err(internal)?
+        .filter_map(Result::ok)
+        .collect();
+    Ok(Json(rows))
+}
+
+#[derive(Deserialize)]
+pub struct NewShare {
+    username: String,
+    role: String,
+}
+
+pub async fn add_share(State(s): State<Shared>, user: User, Path(id): Path<String>, Json(n): Json<NewShare>) -> ApiResult<ShareInfo> {
+    let a = access(&s, &user, &id)?;
+    if a.role != "owner" {
+        return err(StatusCode::FORBIDDEN, "Only the owner can share a note");
+    }
+    if n.role != "edit" && n.role != "view" {
+        return err(StatusCode::BAD_REQUEST, "Role must be edit or view");
+    }
+    let name = n.username.trim().to_lowercase();
+    let db = s.db.lock().unwrap();
+    let uid: Option<i64> = db.query_row("SELECT id FROM users WHERE username = ?1", [&name], |r| r.get(0)).optional().map_err(internal)?;
+    let Some(uid) = uid else { return err(StatusCode::NOT_FOUND, "There is no user with that name") };
+    if name == a.owner {
+        return err(StatusCode::BAD_REQUEST, "That is you - you already own this note");
+    }
+    db.execute(
+        "INSERT INTO shares (note_id, user_id, role) VALUES (?1, ?2, ?3) ON CONFLICT(note_id, user_id) DO UPDATE SET role = excluded.role",
+        params![id, uid, n.role],
+    )
+    .map_err(internal)?;
+    Ok(Json(ShareInfo { username: name, role: n.role }))
+}
+
+/// The owner removes anyone; a person with access can remove themselves.
+pub async fn remove_share(State(s): State<Shared>, user: User, Path((id, name)): Path<(String, String)>) -> ApiResult<()> {
+    let a = access(&s, &user, &id)?;
+    let name = name.to_lowercase();
+    if a.role != "owner" && name != user.username {
+        return err(StatusCode::FORBIDDEN, "You can only remove yourself");
+    }
+    s.db.lock()
+        .unwrap()
+        .execute("DELETE FROM shares WHERE note_id = ?1 AND user_id = (SELECT id FROM users WHERE username = ?2)", params![id, name])
+        .map_err(internal)?;
+    Ok(Json(()))
+}
+
+// ------------------------------------------------------ live co-editing
+
+pub async fn ws_note(
+    State(s): State<Shared>,
+    Path(id): Path<String>,
+    Query(q): Query<HashMap<String, String>>,
+    ws: WebSocketUpgrade,
+) -> Response {
+    let Some(user) = q.get("token").and_then(|t| user_for_token(&s, t)) else {
+        return (StatusCode::UNAUTHORIZED, "Please sign in").into_response();
+    };
+    let a = match access(&s, &user, &id) {
+        Ok(a) => a,
+        Err((code, msg)) => return (code, msg).into_response(),
+    };
+    let can_write = a.role != "view";
+    ws.max_message_size(16 * 1024 * 1024).on_upgrade(move |socket| serve_socket(s, id, can_write, socket))
+}
+
+async fn serve_socket(s: Shared, id: String, can_write: bool, socket: WebSocket) {
+    let room = s.rooms.join(&s, &id);
+    let (mut out, mut inp) = socket.split();
+    let mut rx = room.tx.subscribe();
+    if out.send(WsMessage::Binary(room.hello().into())).await.is_ok() {
+        loop {
+            tokio::select! {
+                msg = inp.next() => match msg {
+                    Some(Ok(WsMessage::Binary(data))) => {
+                        let replies = room.handle(&data, can_write);
+                        let mut failed = false;
+                        for r in replies {
+                            if out.send(WsMessage::Binary(r.into())).await.is_err() { failed = true; break; }
+                        }
+                        if failed { break; }
+                    }
+                    Some(Ok(WsMessage::Close(_))) | None | Some(Err(_)) => break,
+                    Some(Ok(_)) => {}
+                },
+                frame = rx.recv() => match frame {
+                    Ok(bytes) => { if out.send(WsMessage::Binary(bytes.into())).await.is_err() { break; } }
+                    Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
+                        // Too slow to keep up: ask the client to sync again.
+                        if out.send(WsMessage::Binary(room.hello().into())).await.is_err() { break; }
+                    }
+                    Err(_) => break,
+                },
+            }
+        }
+    }
+    s.rooms.leave(&s, &room);
+}

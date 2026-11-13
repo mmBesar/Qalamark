@@ -1,0 +1,79 @@
+# Builds and tests the table formula engine (packages/tables).
+# Runs on every push and pull request that touches it, or by hand from the
+# Actions tab ("Run workflow").
+
+name: Tables engine
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'packages/tables/**'
+      - 'examples/**'
+      - '.github/workflows/tables.yml'
+  pull_request:
+    paths:
+      - 'packages/tables/**'
+      - 'examples/**'
+      - '.github/workflows/tables.yml'
+  workflow_dispatch:
+
+# This workflow only needs to read the code.
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Node ${{ matrix.node }}
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        # 22 is the oldest version we support, 24 is the current LTS.
+        node: [22, 24]
+    defaults:
+      run:
+        working-directory: packages/tables
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+          cache-dependency-path: packages/tables/package-lock.json
+
+      # "ci" installs exactly what package-lock.json says.
+      - name: Install
+        run: npm ci
+
+      - name: Type check
+        run: npm run typecheck
+
+      - name: Tests
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+      # The example notes must already be fully worked out and tidy.
+      # If a change to the engine alters their output, this fails.
+      - name: Check the example notes
+        run: |
+          for f in ../../examples/*.md; do
+            node src/cli.ts recalc "$f" --check
+            node src/cli.ts format "$f" --check
+          done
+
+      # Same check using the built JavaScript instead of the TypeScript.
+      - name: Try the built CLI
+        run: node dist/cli.js eval "ROUND(10/3, 2)"
+
+      - name: Keep the build
+        if: matrix.node == 24
+        uses: actions/upload-artifact@v6
+        with:
+          name: tables-dist
+          path: packages/tables/dist
+          if-no-files-found: error

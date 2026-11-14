@@ -1,0 +1,40 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 mmBesar
+#
+# Qalamark - self-hosted Markdown notes with live shared editing.
+# Put this service in your compose file (or use this file on its own).
+
+services:
+  qalamark:
+    # "edge" = built by hand from the Actions tab. After you push a tag like v0.1.0, use "latest".
+    image: ghcr.io/mmbesar/qalamark:edge
+    container_name: qalamark
+    restart: unless-stopped
+
+    environment:
+      # The user that will own your .md files (run "id" on the host to see yours).
+      PUID: 1000
+      PGID: 1000
+      TZ: Africa/Cairo
+      # "first": only the first account is free, the admin adds the others.
+      # "open":  anyone who can reach the site can create an account.
+      QALAMARK_SIGNUP: first
+
+    volumes:
+      # Your notes (plain .md files, one folder per user), the trash, and a small database.
+      - /srv/docker/cont/qalamark:/data
+
+    # Behind your reverse proxy (Caddy) no port is needed.
+    # Remove the comment below to also open it on the host, for a first test.
+    # ports:
+    #   - "8080:8080"
+    expose:
+      - "8080"
+
+    # Join the network your reverse proxy is on (change the name to yours).
+    # networks:
+    #   - proxy
+
+# networks:
+#   proxy:
+#     external: true

@@ -24,6 +24,20 @@ services:
 Start it with `docker compose up -d`, open `http://your-server:8080`, and
 create the first account. **That account is the admin.**
 
+## With Caddy (no ports, internal TLS)
+
+Use the service from [`docker-compose.yml`](../docker-compose.yml), put it on the
+same Docker network as Caddy, and add this to your Caddyfile:
+
+```
+qalamark.hs.lan {
+    tls internal
+    reverse_proxy qalamark:8080
+}
+```
+
+Caddy passes WebSockets through by itself, so live editing just works.
+
 ## What is in the data folder
 
 ```

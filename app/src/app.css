@@ -206,7 +206,31 @@ textarea {
 .shell {
   height: 100%;
   display: grid;
-  grid-template-columns: 19rem 1fr;
+  grid-template-columns: var(--side-w, 304px) 1fr;
+  position: relative;
+}
+.resizer {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  inset-inline-start: calc(var(--side-w, 304px) - 3px);
+  width: 6px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  cursor: col-resize;
+  z-index: 5;
+  touch-action: none;
+}
+.resizer:hover,
+.resizer.drag {
+  background: var(--accent-soft);
+}
+@media (max-width: 760px) {
+  .resizer {
+    display: none;
+  }
 }
 aside {
   background: var(--side);
@@ -507,8 +531,11 @@ dialog label {
   overflow: visible !important;
 }
 .cm-content {
-  max-width: 50rem;
+  width: min(100%, var(--editor-w, 50rem));
+  max-width: none;
+  flex: 0 1 auto !important;
   margin-inline: auto;
+  font-size: var(--font-size, 17px);
   padding: 0 1.2rem;
   caret-color: var(--accent);
 }
@@ -761,12 +788,8 @@ dialog label {
   display: flex;
   gap: 0.4rem;
   padding-top: 0.35rem;
-  opacity: 0.55;
-  transition: opacity 0.12s;
-}
-.qt:hover .qt-bar,
-.qt:focus-within .qt-bar {
-  opacity: 1;
+  opacity: 1; /* always visible: the controls never fade away */
+  min-height: 2rem;
 }
 .qt-btn {
   font-size: 0.8rem;
@@ -996,4 +1019,79 @@ dialog.wide {
 }
 .qt-bar {
   flex-wrap: wrap;
+}
+
+.qt-builder {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  padding: 0.4rem 0;
+}
+.qt-builder-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+}
+.qt-lbl {
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+.qt-select {
+  font: inherit;
+  font-size: 0.85rem;
+  max-width: 14rem;
+  padding: 0.15rem 0.3rem;
+  background: var(--bg);
+  color: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+.qt-preview {
+  font-size: 0.85rem;
+  direction: ltr;
+  text-align: start;
+  color: var(--accent);
+}
+.qt-add {
+  color: var(--accent);
+}
+
+/* source mode: gutters like a code editor */
+.cm-source .cm-gutters {
+  background: transparent;
+  color: var(--muted);
+  border: 0;
+  font-family: var(--mono);
+  font-size: 0.8rem;
+}
+.cm-source .cm-activeLine {
+  background: var(--accent-soft);
+}
+.cm-source .cm-activeLineGutter {
+  background: transparent;
+  color: var(--accent);
+}
+.cm-source .cm-content {
+  width: 100%;
+  margin-inline: 0;
+}
+
+.userlist {
+  list-style: none;
+  margin: 0.4rem 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+.userlist li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+}
+.userlist .uname {
+  flex: 1;
+  min-width: 6rem;
 }

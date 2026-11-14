@@ -12,7 +12,7 @@ mod state;
 mod text;
 
 use axum::{
-    routing::{delete, get, post},
+    routing::{delete, get, patch, post},
     Router,
 };
 use state::{AppState, Config, Shared};
@@ -34,6 +34,8 @@ pub fn app(state: Shared) -> Router {
         .route("/api/me", get(api::me))
         .route("/api/password", post(api::change_password))
         .route("/api/users", get(api::admin_list_users).post(api::admin_create_user))
+        .route("/api/users/{name}", patch(api::admin_update_user).delete(api::admin_delete_user))
+        .route("/api/admin/settings", get(api::admin_get_settings).put(api::admin_set_settings))
         .route("/api/notes", get(api::list_notes).post(api::create_note))
         .route("/api/notes/{id}", get(api::get_note).patch(api::rename_note).delete(api::delete_note))
         .route("/api/notes/{id}/backlinks", get(api::backlinks))

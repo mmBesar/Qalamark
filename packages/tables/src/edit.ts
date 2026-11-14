@@ -64,7 +64,7 @@ export function describeTables(md: string): TableView[] {
     const formulas: CellFormula[] = [];
     const problems: string[] = [];
     if (t.block) {
-      const program = parseProgram(t.block.bodyLines, t.block.start + 1, names, t.ncols);
+      const program = parseProgram(t.block.bodyLines, t.block.start + 1, names, t.ncols, cells.length);
       problems.push(...program.diagnostics.map((d) => d.message));
       const ev = new Evaluator(cells, t.ncols, program.rules, names);
       try {

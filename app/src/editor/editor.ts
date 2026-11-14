@@ -4,13 +4,13 @@
 // Puts the editor together: Markdown, live preview, tables, co-editing.
 
 import { autocompletion, closeBrackets, closeBracketsKeymap, type CompletionContext, completionKeymap } from '@codemirror/autocomplete';
-import { defaultKeymap, indentWithTab } from '@codemirror/commands';
+import { copyLineDown, copyLineUp, defaultKeymap, deleteLine, indentLess, indentMore, indentWithTab, insertBlankLine, moveLineDown, moveLineUp, selectLine } from '@codemirror/commands';
 import { markdown, markdownKeymap, markdownLanguage } from '@codemirror/lang-markdown';
 import { languages } from '@codemirror/language-data';
-import { bracketMatching, HighlightStyle, indentOnInput, syntaxHighlighting } from '@codemirror/language';
-import { highlightSelectionMatches, searchKeymap } from '@codemirror/search';
-import { Compartment, EditorState, type Extension } from '@codemirror/state';
-import { drawSelection, dropCursor, EditorView, keymap, placeholder } from '@codemirror/view';
+import { bracketMatching, foldGutter, foldKeymap, HighlightStyle, indentOnInput, syntaxHighlighting } from '@codemirror/language';
+import { highlightSelectionMatches, searchKeymap, selectNextOccurrence, selectSelectionMatches } from '@codemirror/search';
+import { Compartment, EditorSelection, EditorState, type Extension } from '@codemirror/state';
+import { crosshairCursor, drawSelection, dropCursor, EditorView, highlightActiveLine, highlightActiveLineGutter, keymap, lineNumbers, placeholder, rectangularSelection, type Command } from '@codemirror/view';
 import { tags as t } from '@lezer/highlight';
 import { yCollab, yUndoManagerKeymap } from 'y-codemirror.next';
 import { UndoManager } from 'yjs';
@@ -59,6 +59,67 @@ export interface EditorOptions {
   onChange?: () => void;
 }
 
+/** Cursors above or below every cursor (Ctrl+Alt+Up / Down in VS Code). */
+const addCursor =
+  (down: boolean): Command =>
+  (view) => {
+    const ranges = view.state.selection.ranges;
+    const extra = ranges.map((r) => view.moveVertically(r, down));
+    view.dispatch({ selection: EditorSelection.create([...ranges, ...extra], view.state.selection.mainIndex), scrollIntoView: true });
+    return true;
+  };
+
+/** Ctrl+/ : turn the selected lines into <!-- comments --> and back. */
+const toggleComment: Command = (view) => {
+  const { state } = view;
+  const lines = new Set<number>();
+  for (const r of state.selection.ranges) {
+    const a = state.doc.lineAt(r.from).number;
+    const b = state.doc.lineAt(r.to).number;
+    for (let n = a; n <= b; n++) lines.add(n);
+  }
+  const all = [...lines].map((n) => state.doc.line(n));
+  const commented = (t: string) => /^\s*<!-- .* -->\s*$/.test(t);
+  const off = all.every((l) => l.text.trim() === '' || commented(l.text));
+  const changes = all
+    .filter((l) => l.text.trim() !== '')
+    .map((l) => ({
+      from: l.from,
+      to: l.to,
+      insert: off ? l.text.replace(/<!-- (.*) -->/, '$1') : `<!-- ${l.text} -->`,
+    }));
+  view.dispatch({ changes });
+  return true;
+};
+
+/** Editing like VS Code, for source mode. */
+const vscodeEditing: Extension = [
+  lineNumbers(),
+  highlightActiveLine(),
+  highlightActiveLineGutter(),
+  foldGutter(),
+  rectangularSelection(),
+  crosshairCursor(),
+  EditorView.clickAddsSelectionRange.of((e) => e.altKey || e.ctrlKey || e.metaKey),
+  keymap.of([
+    { key: 'Alt-ArrowUp', run: moveLineUp },
+    { key: 'Alt-ArrowDown', run: moveLineDown },
+    { key: 'Shift-Alt-ArrowUp', run: copyLineUp },
+    { key: 'Shift-Alt-ArrowDown', run: copyLineDown },
+    { key: 'Mod-Shift-k', run: deleteLine },
+    { key: 'Mod-Alt-ArrowUp', run: addCursor(false) },
+    { key: 'Mod-Alt-ArrowDown', run: addCursor(true) },
+    { key: 'Mod-d', run: selectNextOccurrence, preventDefault: true },
+    { key: 'Mod-Shift-l', run: selectSelectionMatches, preventDefault: true },
+    { key: 'Mod-l', run: selectLine, preventDefault: true },
+    { key: 'Mod-]', run: indentMore },
+    { key: 'Mod-[', run: indentLess },
+    { key: 'Mod-/', run: toggleComment, preventDefault: true },
+    { key: 'Mod-Enter', run: insertBlankLine },
+    ...foldKeymap,
+  ]),
+];
+
 export type ViewMode = 'live' | 'read' | 'source';
 
 export interface Editor {
@@ -93,7 +154,7 @@ export function createEditor(o: EditorOptions): Editor {
   const forMode = (mode: ViewMode): Extension => {
     const locked = o.readOnly || mode === 'read';
     const common = [EditorState.readOnly.of(locked), EditorView.editable.of(!o.readOnly && mode !== 'read')];
-    if (mode === 'source') return [common, syntaxHighlighting(sourceStyle), EditorView.editorAttributes.of({ class: 'cm-source' })];
+    if (mode === 'source') return [common, syntaxHighlighting(sourceStyle), vscodeEditing, EditorView.editorAttributes.of({ class: 'cm-source' })];
     return [common, livePreview, tables, readingMode.of(mode === 'read')];
   };
   const extensions = [
@@ -102,6 +163,7 @@ export function createEditor(o: EditorOptions): Editor {
     markdown({ base: markdownLanguage, codeLanguages: languages, addKeymap: true }),
     syntaxHighlighting(codeStyle),
     autoCalc(o.awareness),
+    EditorState.allowMultipleSelections.of(true),
     drawSelection(),
     dropCursor(),
     indentOnInput(),

@@ -43,9 +43,26 @@ pub async fn status(State(s): State<Shared>) -> ApiResult<Status> {
     let count = user_count(&s);
     Ok(Json(Status {
         setup: count == 0,
-        signup: count == 0 || s.cfg.signup == Signup::Open,
+        signup: count == 0 || signup_open(&s),
         version: env!("CARGO_PKG_VERSION"),
     }))
+}
+
+/// Is self-service sign-up on? The admin's switch (stored in the database) wins over the
+/// QALAMARK_SIGNUP default.
+fn signup_open(s: &Shared) -> bool {
+    let stored: Option<String> = s
+        .db
+        .lock()
+        .unwrap()
+        .query_row("SELECT value FROM settings WHERE key = 'signup'", [], |r| r.get(0))
+        .optional()
+        .unwrap_or(None);
+    match stored.as_deref() {
+        Some("open") => true,
+        Some("closed") => false,
+        _ => s.cfg.signup == Signup::Open,
+    }
 }
 
 fn user_count(s: &Shared) -> i64 {
@@ -81,7 +98,7 @@ fn open_session(s: &Shared, user_id: i64, label: &str) -> Result<String, (Status
 
 pub async fn register(State(s): State<Shared>, Json(c): Json<Credentials>) -> ApiResult<Session> {
     let first = user_count(&s) == 0;
-    if !first && s.cfg.signup != Signup::Open {
+    if !first && !signup_open(&s) {
         return err(StatusCode::FORBIDDEN, "Sign-up is closed. Ask the admin to create your account.");
     }
     create_user(&s, &c.username, &c.password, first)?;
@@ -181,6 +198,118 @@ pub async fn admin_list_users(State(s): State<Shared>, user: User) -> ApiResult<
         .filter_map(Result::ok)
         .collect();
     Ok(Json(rows))
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct AdminSettings {
+    signup: bool,
+}
+
+pub async fn admin_get_settings(State(s): State<Shared>, user: User) -> ApiResult<AdminSettings> {
+    if !user.is_admin {
+        return err(StatusCode::FORBIDDEN, "Only the admin can see the settings");
+    }
+    Ok(Json(AdminSettings { signup: signup_open(&s) }))
+}
+
+pub async fn admin_set_settings(State(s): State<Shared>, user: User, Json(n): Json<AdminSettings>) -> ApiResult<AdminSettings> {
+    if !user.is_admin {
+        return err(StatusCode::FORBIDDEN, "Only the admin can change the settings");
+    }
+    s.db.lock()
+        .unwrap()
+        .execute(
+            "INSERT INTO settings (key, value) VALUES ('signup', ?1) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            [if n.signup { "open" } else { "closed" }],
+        )
+        .map_err(internal)?;
+    Ok(Json(n))
+}
+
+#[derive(Deserialize)]
+pub struct UserChange {
+    password: Option<String>,
+    admin: Option<bool>,
+}
+
+fn admin_count(s: &Shared) -> i64 {
+    s.db.lock().unwrap().query_row("SELECT COUNT(*) FROM users WHERE is_admin = 1", [], |r| r.get(0)).unwrap_or(0)
+}
+
+pub async fn admin_update_user(
+    State(s): State<Shared>,
+    user: User,
+    Path(name): Path<String>,
+    Json(c): Json<UserChange>,
+) -> ApiResult<()> {
+    if !user.is_admin {
+        return err(StatusCode::FORBIDDEN, "Only the admin can change users");
+    }
+    let name = name.trim().to_lowercase();
+    let row: Option<(i64, i64)> = s
+        .db
+        .lock()
+        .unwrap()
+        .query_row("SELECT id, is_admin FROM users WHERE username = ?1", [&name], |r| Ok((r.get(0)?, r.get(1)?)))
+        .optional()
+        .map_err(internal)?;
+    let Some((id, was_admin)) = row else {
+        return err(StatusCode::NOT_FOUND, "There is no such user");
+    };
+    if let Some(admin) = c.admin {
+        if !admin && was_admin != 0 && admin_count(&s) <= 1 {
+            return err(StatusCode::CONFLICT, "There must always be at least one admin");
+        }
+        s.db.lock().unwrap().execute("UPDATE users SET is_admin = ?1 WHERE id = ?2", params![admin as i64, id]).map_err(internal)?;
+    }
+    if let Some(pw) = c.password {
+        if pw.chars().count() < 8 {
+            return err(StatusCode::BAD_REQUEST, "The password needs at least 8 characters");
+        }
+        let hash = hash_password(&pw).map_err(internal)?;
+        let db = s.db.lock().unwrap();
+        db.execute("UPDATE users SET pass_hash = ?1 WHERE id = ?2", params![hash, id]).map_err(internal)?;
+        db.execute("DELETE FROM sessions WHERE user_id = ?1", [id]).map_err(internal)?; // sign them out everywhere
+    }
+    Ok(Json(()))
+}
+
+pub async fn admin_delete_user(State(s): State<Shared>, user: User, Path(name): Path<String>) -> ApiResult<()> {
+    if !user.is_admin {
+        return err(StatusCode::FORBIDDEN, "Only the admin can delete users");
+    }
+    let name = name.trim().to_lowercase();
+    if name == user.username.to_lowercase() {
+        return err(StatusCode::CONFLICT, "You cannot delete your own account");
+    }
+    let row: Option<i64> = s
+        .db
+        .lock()
+        .unwrap()
+        .query_row("SELECT id FROM users WHERE username = ?1", [&name], |r| r.get(0))
+        .optional()
+        .map_err(internal)?;
+    let Some(id) = row else {
+        return err(StatusCode::NOT_FOUND, "There is no such user");
+    };
+    let note_ids: Vec<String> = {
+        let db = s.db.lock().unwrap();
+        let mut st = db.prepare("SELECT id FROM notes WHERE owner_id = ?1").map_err(internal)?;
+        let ids = st.query_map([id], |r| r.get(0)).map_err(internal)?.filter_map(Result::ok).collect();
+        ids
+    };
+    for nid in &note_ids {
+        s.rooms.drop_room(nid);
+    }
+    // Their notes are kept: the whole folder moves to the trash, nothing is erased.
+    let folder = s.cfg.notes_dir().join(&name);
+    if folder.exists() {
+        let trash = s.cfg.data.join("trash");
+        std::fs::create_dir_all(&trash).map_err(internal)?;
+        std::fs::rename(&folder, trash.join(format!("{}-user-{}", now(), name))).map_err(internal)?;
+    }
+    s.db.lock().unwrap().execute("DELETE FROM users WHERE id = ?1", [id]).map_err(internal)?;
+    Ok(Json(()))
 }
 
 #[derive(Deserialize)]

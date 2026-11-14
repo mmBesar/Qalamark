@@ -7,7 +7,7 @@
 // result of another formula, in any order. A formula that depends on itself
 // gives #CYCLE!.
 
-import { normalizeDigits, parseNumber, roundTo } from './numbers.ts';
+import { normalizeDigits, parseDate, parseNumber, roundTo } from './numbers.ts';
 import type { Node, Ref } from './parser.ts';
 import { CellError, ERR, toText, type Scalar } from './value.ts';
 
@@ -275,6 +275,15 @@ export class Evaluator {
         yield* this.dependencies(node.r, row, false);
         return;
       case 'call': {
+        if (node.name === 'PREV' || node.name === 'CHANGE') {
+          const c = node.args[0]!;
+          const col = c.t === 'col' ? this.resolveCol(c) : null;
+          if (col !== null && !(col instanceof CellError)) {
+            if (row - 1 >= 2 && row - 1 <= this.cells.length) yield this.key(row - 1, col);
+            if (node.name === 'CHANGE' && row <= this.cells.length) yield this.key(row, col);
+          }
+          return;
+        }
         const inList = AGGREGATES.has(node.name);
         for (const arg of node.args) yield* this.dependencies(arg, row, inList);
         return;
@@ -584,6 +593,38 @@ export class Evaluator {
       }
       case 'ROW':
         return f.row;
+      case 'PREV':
+      case 'CHANGE': {
+        const c = a[0]!;
+        if (c.t !== 'col') return new CellError(ERR.VALUE);
+        const col = this.resolveCol(c);
+        if (col instanceof CellError) return col;
+        const above = f.row - 1 >= 2 ? this.read(f.row - 1, col, f) : null;
+        if (node.name === 'PREV') return above;
+        const now = this.read(f.row, col, f);
+        if (above === null || above === '') return now === null || now === '' ? null : 0;
+        if (now === null || now === '') return null;
+        const x = toNum(now);
+        if (x instanceof CellError) return x;
+        const y = toNum(above);
+        return y instanceof CellError ? y : x - y;
+      }
+      case 'DAYS':
+      case 'HOURS':
+      case 'MINUTES': {
+        const from = this.scalar(a[0]!, f);
+        const to = this.scalar(a[1]!, f);
+        if (from instanceof CellError) return from;
+        if (to instanceof CellError) return to;
+        if (from === null || from === '' || to === null || to === '') return null;
+        const t1 = typeof from === 'string' ? parseDate(from) : null;
+        const t2 = typeof to === 'string' ? parseDate(to) : null;
+        if (t1 === null || t2 === null) return new CellError(ERR.VALUE);
+        const DAY = 86400000;
+        if (node.name === 'DAYS') return Math.round((Math.floor(t2 / DAY) - Math.floor(t1 / DAY)));
+        if (node.name === 'HOURS') return roundTo((t2 - t1) / 3600000, 2);
+        return Math.round((t2 - t1) / 60000);
+      }
       default:
         return new CellError(ERR.NAME);
     }

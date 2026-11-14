@@ -16,7 +16,30 @@
   let uPw = $state('');
   let uAdmin = $state(false);
 
-  onMount(() => dlg.showModal());
+  let users = $state<Array<{ username: string; admin: boolean }>>([]);
+  let signup = $state(false);
+  async function loadUsers() {
+    if (store.mode !== 'server' || !store.s.admin) return;
+    try {
+      users = await store.api.listUsers();
+      signup = (await store.api.getAdminSettings()).signup;
+    } catch (e) {
+      error = e instanceof Error ? e.message : String(e);
+    }
+  }
+  onMount(() => {
+    dlg.showModal();
+    void loadUsers();
+  });
+  const toggleSignup = (on: boolean) => attempt(async () => { signup = (await store.api.setSignup(on)).signup; });
+  const resetPw = (name: string) => {
+    const pw = prompt(t('newPasswordFor', { name }));
+    if (pw) void attempt(async () => { await store.api.updateUser(name, { password: pw }); return '✓'; });
+  };
+  const setAdmin = (name: string, admin: boolean) => attempt(async () => { await store.api.updateUser(name, { admin }); await loadUsers(); });
+  const removeUser = (name: string) => {
+    if (confirm(t('confirmDeleteUser', { name }))) void attempt(async () => { await store.api.deleteUser(name); await loadUsers(); });
+  };
 
   async function attempt(f: () => Promise<string | void>) {
     msg = '';
@@ -41,6 +64,7 @@
     void attempt(async () => {
       await store.api.addUser(uName, uPw, uAdmin);
       uName = uPw = '';
+      await loadUsers();
       return '✓';
     });
   };
@@ -75,6 +99,34 @@
     </label>
   </div>
 
+  <h3>{t('appearance')}</h3>
+  <div class="grid2">
+    <label>
+      {t('fontSize')}: {store.s.fontSize}px
+      <input type="range" min="12" max="28" step="1" value={store.s.fontSize} oninput={(e) => store.setLayout({ fontSize: Number(e.currentTarget.value) })} />
+    </label>
+    <label>
+      {t('editorWidth')}: {store.s.editorWidth > 0 ? store.s.editorWidth + ' rem' : t('widthFull')}
+      <input type="range" min="30" max="100" step="2" value={store.s.editorWidth > 0 ? store.s.editorWidth : 100} oninput={(e) => store.setLayout({ editorWidth: Number(e.currentTarget.value) >= 100 ? 0 : Number(e.currentTarget.value) })} />
+    </label>
+    <label>
+      {t('fontEn')}
+      <input list="fonts-en" value={store.s.fontEn} placeholder="Roboto · {t('fontDefault')}" dir="ltr" spellcheck="false" onchange={(e) => store.setLayout({ fontEn: e.currentTarget.value })} />
+    </label>
+    <label>
+      {t('fontAr')}
+      <input list="fonts-ar" value={store.s.fontAr} placeholder="Noto Naskh Arabic UI · {t('fontDefault')}" dir="ltr" spellcheck="false" onchange={(e) => store.setLayout({ fontAr: e.currentTarget.value })} />
+    </label>
+    <label>
+      {t('fontCode')}
+      <input list="fonts-code" value={store.s.fontCode} placeholder="JetBrainsMono Nerd Font Mono · {t('fontDefault')}" dir="ltr" spellcheck="false" onchange={(e) => store.setLayout({ fontCode: e.currentTarget.value })} />
+    </label>
+  </div>
+  <p class="muted tiny">{t('fontHint')}</p>
+  <datalist id="fonts-en"><option value="Roboto"></option><option value="Inter"></option><option value="Georgia"></option><option value="system-ui"></option></datalist>
+  <datalist id="fonts-ar"><option value="Noto Naskh Arabic UI"></option><option value="Noto Sans Arabic"></option><option value="Amiri"></option><option value="Cairo"></option></datalist>
+  <datalist id="fonts-code"><option value="JetBrainsMono Nerd Font Mono"></option><option value="JetBrains Mono"></option><option value="Fira Code"></option><option value="Cascadia Code"></option></datalist>
+
   <h3>{t('accent')}</h3>
   <div class="swatches" role="group" aria-label={t('accent')}>
     <button class:on={store.s.accent === 'default'} title={t('accentDefault')} aria-label={t('accentDefault')} style="background: conic-gradient(var(--accent), var(--gold), var(--accent))" onclick={() => store.setAccent('default')}></button>
@@ -99,6 +151,20 @@
     </form>
 
     {#if store.s.admin}
+      <h3>{t('users')}</h3>
+      <label class="check"><input type="checkbox" checked={signup} onchange={(e) => toggleSignup(e.currentTarget.checked)} /> {t('allowSignup')}</label>
+      <ul class="userlist">
+        {#each users as u (u.username)}
+          <li>
+            <span class="uname" dir="ltr">{u.username}{u.admin ? ' · ' + t('admin') : ''}</span>
+            <button class="ghost small" onclick={() => resetPw(u.username)}>{t('resetPassword')}</button>
+            {#if u.username !== store.s.username}
+              <button class="ghost small" onclick={() => setAdmin(u.username, !u.admin)}>{u.admin ? t('removeAdmin') : t('makeAdmin')}</button>
+              <button class="ghost small danger" onclick={() => removeUser(u.username)}>{t('deleteUser')}</button>
+            {/if}
+          </li>
+        {/each}
+      </ul>
       <h3>{t('addUser')}</h3>
       <form class="row" onsubmit={addUser}>
         <input bind:value={uName} placeholder={t('username')} required autocapitalize="off" spellcheck="false" dir="ltr" />

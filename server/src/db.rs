@@ -39,6 +39,10 @@ pub fn open(path: &Path) -> rusqlite::Result<Connection> {
            role    TEXT NOT NULL CHECK (role IN ('edit','view')),
            PRIMARY KEY (note_id, user_id)
          );
+         CREATE TABLE IF NOT EXISTS settings (
+           key   TEXT PRIMARY KEY,
+           value TEXT NOT NULL
+         );
          CREATE TABLE IF NOT EXISTS ydocs (
            note_id TEXT PRIMARY KEY REFERENCES notes(id) ON DELETE CASCADE,
            state   BLOB NOT NULL

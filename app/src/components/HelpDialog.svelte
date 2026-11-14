@@ -30,6 +30,16 @@
       </tbody>
     </table>
     <h3>مثال</h3>
+    <h3>معادلات بكلمات بسيطة</h3>
+    <table>
+      <tbody>
+        <tr><td><code>D = B * C</code></td><td>اضرب عمودين صفًّا بصف</td></tr>
+        <tr><td><code>D = change in C</code></td><td>الفرق عن الصف السابق (صفر في الصف الأول)</td></tr>
+        <tr><td><code>C = days since previous B</code></td><td>تواريخ مثل 2022-04-01 (وأيضًا <code>hours</code> و<code>minutes</code>)</td></tr>
+        <tr><td><code>D in last row = total of D</code></td><td>الصف الأخير يجمع العمود (وأيضًا <code>average of</code> و<code>highest</code> و<code>lowest</code>)</td></tr>
+      </tbody>
+    </table>
+    <p>لا حاجة لكتابتها: اضغط <b>ƒ</b> تحت الجدول واختر من القوائم.</p>
     <p>اكتب في خانة <b>Total</b> الأولى: <code>==B*C</code>، وفي خانة المجموع: <code>=SUM(D)</code>.</p>
     <h3>ملاحظات</h3>
     <ul>
@@ -52,6 +62,16 @@
       </tbody>
     </table>
     <h3>Example</h3>
+    <h3>Plain-words formulas</h3>
+    <table>
+      <tbody>
+        <tr><td><code>D = B * C</code></td><td>multiply two columns, row by row</td></tr>
+        <tr><td><code>D = change in C</code></td><td>this row minus the row above (0 on the first row)</td></tr>
+        <tr><td><code>C = days since previous B</code></td><td>dates like 2022-04-01 (also <code>hours</code>, <code>minutes</code>; or <code>days between B and C</code>)</td></tr>
+        <tr><td><code>D in last row = total of D</code></td><td>the bottom row adds the column up (also <code>average of</code>, <code>highest</code>, <code>lowest</code>, <code>count of</code>)</td></tr>
+      </tbody>
+    </table>
+    <p>No need to type any of it: press <b>ƒ</b> under the table and pick from the lists.</p>
     <p>In the first <b>Total</b> cell type <code>==B*C</code>, and in the bottom cell of that column type <code>=SUM(D)</code>.</p>
     <h3>Good to know</h3>
     <ul>

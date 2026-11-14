@@ -59,6 +59,11 @@ const ARITY: Record<string, [number, number]> = {
   OR: [1, Infinity],
   NOT: [1, 1],
   ROW: [0, 0],
+  PREV: [1, 1],
+  CHANGE: [1, 1],
+  DAYS: [2, 2],
+  HOURS: [2, 2],
+  MINUTES: [2, 2],
 };
 
 export const FUNCTION_NAMES: string[] = Object.keys(ARITY);
@@ -274,7 +279,7 @@ class Parser {
       case 'br':
         return { t: 'col', col: null, name: t.v };
       case 'id':
-        return this.identifier(t.v);
+        return this.phrase(t.v) ?? this.identifier(t.v);
       case 'op':
         if (t.v === '(') {
           const inner = this.expr(0);
@@ -285,6 +290,72 @@ class Parser {
       default:
         throw new FormulaSyntaxError('The formula ended too early');
     }
+  }
+
+  private word(w: string): boolean {
+    const t = this.peek();
+    return t.k === 'id' && t.v.toLowerCase() === w;
+  }
+
+  private skipWords(...ws: string[]): void {
+    while (ws.some((w) => this.word(w))) this.next();
+  }
+
+  /** The column a plain-words phrase talks about: [Header] or a column letter. */
+  private operand(what: string): Node {
+    this.skipWords('of', 'in', 'the');
+    const t = this.peek();
+    if (t.k === 'br' || t.k === 'id' || (t.k === 'op' && t.v === '(')) return this.primary();
+    throw new FormulaSyntaxError(`"${what}" needs a column after it, like ${what} [Price]`);
+  }
+
+  /**
+   * Plain-words formulas. They read like a sentence:
+   *   previous [Meter]            the value one row above
+   *   change in [Meter]           this row minus the row above (0 on the first row)
+   *   total of [Price]            also: average of, highest, lowest, count of
+   *   days between [A] and [B]    also: hours between, minutes between
+   *   days since previous [Date]  shorthand for days between previous [Date] and [Date]
+   */
+  private phrase(raw: string): Node | null {
+    if (this.peekOp('(')) return null; // a normal function call, like SUM(D)
+    const w = raw.toLowerCase();
+    const agg: Record<string, string> = {
+      total: 'SUM',
+      sum: 'SUM',
+      average: 'AVG',
+      highest: 'MAX',
+      maximum: 'MAX',
+      biggest: 'MAX',
+      lowest: 'MIN',
+      minimum: 'MIN',
+      smallest: 'MIN',
+      count: 'COUNT',
+    };
+    if (w === 'previous' || w === 'above') {
+      return { t: 'call', name: 'PREV', args: [this.operand(w)] };
+    }
+    if (w === 'change') {
+      return { t: 'call', name: 'CHANGE', args: [this.operand('change in')] };
+    }
+    if (agg[w] !== undefined && (this.word('of') || this.peek().k === 'br')) {
+      return { t: 'call', name: agg[w]!, args: [this.operand(w)] };
+    }
+    if ((w === 'days' || w === 'hours' || w === 'minutes') && (this.word('between') || this.word('since'))) {
+      const name = w.toUpperCase();
+      const since = this.word('since');
+      this.next();
+      const a = this.operand(w);
+      if (since) {
+        // "days since previous [Date]" -> from the earlier date up to this row's date
+        const col = a.t === 'call' && a.name === 'PREV' ? a.args[0]! : a;
+        return { t: 'call', name, args: [a, col] };
+      }
+      this.skipWords('and');
+      const b = this.operand(w);
+      return { t: 'call', name, args: [a, b] };
+    }
+    return null;
   }
 
   private identifier(raw: string): Node {

@@ -132,7 +132,7 @@ function computeTable(doc: Doc, t: TableInfo, diagnostics: Diagnostic[]): void {
   const block = t.block!;
   const cells = gridOf(doc.lines, t);
   const names = nameMap(cells[0]!);
-  const program = parseProgram(block.bodyLines, block.start + 1, names, t.ncols);
+  const program = parseProgram(block.bodyLines, block.start + 1, names, t.ncols, cells.length);
   diagnostics.push(...program.diagnostics);
 
   const ev = new Evaluator(cells, t.ncols, program.rules, names);

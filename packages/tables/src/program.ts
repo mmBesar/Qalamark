@@ -51,11 +51,20 @@ export interface RawTarget {
   col: number | null;
   name: string | null;
   row: number | null;
+  last?: boolean; // "... in last row"
   rest: string;
 }
 
 /** Read "D", "D5" or "[Header]" from the start of a statement. */
 export function readTarget(text: string): RawTarget | null {
+  const t = readTargetBase(text);
+  if (!t) return null;
+  const m = /^\s+in\s+(?:the\s+)?(?:last|total)\s+row\b/i.exec(t.rest);
+  if (m) return { ...t, last: true, rest: t.rest.slice(m[0].length) };
+  return t;
+}
+
+function readTargetBase(text: string): RawTarget | null {
   if (text.startsWith('[')) {
     const j = text.indexOf(']');
     if (j < 0) return null;
@@ -75,6 +84,7 @@ function resolveTarget(
   t: RawTarget,
   names: Map<string, number>,
   ncols: number,
+  nrows = 0,
 ): { col: number; row: number | null } | string {
   let col = t.col;
   if (col === null) {
@@ -86,6 +96,10 @@ function resolveTarget(
     return t.name === null
       ? `The table has only ${ncols} column(s). To use a column's header name, put it in brackets, like [Total]`
       : `The table has only ${ncols} column(s)`;
+  }
+  if (t.last) {
+    if (nrows < 2) return 'The table has no rows yet';
+    return { col, row: nrows };
   }
   if (t.row !== null && t.row < 2) return 'Row 1 is the header row, formulas start at row 2';
   return { col, row: t.row };
@@ -100,7 +114,7 @@ export function statementTarget(
   const t = stmt.trim();
   if (/^format\s/i.test(t)) return null;
   const raw = readTarget(t);
-  if (!raw) return null;
+  if (!raw || raw.last) return null;
   const res = resolveTarget(raw, names, ncols);
   return typeof res === 'string' ? null : res;
 }
@@ -114,6 +128,7 @@ export function parseProgram(
   firstLine: number,
   names: Map<string, number>,
   ncols: number,
+  nrows = 0,
 ): Program {
   const rules: Rule[] = [];
   const formats: FormatRule[] = [];
@@ -137,7 +152,7 @@ export function parseProgram(
         diagnostics.push({ line: lineNo, message: `Expected "=" after the target in "${st}"` });
         continue;
       }
-      const target = resolveTarget(raw, names, ncols);
+      const target = resolveTarget(raw, names, ncols, nrows);
       if (typeof target === 'string') {
         diagnostics.push({ line: lineNo, message: `"${st}": ${target}` });
         continue;

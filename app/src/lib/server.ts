@@ -119,6 +119,21 @@ export class Api {
   addUser(username: string, password: string, admin = false) {
     return this.call<void>('POST', '/api/users', { username, password, admin });
   }
+  listUsers() {
+    return this.call<Array<{ username: string; admin: boolean }>>('GET', '/api/users');
+  }
+  updateUser(name: string, patch: { password?: string; admin?: boolean }) {
+    return this.call<void>('PATCH', `/api/users/${encodeURIComponent(name)}`, patch);
+  }
+  deleteUser(name: string) {
+    return this.call<void>('DELETE', `/api/users/${encodeURIComponent(name)}`);
+  }
+  getAdminSettings() {
+    return this.call<{ signup: boolean }>('GET', '/api/admin/settings');
+  }
+  setSignup(signup: boolean) {
+    return this.call<{ signup: boolean }>('PUT', '/api/admin/settings', { signup });
+  }
   changePassword(oldPw: string, newPw: string) {
     return this.call<void>('POST', '/api/password', { old: oldPw, new: newPw });
   }

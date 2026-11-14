@@ -60,6 +60,7 @@
     formulasHelp: t('formulasHelp'),
     editSource: t('editSource'),
     help: t('help'),
+    lang: store.lang,
   };
 
   let timer: ReturnType<typeof setTimeout> | undefined;

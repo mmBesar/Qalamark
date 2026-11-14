@@ -134,3 +134,21 @@ export function formatNumber(n: number, pattern?: string): string {
   const fmt = pattern === undefined ? null : parseFormat(pattern);
   return fmt ? formatWith(fmt, n) : formatDefault(n);
 }
+
+/**
+ * Read a date from cell text: 2022-04-01, 2022-04-01 14:30 or 2022/04/01.
+ * Returns milliseconds (treated as UTC so daylight saving never skews a count),
+ * or null when the text is not a date.
+ */
+export function parseDate(input: string): number | null {
+  const s = normalizeDigits(input).replace(/[*_`~]/g, '').trim();
+  const m = /^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})(?:[ T](\d{1,2}):(\d{2})(?::(\d{2}))?)?$/.exec(s);
+  if (!m) return null;
+  const [y, mo, d] = [Number(m[1]), Number(m[2]), Number(m[3])];
+  const h = Number(m[4] ?? 0);
+  const mi = Number(m[5] ?? 0);
+  const se = Number(m[6] ?? 0);
+  if (mo < 1 || mo > 12 || d < 1 || d > 31 || h > 23 || mi > 59 || se > 59) return null;
+  const t = Date.UTC(y, mo - 1, d, h, mi, se);
+  return new Date(t).getUTCDate() === d ? t : null; // refuses 2022-02-31
+}

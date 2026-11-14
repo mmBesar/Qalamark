@@ -154,3 +154,18 @@ Tools also get a message with the line number, for example
 - Date and text functions
 - Dragging a formula to fill cells (use a column formula instead)
 - Output with Arabic-Indic digits
+
+## Plain-words formulas (optional)
+
+Normal spreadsheet formulas (`D = B * C`, `D5 = SUM(D)`) always work. These words are an extra, for people who prefer to read a sentence. They use column letters, so nothing depends on header names (header names in `[brackets]` still work if you like them).
+
+| Write | Meaning |
+|---|---|
+| `D = change in C` | this row minus the row above (0 on the first row) |
+| `D = previous C` | the value one row above |
+| `D = days since previous B` | days between the dates in the row above and this row (`hours`, `minutes` too) |
+| `D = days between B and C` | days between two date columns (dates like `2022-04-01` or `2022-04-01 14:30`) |
+| `D in last row = total of D` | the bottom row adds the column up; stays at the bottom when rows are added |
+| `average of D`, `highest D`, `lowest D`, `count of D` | other column summaries |
+
+Press **ƒ** under a table to build these by picking from lists.

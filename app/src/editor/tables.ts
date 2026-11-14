@@ -19,6 +19,7 @@ export interface TableLabels {
   formulasHelp: string;
   editSource: string;
   help: string;
+  lang?: 'en' | 'ar';
 }
 
 /** Change only what differs, so other people's edits in the same note are not disturbed. */
@@ -33,6 +34,76 @@ export function applyDiff(view: EditorView, oldText: string, newText: string): v
     changes: { from: pre, to: oldText.length - suf, insert: newText.slice(pre, newText.length - suf) },
     userEvent: 'input.table',
   });
+}
+
+
+const FX = {
+  en: {
+    title: 'Add a formula',
+    fill: 'Fill column',
+    using: 'using',
+    and: 'and',
+    add: 'Add',
+    kinds: {
+      mul: 'Multiply',
+      sub: 'Subtract',
+      add: 'Add up',
+      div: 'Divide',
+      change: 'Change since the row above',
+      days: 'Days since the row above',
+      hours: 'Hours since the row above',
+      total: 'Total of the column (last row)',
+      avg: 'Average of the column (last row)',
+    },
+  },
+  ar: {
+    title: 'أضف معادلة',
+    fill: 'املأ العمود',
+    using: 'باستخدام',
+    and: 'و',
+    add: 'أضف',
+    kinds: {
+      mul: 'اضرب',
+      sub: 'اطرح',
+      add: 'اجمع',
+      div: 'اقسم',
+      change: 'الفرق عن الصف السابق',
+      days: 'الأيام منذ الصف السابق',
+      hours: 'الساعات منذ الصف السابق',
+      total: 'إجمالي العمود (الصف الأخير)',
+      avg: 'متوسط العمود (الصف الأخير)',
+    },
+  },
+} as const;
+
+type FxKind = keyof (typeof FX)['en']['kinds'];
+const FX_NEEDS: Record<FxKind, 0 | 1 | 2> = { mul: 2, sub: 2, add: 2, div: 2, change: 1, days: 1, hours: 1, total: 0, avg: 0 };
+
+/** The readable formula line for a choice made in the builder. */
+function fxLine(kind: FxKind, target: string, a: string, b: string): string {
+  const T = target;
+  const A = a;
+  const B = b;
+  switch (kind) {
+    case 'mul':
+      return `${T} = ${A} * ${B}`;
+    case 'sub':
+      return `${T} = ${A} - ${B}`;
+    case 'add':
+      return `${T} = ${A} + ${B}`;
+    case 'div':
+      return `${T} = ${A} / ${B}`;
+    case 'change':
+      return `${T} = change in ${A}`;
+    case 'days':
+      return `${T} = days since previous ${A}`;
+    case 'hours':
+      return `${T} = hours since previous ${A}`;
+    case 'total':
+      return `${T} in last row = total of ${T}`;
+    case 'avg':
+      return `${T} in last row = average of ${T}`;
+  }
 }
 
 const history = (key: string) => yUndoManagerKeymap.find((b) => b.key === key)?.run;
@@ -210,7 +281,52 @@ class TableWidget extends WidgetType {
       el('span', 'qt-formulas-title', 'ƒ ' + labels.formulas),
       button(labels.help, '?', 'qt-btn', () => root.dispatchEvent(new CustomEvent('qalamark-help', { bubbles: true }))),
     );
-    box.append(head, area);
+    // ---- the formula builder: pick words from lists, no typing needed ----
+    const fx = FX[labels.lang ?? 'en'];
+    const letter = (i: number) => {
+      let s = '';
+      for (let n = i + 1; n > 0; n = Math.floor((n - 1) / 26)) s = String.fromCharCode(65 + ((n - 1) % 26)) + s;
+      return s;
+    };
+    const heads = (v.rows[0] ?? []).map((h) => unescape(h).replace(/[*_`]/g, '').trim());
+    const names = heads.map((_, i) => letter(i)); // formulas use column letters, not header names
+    const builder = el('div', 'qt-builder');
+    if (!readOnly && names.length > 0) {
+      const select = (opts: string[]) => {
+        const s = el('select', 'qt-select');
+        opts.forEach((o, i) => s.append(new Option(heads[i] ? `${o} · ${heads[i]}` : o, o)));
+        return s;
+      };
+      const kindSel = el('select', 'qt-select');
+      for (const k of Object.keys(fx.kinds) as FxKind[]) kindSel.append(new Option(fx.kinds[k], k));
+      const target = select(names);
+      const selA = select(names);
+      const selB = select(names);
+      selB.selectedIndex = Math.min(1, names.length - 1);
+      const preview = el('code', 'qt-preview');
+      const refresh = () => {
+        const k = kindSel.value as FxKind;
+        const need = FX_NEEDS[k];
+        selA.hidden = need < 1;
+        selB.hidden = need < 2;
+        usingLbl.hidden = need < 1;
+        andLbl.hidden = need < 2;
+        preview.textContent = fxLine(k, target.value, selA.value, selB.value);
+      };
+      const usingLbl = el('span', 'qt-lbl', fx.using);
+      const andLbl = el('span', 'qt-lbl', fx.and);
+      for (const s of [kindSel, target, selA, selB]) s.addEventListener('change', refresh);
+      const addBtn = button(fx.add, '＋ ' + fx.add, 'qt-btn qt-add', () => {
+        const line = preview.textContent ?? '';
+        const text = (v.formulaText.join('\n') + '\n' + line).trim();
+        run(setFormulas(mdNow(), index, text));
+      });
+      const row1 = el('div', 'qt-builder-row');
+      row1.append(el('span', 'qt-lbl', fx.title), kindSel, el('span', 'qt-lbl', fx.fill), target, usingLbl, selA, andLbl, selB, addBtn);
+      builder.append(row1, preview);
+      refresh();
+    }
+    box.append(head, builder, area);
     for (const p of v.problems) box.append(el('div', 'qt-problem', p));
 
     // Do an operation, then put the cursor back in a sensible cell.

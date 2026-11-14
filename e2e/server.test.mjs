@@ -190,3 +190,37 @@ test('backlinks: notes that link to a note with [[Title]]', async () => {
   assert.deepEqual(r.body.map((b) => b.title), ['Linker']);
   assert.equal((await api('GET', `/api/notes/${target.id}/backlinks`, bob)).status, 404);
 });
+
+test('admin: sign-up switch, password reset, make admin, delete user', async () => {
+  // The switch: closed by default, open when the admin says so, and closed again.
+  assert.equal((await api('PUT', '/api/admin/settings', bob, { signup: true })).status, 403);
+  assert.equal((await api('PUT', '/api/admin/settings', alice, { signup: true })).status, 200);
+  assert.equal((await api('GET', '/api/status')).body.signup, true);
+  const dave = await api('POST', '/api/register', null, { username: 'dave', password: 'daves-password' });
+  assert.equal(dave.status, 200);
+  assert.equal(dave.body.admin, false);
+  await api('PUT', '/api/admin/settings', alice, { signup: false });
+  assert.equal((await api('POST', '/api/register', null, { username: 'erin', password: 'erins-password' })).status, 403);
+
+  // Reset a password: the old one stops working and old sessions end.
+  assert.equal((await api('PATCH', '/api/users/dave', bob, { password: 'new-password-1' })).status, 403);
+  assert.equal((await api('PATCH', '/api/users/dave', alice, { password: 'new-password-1' })).status, 200);
+  assert.equal((await api('GET', '/api/me', dave.body.token)).status, 401);
+  assert.equal((await api('POST', '/api/login', null, { username: 'dave', password: 'daves-password' })).status, 401);
+  assert.equal((await api('POST', '/api/login', null, { username: 'dave', password: 'new-password-1' })).status, 200);
+
+  // Admin rights; the last admin cannot be removed or demoted.
+  assert.equal((await api('PATCH', '/api/users/alice', alice, { admin: false })).status, 409);
+  assert.equal((await api('PATCH', '/api/users/dave', alice, { admin: true })).status, 200);
+  assert.equal((await api('PATCH', '/api/users/dave', alice, { admin: false })).status, 200);
+  assert.equal((await api('DELETE', '/api/users/alice', alice)).status, 409);
+
+  // Deleting a user keeps their notes in the trash.
+  const dtoken = (await api('POST', '/api/login', null, { username: 'dave', password: 'new-password-1' })).body.token;
+  await api('POST', '/api/notes', dtoken, { title: 'Dave note', content: 'keep me' });
+  assert.equal((await api('DELETE', '/api/users/dave', bob)).status, 403);
+  assert.equal((await api('DELETE', '/api/users/dave', alice)).status, 200);
+  assert.equal((await api('POST', '/api/login', null, { username: 'dave', password: 'new-password-1' })).status, 401);
+  assert.ok(readdirSync(join(data, 'trash')).some((f) => f.includes('user-dave')));
+  assert.deepEqual((await api('GET', '/api/users', alice)).body.map((u) => u.username).sort(), ['alice', 'bob', 'carol']);
+});

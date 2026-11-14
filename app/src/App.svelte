@@ -16,6 +16,22 @@
   });
 
   const t = store.t;
+
+  // Drag the edge of the sidebar to change its width (double-click resets it).
+  let dragging = $state(false);
+  function startDrag(e: PointerEvent) {
+    dragging = true;
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+  }
+  function moveDrag(e: PointerEvent) {
+    if (!dragging) return;
+    const rtl = document.documentElement.dir === 'rtl';
+    const w = rtl ? window.innerWidth - e.clientX : e.clientX;
+    store.setLayout({ sideWidth: Math.round(Math.min(560, Math.max(200, w))) });
+  }
+  function endDrag() {
+    dragging = false;
+  }
 </script>
 
 {#if store.mode === 'boot'}
@@ -25,6 +41,18 @@
 {:else}
   <div class="shell" class:drawer-open={drawer}>
     <Sidebar onSettings={() => (settings = true)} onPick={() => (drawer = false)} />
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
+    <button
+      class="resizer"
+      class:drag={dragging}
+      aria-label="Resize"
+      tabindex="-1"
+      onpointerdown={startDrag}
+      onpointermove={moveDrag}
+      onpointerup={endDrag}
+      onpointercancel={endDrag}
+      ondblclick={() => store.setLayout({ sideWidth: 304 })}
+    ></button>
     <button class="scrim" aria-label={t('close')} onclick={() => (drawer = false)}></button>
     <main>
       {#if store.current}

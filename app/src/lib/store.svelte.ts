@@ -41,6 +41,12 @@ interface Settings {
   username: string;
   admin: boolean;
   wantsLocal: boolean;
+  fontSize: number; // px
+  editorWidth: number; // rem, 0 = the whole window
+  fontEn: string;
+  fontAr: string;
+  fontCode: string;
+  sideWidth: number; // px
 }
 
 function defaultLang(): Lang {
@@ -48,7 +54,7 @@ function defaultLang(): Lang {
 }
 
 class Store {
-  s = $state<Settings>({ lang: 'en', theme: 'auto', accent: 'default', serverUrl: '', token: '', username: '', admin: false, wantsLocal: false, ...read<Partial<Settings>>(SETTINGS, { lang: defaultLang() }) });
+  s = $state<Settings>({ lang: 'en', theme: 'auto', accent: 'default', serverUrl: '', token: '', username: '', admin: false, wantsLocal: false, fontSize: 17, editorWidth: 50, fontEn: '', fontAr: '', fontCode: '', sideWidth: 304, ...read<Partial<Settings>>(SETTINGS, { lang: defaultLang() }) });
   mode = $state<Mode>('boot');
   serverReachable = $state(false);
   setupNeeded = $state(false);
@@ -80,12 +86,42 @@ class Store {
     const legacy: Record<string, Theme> = { light: 'paper', dark: 'mocha' };
     if (legacy[this.s.theme as string]) this.s.theme = legacy[this.s.theme as string]!;
     applyTheme(this.s.theme, this.s.accent);
+    this.applyLayout();
     if (!this.watching) {
       this.watching = true;
       window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => applyTheme(this.s.theme, this.s.accent));
     }
   }
   private watching = false;
+
+  /** Fonts, text size, editor width and sidebar width, as CSS variables. */
+  applyLayout() {
+    const css = document.documentElement.style;
+    const q = (name: string) => `'${name.replace(/['"\\]/g, '')}'`;
+    const en = [this.s.fontEn.trim() ? q(this.s.fontEn.trim()) : '', 'Roboto'].filter(Boolean).join(', ');
+    const ar = [this.s.fontAr.trim() ? q(this.s.fontAr.trim()) : '', "'Noto Naskh Arabic UI'", "'Noto Naskh Arabic'"].filter(Boolean).join(', ');
+    const code = [
+      this.s.fontCode.trim() ? q(this.s.fontCode.trim()) : '',
+      "'JetBrainsMono Nerd Font Mono'",
+      "'JetBrainsMono NFM'",
+      "'JetBrains Mono'",
+      'ui-monospace',
+      'Consolas',
+      'monospace',
+    ]
+      .filter(Boolean)
+      .join(', ');
+    css.setProperty('--ui', `${en}, ${ar}, system-ui, sans-serif`);
+    css.setProperty('--mono', code);
+    css.setProperty('--font-size', `${this.s.fontSize}px`);
+    css.setProperty('--editor-w', this.s.editorWidth > 0 ? `${this.s.editorWidth}rem` : '100%');
+    css.setProperty('--side-w', `${this.s.sideWidth}px`);
+  }
+  setLayout(patch: Partial<Pick<Settings, 'fontSize' | 'editorWidth' | 'fontEn' | 'fontAr' | 'fontCode' | 'sideWidth'>>) {
+    Object.assign(this.s, patch);
+    this.save();
+    this.applyLayout();
+  }
 
   setLang(l: Lang) {
     this.s.lang = l;

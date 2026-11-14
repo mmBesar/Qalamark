@@ -5,6 +5,8 @@
 // The marks (# ** [] etc.) fade away except where the cursor is.
 // Nothing here changes the text itself - only how it is drawn.
 
+import { readFrontMatter } from '../lib/frontmatter.ts';
+import { scanBlocks } from './mkdocs.ts';
 import { syntaxTree } from '@codemirror/language';
 import { Facet, type EditorState, type Range } from '@codemirror/state';
 import type { SyntaxNode } from '@lezer/common';
@@ -41,12 +43,14 @@ class CheckWidget extends WidgetType {
   ) {
     super();
   }
+  // A plain <span>, not a real <input>: browsers cannot drag-select across a form control,
+  // and double-click picks the wrong line next to one.
   toDOM(view: EditorView) {
-    const box = document.createElement('input');
-    box.type = 'checkbox';
-    box.className = 'cm-task';
-    box.checked = this.checked;
-    box.disabled = view.state.readOnly;
+    const box = document.createElement('span');
+    box.className = 'cm-task' + (this.checked ? ' cm-task-checked' : '');
+    box.setAttribute('role', 'checkbox');
+    box.setAttribute('aria-checked', String(this.checked));
+    box.contentEditable = 'false';
     box.addEventListener('mousedown', (e) => e.preventDefault());
     box.addEventListener('click', (e) => {
       e.preventDefault();
@@ -146,6 +150,14 @@ function build(view: EditorView): DecorationSet {
     if (to > from) out.push(hide.range(from, to));
   };
 
+  const blocks = scanBlocks(state.doc);
+  // The properties block at the top is shown as a plain, quiet block of text.
+  const fm = state.doc.lines > 1 && state.doc.line(1).text.trim() === '---' ? readFrontMatter(state.sliceDoc(0, 4000)) : null;
+  const fmEnd = fm ? fm.end : 0;
+  if (fm) {
+    const last = state.doc.lineAt(Math.max(0, fmEnd - 1)).number;
+    for (let p = 1; p <= last; p++) line(state.doc.line(p).from, 'cm-frontmatter');
+  }
   const calloutHeads = new Set<number>(); // lines already replaced by a callout label
   for (const { from, to } of view.visibleRanges) {
     syntaxTree(state).iterate({
@@ -153,6 +165,7 @@ function build(view: EditorView): DecorationSet {
       to,
       enter: (n) => {
         const name = n.name;
+        if (fmEnd > 0 && name !== 'Document' && n.from < fmEnd) return false;
         const heading = /^ATXHeading([1-6])$/.exec(name) ?? /^SetextHeading([12])$/.exec(name);
         if (heading) {
           for (let p = state.doc.lineAt(n.from).number; p <= state.doc.lineAt(n.to).number; p++) {
@@ -197,6 +210,7 @@ function build(view: EditorView): DecorationSet {
           case 'FencedCode':
           case 'CodeBlock': {
             const first = state.doc.lineAt(n.from).number;
+            if (blocks.get(first)?.role === 'body') return false; // text inside a !!! admonition or === tab
             const last = state.doc.lineAt(n.to).number;
             for (let p = first; p <= last; p++) {
               const cls = ['cm-codeblock', p === first ? 'cm-code-first' : '', p === last ? 'cm-code-last' : ''];
@@ -240,6 +254,12 @@ function build(view: EditorView): DecorationSet {
           case 'TaskMarker': {
             const checked = /x/i.test(state.sliceDoc(n.from, n.to));
             out.push(Decoration.replace({ widget: new CheckWidget(checked, n.from) }).range(n.from, n.to));
+            if (checked) {
+              // strike the text after the box, not the bullet or the space before it
+              const l = state.doc.lineAt(n.from);
+              const start = n.to + (state.sliceDoc(n.to, n.to + 1) === ' ' ? 1 : 0);
+              if (start < l.to) mark(start, l.to, 'cm-task-done');
+            }
             break;
           }
           case 'HorizontalRule':

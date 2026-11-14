@@ -6,6 +6,7 @@
 // on a Qalamark server ("server").
 
 import { translate, type Key, type Lang } from './i18n.ts';
+import { BUILT_IN, fill, TEMPLATES_FOLDER } from './templates.ts';
 import { Api, ApiError, cleanBase, type NoteMeta } from './server.ts';
 import { type Accent, applyTheme, type ThemeId } from './theme.ts';
 import { deleteStored, readStoredText, writeStoredText } from './session.ts';
@@ -15,6 +16,7 @@ export type Theme = ThemeId;
 
 const SETTINGS = 'qm.settings';
 const LOCAL_NOTES = 'qm.local.notes';
+const LOCAL_FOLDERS = 'qm.local.folders';
 
 function read<T>(key: string, fallback: T): T {
   try {
@@ -47,6 +49,9 @@ interface Settings {
   fontAr: string;
   fontCode: string;
   sideWidth: number; // px
+  sourceSize: number; // px, source mode
+  fontSource: string;
+  centerPage: boolean;
 }
 
 function defaultLang(): Lang {
@@ -54,12 +59,14 @@ function defaultLang(): Lang {
 }
 
 class Store {
-  s = $state<Settings>({ lang: 'en', theme: 'auto', accent: 'default', serverUrl: '', token: '', username: '', admin: false, wantsLocal: false, fontSize: 17, editorWidth: 50, fontEn: '', fontAr: '', fontCode: '', sideWidth: 304, ...read<Partial<Settings>>(SETTINGS, { lang: defaultLang() }) });
+  s = $state<Settings>({ lang: 'en', theme: 'auto', accent: 'default', serverUrl: '', token: '', username: '', admin: false, wantsLocal: false, fontSize: 17, editorWidth: 50, fontEn: '', fontAr: '', fontCode: '', sideWidth: 304, sourceSize: 15, fontSource: '', centerPage: false, ...read<Partial<Settings>>(SETTINGS, { lang: defaultLang() }) });
   mode = $state<Mode>('boot');
   serverReachable = $state(false);
   setupNeeded = $state(false);
   signupOpen = $state(false);
   notes = $state<NoteMeta[]>([]);
+  /** Folders that exist (also the empty ones). */
+  folders = $state<string[]>([]);
   currentId = $state<string | null>(null);
   message = $state('');
   api = new Api();
@@ -94,6 +101,9 @@ class Store {
   }
   private watching = false;
 
+  /** Names of fonts the user added. */
+  userFonts = $state<string[]>([]);
+
   /** Fonts, text size, editor width and sidebar width, as CSS variables. */
   applyLayout() {
     const css = document.documentElement.style;
@@ -116,8 +126,12 @@ class Store {
     css.setProperty('--font-size', `${this.s.fontSize}px`);
     css.setProperty('--editor-w', this.s.editorWidth > 0 ? `${this.s.editorWidth}rem` : '100%');
     css.setProperty('--side-w', `${this.s.sideWidth}px`);
+    css.setProperty('--source-size', `${this.s.sourceSize}px`);
+    if (this.s.fontSource.trim()) css.setProperty('--source-font', `${q(this.s.fontSource.trim())}, ${code}`);
+    else css.removeProperty('--source-font');
+    document.documentElement.dataset.page = this.s.centerPage ? 'center' : 'side';
   }
-  setLayout(patch: Partial<Pick<Settings, 'fontSize' | 'editorWidth' | 'fontEn' | 'fontAr' | 'fontCode' | 'sideWidth'>>) {
+  setLayout(patch: Partial<Pick<Settings, 'fontSize' | 'editorWidth' | 'fontEn' | 'fontAr' | 'fontCode' | 'sideWidth' | 'sourceSize' | 'fontSource' | 'centerPage'>>) {
     Object.assign(this.s, patch);
     this.save();
     this.applyLayout();
@@ -171,6 +185,7 @@ class Store {
     this.save();
     this.mode = 'local';
     this.notes = read<NoteMeta[]>(LOCAL_NOTES, []);
+    this.folders = read<string[]>(LOCAL_FOLDERS, []);
     this.currentId = this.notes[0]?.id ?? null;
   }
 
@@ -229,10 +244,13 @@ class Store {
 
   async loadServerNotes() {
     this.notes = read<NoteMeta[]>(this.cacheKey(), []);
+    this.folders = read<string[]>(this.cacheKey() + '.f', []);
     try {
       this.notes = await this.api.notes();
+      this.folders = await this.api.folders().catch(() => read<string[]>(this.cacheKey() + '.f', []));
       this.serverReachable = true;
       write(this.cacheKey(), this.notes);
+      write(this.cacheKey() + '.f', this.folders);
     } catch (e) {
       if (e instanceof ApiError && e.status === 401) {
         await this.signOut();
@@ -252,17 +270,17 @@ class Store {
     return this.mode === 'server' ? `srv:${this.api.base}:${id}` : `local:${id}`;
   }
 
-  async createNote(title = '', content = ''): Promise<string> {
+  async createNote(title = '', content = '', folder = ''): Promise<string> {
     const name = title.trim() || this.t('untitled');
     if (this.mode === 'server') {
-      const n = await this.api.createNote(name, content);
+      const n = await this.api.createNote(name, content, folder);
       this.notes = [n, ...this.notes];
       write(this.cacheKey(), this.notes);
       this.currentId = n.id;
       return n.id;
     }
     const id = crypto.randomUUID();
-    const n: NoteMeta = { id, title: this.uniqueLocalTitle(name), owner: '', role: 'owner', updated: Math.floor(Date.now() / 1000) };
+    const n: NoteMeta = { id, title: this.uniqueLocalTitle(name, folder), folder, owner: '', role: 'owner', updated: Math.floor(Date.now() / 1000) };
     if (content) await writeStoredText(`local:${id}`, content);
     this.notes = [n, ...this.notes];
     this.saveLocalList();
@@ -270,10 +288,15 @@ class Store {
     return id;
   }
 
-  private uniqueLocalTitle(title: string): string {
-    const used = new Set(this.notes.map((n) => n.title));
+  private uniqueLocalTitle(title: string, folder = ''): string {
+    const used = new Set(this.notes.filter((n) => (n.folder ?? '') === folder).map((n) => n.title));
     if (!used.has(title)) return title;
     for (let i = 2; ; i++) if (!used.has(`${title} ${i}`)) return `${title} ${i}`;
+  }
+
+  /** Show a note under its title: property (the file keeps its name). */
+  setDisplay(id: string, display: string) {
+    this.notes = this.notes.map((x) => (x.id === id && (x.display ?? '') !== display ? { ...x, display } : x));
   }
 
   async renameNote(id: string, title: string) {
@@ -288,6 +311,103 @@ class Store {
       this.notes = this.notes.map((x) => (x.id === id ? { ...x, title: name } : x));
       this.saveLocalList();
     }
+  }
+
+  /** The user's own templates: notes in the Templates folder. */
+  get templates(): NoteMeta[] {
+    return this.notes.filter((n) => (n.role === 'owner' || this.mode !== 'server') && (n.folder ?? '') === TEMPLATES_FOLDER);
+  }
+
+  /** Make a note from a ready-made template (`builtin:<id>`) or from one of your own (`note:<id>`). */
+  async newFromTemplate(source: string, folder = ''): Promise<string> {
+    let title: string;
+    let body: string;
+    if (source.startsWith('builtin:')) {
+      const b = BUILT_IN.find((x) => x.id === source.slice(8));
+      if (!b) throw new Error('Unknown template');
+      title = fill(b.title, '', new Date(), this.s.lang);
+      body = fill(b.body[this.s.lang], title, new Date(), this.s.lang);
+    } else {
+      const id = source.slice(5);
+      const n = this.notes.find((x) => x.id === id);
+      if (!n) throw new Error('Unknown template');
+      title = fill(this.t('untitled'), '', new Date(), this.s.lang);
+      body = fill(await this.exportText(id), title, new Date(), this.s.lang);
+    }
+    return this.createNote(title, body, folder);
+  }
+
+  /** Keep a copy of a note in the Templates folder. */
+  async saveAsTemplate(id: string, liveText?: string) {
+    const n = this.notes.find((x) => x.id === id);
+    if (!n) return;
+    const text = await this.exportText(id, liveText);
+    const keep = this.currentId;
+    await this.createNote(n.title, text, TEMPLATES_FOLDER);
+    this.currentId = keep; // stay on the note you were reading
+    await this.createFolder(TEMPLATES_FOLDER).catch(() => {});
+  }
+
+  private saveFolders() {
+    if (this.mode === 'server') write(this.cacheKey() + '.f', this.folders);
+    else write(LOCAL_FOLDERS, this.folders);
+  }
+
+  /** "a/b/c" -> ["a", "a/b", "a/b/c"] */
+  private withParents(path: string): string[] {
+    const parts = path.split('/').filter(Boolean);
+    return parts.map((_, i) => parts.slice(0, i + 1).join('/'));
+  }
+
+  async createFolder(path: string) {
+    const clean = path.split('/').map((p) => p.trim()).filter(Boolean).join('/');
+    if (!clean) return;
+    let made = clean;
+    if (this.mode === 'server') made = (await this.api.createFolder(clean)).path;
+    const set = new Set([...this.folders, ...this.withParents(made)]);
+    this.folders = [...set].sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
+    this.saveFolders();
+  }
+
+  async renameFolder(from: string, to: string) {
+    const dest = to.split('/').map((p) => p.trim()).filter(Boolean).join('/');
+    if (!dest || dest === from) return;
+    if (this.mode === 'server') await this.api.moveFolder(from, dest);
+    const re = (p: string) => (p === from ? dest : p.startsWith(from + '/') ? dest + p.slice(from.length) : p);
+    this.folders = [...new Set([...this.folders.map(re), ...this.withParents(dest)])].sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
+    this.notes = this.notes.map((n) => (n.role === 'owner' ? { ...n, folder: re(n.folder ?? '') } : n));
+    this.saveFolders();
+    this.mode === 'server' ? write(this.cacheKey(), this.notes) : this.saveLocalList();
+  }
+
+  async deleteFolder(path: string) {
+    if (this.notes.some((n) => n.role === 'owner' && ((n.folder ?? '') === path || (n.folder ?? '').startsWith(path + '/')))) {
+      throw new Error(this.t('folderNotEmpty'));
+    }
+    if (this.mode === 'server') await this.api.deleteFolder(path);
+    this.folders = this.folders.filter((f) => f !== path && !f.startsWith(path + '/'));
+    this.saveFolders();
+  }
+
+  async moveNote(id: string, folder: string) {
+    const note = this.notes.find((n) => n.id === id);
+    if (!note || (note.folder ?? '') === folder) return;
+    if (this.mode === 'server') {
+      const n = await this.api.moveNote(id, folder);
+      this.notes = this.notes.map((x) => (x.id === id ? { ...x, folder: n.folder, title: n.title } : x));
+      write(this.cacheKey(), this.notes);
+    } else {
+      this.notes = this.notes.map((x) => (x.id === id ? { ...x, folder, title: this.uniqueLocalTitle(x.title, folder) } : x));
+      this.saveLocalList();
+    }
+  }
+
+  /** A copy next to the original, called "<title> copy". */
+  async copyNote(id: string) {
+    const note = this.notes.find((n) => n.id === id);
+    if (!note) return;
+    const text = await this.exportText(id);
+    await this.createNote(`${note.title} ${this.t('copySuffix')}`, text, note.role === 'owner' ? (note.folder ?? '') : '');
   }
 
   async deleteNote(id: string) {

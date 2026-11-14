@@ -12,6 +12,8 @@
   let name = $state('');
   let role = $state<'edit' | 'view'>('edit');
   let error = $state('');
+  let people = $state<string[]>([]);
+  const choices = $derived(people.filter((p) => !shares.some((s) => s.username === p)));
 
   async function load() {
     try {
@@ -23,6 +25,11 @@
   onMount(() => {
     dlg.showModal();
     void load();
+    store.api.people().then((p) => (people = p)).catch(() => {});
+    // pick the first person who is not shared yet
+  });
+  $effect(() => {
+    if (!choices.includes(name)) name = choices[0] ?? '';
   });
 
   async function add(e: Event) {
@@ -44,7 +51,7 @@
 
 <dialog bind:this={dlg} onclose={onClose}>
   <form method="dialog" class="dialog-head">
-    <h2>👥 {t('share')} · {note.title}</h2>
+    <h2>👥 {t('share')} · {note.display || note.title}</h2>
     <button class="icon" aria-label={t('close')}>×</button>
   </form>
 
@@ -63,7 +70,13 @@
   </ul>
 
   <form class="row" onsubmit={add}>
-    <input bind:value={name} placeholder={t('username')} required autocapitalize="off" spellcheck="false" dir="ltr" />
+    {#if people.length > 0}
+      <select bind:value={name} aria-label={t('username')} dir="ltr" required>
+        {#each choices as p (p)}<option value={p}>{p}</option>{:else}<option value="" disabled>—</option>{/each}
+      </select>
+    {:else}
+      <input bind:value={name} placeholder={t('username')} required autocapitalize="off" spellcheck="false" dir="ltr" />
+    {/if}
     <select bind:value={role}>
       <option value="edit">{t('canEdit')}</option>
       <option value="view">{t('canView')}</option>

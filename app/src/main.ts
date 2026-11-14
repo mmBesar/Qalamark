@@ -6,12 +6,13 @@ import App from './App.svelte';
 import '@fontsource/roboto/400.css';
 import '@fontsource/roboto/400-italic.css';
 import '@fontsource/roboto/700.css';
-import '@fontsource/noto-naskh-arabic/400.css';
-import '@fontsource/noto-naskh-arabic/700.css';
-import '@fontsource/jetbrains-mono/400.css';
-import '@fontsource/jetbrains-mono/700.css';
+import './fonts/fonts.css';
 import './app.css';
 
+import { loadUserFonts } from './lib/fonts';
+import { store } from './lib/store.svelte';
+
+void loadUserFonts().then((names) => (store.userFonts = names));
 mount(App, { target: document.getElementById('app')! });
 
 // Let the app open without internet.

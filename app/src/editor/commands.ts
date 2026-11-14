@@ -93,3 +93,30 @@ export function insertTable(view: EditorView): boolean {
   view.focus();
   return true;
 }
+
+/** Put a block of text on its own lines at the cursor, with the cursor at `[[cursor]]`. */
+export function insertSnippet(view: EditorView, snippet: string): boolean {
+  const { state } = view;
+  const line = state.doc.lineAt(state.selection.main.head);
+  const empty = line.text.trim() === '';
+  const lead = empty ? '' : '\n\n';
+  const at = snippet.indexOf('[[cursor]]');
+  const text = snippet.replace('[[cursor]]', '');
+  const from = empty ? line.from : line.to;
+  view.dispatch({
+    changes: { from, to: empty ? line.to : from, insert: lead + text },
+    selection: { anchor: from + lead.length + (at < 0 ? text.length : at) },
+    userEvent: 'input.format',
+    scrollIntoView: true,
+  });
+  view.focus();
+  return true;
+}
+
+export const SNIPPETS = {
+  callout: '> [!note] Title\n> [[cursor]]\n',
+  admonition: '!!! note "Title"\n    [[cursor]]\n',
+  collapsible: '??? tip "Title"\n    [[cursor]]\n',
+  tabs: '=== "First"\n    [[cursor]]\n\n=== "Second"\n    \n',
+  codeTitle: '```py title="example.py"\n[[cursor]]\n```\n',
+} as const;

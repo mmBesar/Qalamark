@@ -18,6 +18,8 @@ import type { Awareness } from 'y-protocols/awareness';
 import type * as Y from 'yjs';
 import { cycleHeading, toggleWrap } from './commands.ts';
 import { autoCalc } from './autocalc.ts';
+import { codeTitles, mkdocsBlocks } from './mkdocs.ts';
+import { pictures, type ImageHooks } from './images.ts';
 import { livePreview, readingMode, wikiConfig } from './livepreview.ts';
 import { type TableLabels, tablesExtension } from './tables.ts';
 
@@ -57,6 +59,7 @@ export interface EditorOptions {
   titles: () => string[];
   openLink: (title: string) => void;
   onChange?: () => void;
+  images?: ImageHooks;
 }
 
 /** Cursors above or below every cursor (Ctrl+Alt+Up / Down in VS Code). */
@@ -155,7 +158,7 @@ export function createEditor(o: EditorOptions): Editor {
     const locked = o.readOnly || mode === 'read';
     const common = [EditorState.readOnly.of(locked), EditorView.editable.of(!o.readOnly && mode !== 'read')];
     if (mode === 'source') return [common, syntaxHighlighting(sourceStyle), vscodeEditing, EditorView.editorAttributes.of({ class: 'cm-source' })];
-    return [common, livePreview, tables, readingMode.of(mode === 'read')];
+    return [common, livePreview, mkdocsBlocks, codeTitles, tables, readingMode.of(mode === 'read'), ...(o.images ? [pictures(o.images)] : [])];
   };
   const extensions = [
     modeSlot.of(forMode(o.mode)),

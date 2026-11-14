@@ -224,3 +224,70 @@ test('admin: sign-up switch, password reset, make admin, delete user', async () 
   assert.ok(readdirSync(join(data, 'trash')).some((f) => f.includes('user-dave')));
   assert.deepEqual((await api('GET', '/api/users', alice)).body.map((u) => u.username).sort(), ['alice', 'bob', 'carol']);
 });
+
+test('folders: notes in subfolders, move, rename a folder, delete only when empty', async () => {
+  const mk = await api('POST', '/api/folders', alice, { path: 'Work/Projects' });
+  assert.equal(mk.status, 200);
+  const n = (await api('POST', '/api/notes', alice, { title: 'Plan', folder: 'Work/Projects', content: 'x' })).body;
+  assert.equal(n.folder, 'Work/Projects');
+  assert.ok(existsSync(join(data, 'notes/alice/Work/Projects/Plan.md')));
+  // traversal is neutralised
+  const t = (await api('POST', '/api/notes', alice, { title: 'Evil', folder: '../../etc', content: '' })).body;
+  assert.equal(t.folder, 'etc');
+  assert.deepEqual((await api('GET', '/api/folders', alice)).body.includes('Work/Projects'), true);
+
+  // move the note, keeping its title
+  const mv = await api('PATCH', `/api/notes/${n.id}`, alice, { folder: 'Archive' });
+  assert.equal(mv.body.folder, 'Archive');
+  assert.equal(mv.body.title, 'Plan');
+  assert.ok(existsSync(join(data, 'notes/alice/Archive/Plan.md')));
+
+  // rename a folder: the notes inside follow
+  assert.equal((await api('PATCH', '/api/folders', alice, { from: 'Archive', to: 'Done/2026' })).status, 200);
+  const list = (await api('GET', '/api/notes', alice)).body;
+  assert.equal(list.find((x) => x.id === n.id).folder, 'Done/2026');
+  assert.ok(existsSync(join(data, 'notes/alice/Done/2026/Plan.md')));
+  assert.equal((await api('GET', `/api/notes/${n.id}`, alice)).body.content, 'x');
+
+  // a folder with notes cannot be deleted; an empty one can
+  assert.equal((await api('DELETE', '/api/folders?path=Done%2F2026', alice)).status, 409);
+  assert.equal((await api('DELETE', '/api/folders?path=Work%2FProjects', alice)).status, 200);
+  // can't move a folder into itself
+  assert.equal((await api('PATCH', '/api/folders', alice, { from: 'Done', to: 'Done/in' })).status, 400);
+  // files dropped into a subfolder are adopted
+  writeFileSync(join(data, 'notes/alice/Done/dropped.md'), '# hi');
+  assert.ok((await api('GET', '/api/notes', alice)).body.some((x) => x.title === 'dropped' && x.folder === 'Done'));
+});
+
+test('pictures: upload, read back, share rules, bad types refused', async () => {
+  const png = Buffer.from('89504e470d0a1a0a0000000d49484452', 'hex');
+  const up = await fetch(BASE + '/api/images', { method: 'POST', headers: { authorization: `Bearer ${alice}`, 'content-type': 'image/png' }, body: png });
+  assert.equal(up.status, 200);
+  const info = await up.json();
+  assert.match(info.markdown, /^!\[\]\(_images\/[0-9a-f]{12}\.png\)$/);
+  assert.ok(existsSync(join(data, 'notes/alice/_images', info.name)));
+  const get = async (tok, owner = 'alice', f = info.name) => fetch(`${BASE}/api/images/${owner}/${f}`, { headers: { authorization: `Bearer ${tok}` } });
+  const ok = await get(alice);
+  assert.equal(ok.status, 200);
+  assert.equal(ok.headers.get('content-type'), 'image/png');
+  assert.deepEqual(Buffer.from(await ok.arrayBuffer()), png);
+  // someone with no share cannot see it; a shared user can
+  assert.equal((await get(carol)).status, 404);
+  const n = (await api('POST', '/api/notes', alice, { title: 'With picture', content: info.markdown })).body;
+  await api('POST', `/api/notes/${n.id}/shares`, alice, { username: 'carol', role: 'view' });
+  assert.equal((await get(carol)).status, 200);
+  // not an image / traversal / folder listing stays clean
+  const bad = await fetch(BASE + '/api/images', { method: 'POST', headers: { authorization: `Bearer ${alice}`, 'content-type': 'text/html' }, body: '<script>' });
+  assert.equal(bad.status, 415);
+  assert.equal((await get(alice, 'alice', '..%2Fx.png')).status, 400);
+  assert.ok(!(await api('GET', '/api/folders', alice)).body.includes('_images'));
+});
+
+test('people list for sharing, and the title: property shows as display name', async () => {
+  const people = (await api('GET', '/api/people', carol)).body;
+  assert.ok(Array.isArray(people) && !people.includes('carol') && people.includes('alice'));
+  const n = (await api('POST', '/api/notes', alice, { title: 'file-name', content: '---\ntitle: "A Nicer Title"\n---\n# x' })).body;
+  assert.equal(n.display, 'A Nicer Title');
+  assert.equal(n.title, 'file-name');
+  assert.equal((await api('GET', '/api/notes', alice)).body.find((x) => x.id === n.id).display, 'A Nicer Title');
+});

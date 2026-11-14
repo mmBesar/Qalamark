@@ -1,6 +1,7 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
 <!-- Copyright (C) 2026 mmBesar -->
 <script lang="ts">
+  import { addUserFont, removeUserFont } from '../lib/fonts';
   import { onMount } from 'svelte';
   import { store, type Theme } from '../lib/store.svelte.ts';
   import { ACCENTS, PALETTES, THEME_LIST, themeName } from '../lib/theme.ts';
@@ -16,6 +17,22 @@
   let uPw = $state('');
   let uAdmin = $state(false);
 
+  async function addFont(e: Event) {
+    const input = e.currentTarget as HTMLInputElement;
+    for (const file of Array.from(input.files ?? [])) {
+      try {
+        const fam = await addUserFont(file);
+        if (!store.userFonts.includes(fam)) store.userFonts = [...store.userFonts, fam];
+      } catch {
+        error = 'Not a usable font file: ' + file.name;
+      }
+    }
+    input.value = '';
+  }
+  async function dropFont(family: string) {
+    await removeUserFont(family);
+    store.userFonts = store.userFonts.filter((f) => f !== family);
+  }
   let users = $state<Array<{ username: string; admin: boolean }>>([]);
   let signup = $state(false);
   async function loadUsers() {
@@ -121,11 +138,31 @@
       {t('fontCode')}
       <input list="fonts-code" value={store.s.fontCode} placeholder="JetBrainsMono Nerd Font Mono · {t('fontDefault')}" dir="ltr" spellcheck="false" onchange={(e) => store.setLayout({ fontCode: e.currentTarget.value })} />
     </label>
+    <label>
+      {t('sourceSize')}: {store.s.sourceSize}px
+      <input type="range" min="11" max="26" step="1" value={store.s.sourceSize} oninput={(e) => store.setLayout({ sourceSize: Number(e.currentTarget.value) })} />
+    </label>
+    <label>
+      {t('fontSource')}
+      <input list="fonts-code" value={store.s.fontSource} placeholder={t('fontDefault')} dir="ltr" spellcheck="false" onchange={(e) => store.setLayout({ fontSource: e.currentTarget.value })} />
+    </label>
   </div>
+  <label class="check"><input type="checkbox" checked={store.s.centerPage} onchange={(e) => store.setLayout({ centerPage: e.currentTarget.checked })} /> {t('centerPage')}</label>
+  <label class="filebtn ghost">
+    {t('addFont')}
+    <input type="file" accept=".ttf,.otf,.woff,.woff2" hidden onchange={addFont} />
+  </label>
+  {#if store.userFonts.length > 0}
+    <div class="fontlist">
+      {#each store.userFonts as f (f)}
+        <span class="chip" style:font-family="'{f}'">{f} <button class="ghost small" onclick={() => dropFont(f)}>✕</button></span>
+      {/each}
+    </div>
+  {/if}
   <p class="muted tiny">{t('fontHint')}</p>
-  <datalist id="fonts-en"><option value="Roboto"></option><option value="Inter"></option><option value="Georgia"></option><option value="system-ui"></option></datalist>
-  <datalist id="fonts-ar"><option value="Noto Naskh Arabic UI"></option><option value="Noto Sans Arabic"></option><option value="Amiri"></option><option value="Cairo"></option></datalist>
-  <datalist id="fonts-code"><option value="JetBrainsMono Nerd Font Mono"></option><option value="JetBrains Mono"></option><option value="Fira Code"></option><option value="Cascadia Code"></option></datalist>
+  <datalist id="fonts-en">{#each store.userFonts as f}<option value={f}></option>{/each}<option value="Roboto"></option><option value="Inter"></option><option value="Georgia"></option><option value="system-ui"></option></datalist>
+  <datalist id="fonts-ar">{#each store.userFonts as f}<option value={f}></option>{/each}<option value="Noto Naskh Arabic UI"></option><option value="Noto Sans Arabic"></option><option value="Amiri"></option><option value="Cairo"></option></datalist>
+  <datalist id="fonts-code">{#each store.userFonts as f}<option value={f}></option>{/each}<option value="JetBrainsMono Nerd Font Mono"></option><option value="JetBrains Mono"></option><option value="Fira Code"></option><option value="Cascadia Code"></option></datalist>
 
   <h3>{t('accent')}</h3>
   <div class="swatches" role="group" aria-label={t('accent')}>

@@ -6,6 +6,8 @@
 export interface NoteMeta {
   id: string;
   title: string;
+  folder?: string; // "" or "Work/Projects"
+  display?: string; // the title: property, when the note has one
   owner: string;
   role: 'owner' | 'edit' | 'view';
   updated: number;
@@ -92,8 +94,41 @@ export class Api {
   notes() {
     return this.call<NoteMeta[]>('GET', '/api/notes', undefined, 8000);
   }
-  createNote(title: string, content = '') {
-    return this.call<NoteMeta>('POST', '/api/notes', { title, content });
+  createNote(title: string, content = '', folder = '') {
+    return this.call<NoteMeta>('POST', '/api/notes', { title, content, folder });
+  }
+  folders() {
+    return this.call<string[]>('GET', '/api/folders');
+  }
+  createFolder(path: string) {
+    return this.call<{ path: string }>('POST', '/api/folders', { path });
+  }
+  moveFolder(from: string, to: string) {
+    return this.call<{ path: string }>('PATCH', '/api/folders', { from, to });
+  }
+  deleteFolder(path: string) {
+    return this.call<void>('DELETE', `/api/folders?path=${encodeURIComponent(path)}`);
+  }
+  moveNote(id: string, folder: string) {
+    return this.call<NoteMeta>('PATCH', `/api/notes/${id}`, { folder });
+  }
+  /** Upload a picture; returns the markdown to put in the note. */
+  async uploadImage(blob: Blob): Promise<{ name: string; markdown: string }> {
+    const r = await fetch(this.base + '/api/images', {
+      method: 'POST',
+      headers: { authorization: `Bearer ${this.token}`, 'content-type': blob.type || 'image/png' },
+      body: blob,
+    });
+    if (!r.ok) throw new ApiError(r.status, await r.text());
+    return r.json();
+  }
+  /** A picture as a blob: the page cannot send the sign-in header from a plain <img>. */
+  async imageBlob(owner: string, file: string): Promise<Blob> {
+    const r = await fetch(`${this.base}/api/images/${encodeURIComponent(owner)}/${encodeURIComponent(file)}`, {
+      headers: { authorization: `Bearer ${this.token}` },
+    });
+    if (!r.ok) throw new ApiError(r.status, 'No such picture');
+    return r.blob();
   }
   getNote(id: string) {
     return this.call<NoteMeta & { content: string }>('GET', `/api/notes/${id}`);
@@ -118,6 +153,9 @@ export class Api {
   }
   addUser(username: string, password: string, admin = false) {
     return this.call<void>('POST', '/api/users', { username, password, admin });
+  }
+  people() {
+    return this.call<string[]>('GET', '/api/people');
   }
   listUsers() {
     return this.call<Array<{ username: string; admin: boolean }>>('GET', '/api/users');

@@ -119,6 +119,15 @@ there becomes a note. More in **[docs/SELF-HOSTING.md](docs/SELF-HOSTING.md)**
 - **Without any server** the same app keeps notes on your device. This is what the GitHub Pages **preview** shows. Real use is your own server.
 - **Themes:** all four Catppuccin flavours with the 14 accent colours to choose from, AMOLED, your system's own colours, and two of our own (Paper and Nile). Android dynamic colour comes with the Android app.
 - **Three ways to view a note:** Live preview (like Obsidian), Reading, and Source.
+- **Folders and subfolders** with a tree in the sidebar: create, rename, move (menu or drag and drop), copy. A note's file name does not have to be its title: a `title:` property is shown instead.
+- **Properties** (YAML front matter): a panel above the note to edit title, tags, aliases or your own properties; the text stays plain YAML at the top of the file.
+- **Templates:** ready-made ones (daily note, meeting, expenses with total, meter readings) and your own: any note in a `Templates` folder.
+- **Pictures:** paste or drop an image; it is stored next to your notes and shown in the note.
+- **Material for MkDocs blocks:** `!!! note`, `??? tip` (collapsible), `=== "Tab"` tabs and code block titles are drawn nicely, and the text stays as it is.
+- **Source mode like VS Code:** multiple cursors, move and copy lines, line numbers, folding, comment toggle.
+- **Your fonts, your size:** Roboto, Noto Naskh Arabic UI and JetBrains Mono Nerd Font are built in; pick any other or add your own font file. The editor can be centered with a width of your choice.
+- **Plain-words table formulas** next to the usual spreadsheet ones, with a point-and-click formula builder.
+- **Works on a phone:** the layout adapts, controls stay reachable.
 - **English and Arabic** interface, right-to-left.
 
 ## Try the pieces from source
@@ -148,7 +157,7 @@ Everything also runs in GitHub Actions on every push (see the badges).
 - [x] **5. Collaboration and offline:** real-time co-editing, works offline (PWA)
 - [x] **6. Container:** Docker image with `PUID`/`PGID`/`TZ`, amd64 + arm64 on native runners
 - [ ] **7. Apps:** Linux desktop and Android shells (Tauri) that sync with your server
-- [ ] **Later:** folders, search inside notes, note embeds `![[note]]`, math and diagrams, renaming a note updates links, offline note creation, riscv64 image, version history
+- [ ] **Later:** search inside notes, note embeds `![[note]]`, math and diagrams, renaming a note updates links, offline note creation, riscv64 image, version history
 
 Design decisions and the reasons behind them are in
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).

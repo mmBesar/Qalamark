@@ -1,0 +1,4 @@
+@font-face { font-family: 'Noto Naskh Arabic UI'; font-weight: 400; font-display: swap; src: url('./NotoNaskhArabicUI-Regular.woff2') format('woff2'); }
+@font-face { font-family: 'Noto Naskh Arabic UI'; font-weight: 700; font-display: swap; src: url('./NotoNaskhArabicUI-Bold.woff2') format('woff2'); }
+@font-face { font-family: 'JetBrainsMono Nerd Font Mono'; font-weight: 400; font-display: swap; src: url('./JetBrainsMonoNerdFontMono-Regular.woff2') format('woff2'); }
+@font-face { font-family: 'JetBrainsMono Nerd Font Mono'; font-weight: 700; font-display: swap; src: url('./JetBrainsMonoNerdFontMono-Bold.woff2') format('woff2'); }

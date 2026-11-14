@@ -76,7 +76,7 @@ test('write a note with a table, share it, edit it together', async () => {
   await fetch(URL_ + 'api/users', { method: 'POST', headers: { 'content-type': 'application/json', authorization: 'Bearer ' + token }, body: JSON.stringify({ username: 'bob', password: 'bob-password-1' }) });
   await alice.click('text=Share');
   await alice.waitForSelector('dialog[open]');
-  await alice.fill('dialog input[placeholder=Username]', 'bob');
+  await alice.selectOption('dialog select[dir=ltr]', 'bob');
   await alice.click('dialog button.primary');
   await alice.waitForSelector('dialog .plain li >> text=bob');
   await alice.keyboard.press('Escape');
@@ -204,4 +204,91 @@ test('editing feels right: click anywhere, tables stay tables, links, callouts, 
 
   assert.deepEqual(errors, []);
   srv.close();
+});
+
+test('round 2: folders, templates, properties, MkDocs blocks, pictures, builder, layout', async () => {
+  const errors = [];
+  const page = await newPage(errors);
+  await signIn(page, 'alice', 'alice-password');
+
+  // A folder and a note inside it (menu: new note here).
+  await page.click('aside .actions button[title="New folder"]');
+  await page.fill('.askbox input', 'Work');
+  await page.keyboard.press('Enter');
+  await page.waitForSelector('aside li.folder');
+  await page.click('aside li.folder .dots', { force: true });
+  await page.click('.menu >> text=New note here');
+  await page.waitForSelector('.cm-content');
+  assert.equal(await page.locator('aside li.folder').count(), 1);
+  assert.ok(await page.locator('aside li.row[style*="--depth: 1"]').count() >= 1, 'the note sits under the folder');
+
+  // A ready-made template with plain-words formulas calculates itself.
+  await page.click('aside .actions .relative button');
+  await page.click('.menu >> text=Expenses with total');
+  await page.waitForSelector('.qt');
+  for (const [c, v] of [[0, 'Tea'], [1, '3'], [2, '2.5']]) {
+    await page.fill(`.qt input[data-r="2"][data-c="${c}"]`, v);
+    await page.keyboard.press('Tab');
+    await sleep(150);
+  }
+  await page.click('.topbar .title');
+  await page.keyboard.press('Tab');
+  try {
+    await page.waitForFunction(() => document.querySelector('.qt input[data-r="2"][data-c="3"]')?.value === '7.5', null, { timeout: 8000 });
+  } catch (e) {
+    console.log('DEBUG', JSON.stringify(await page.evaluate(() => ({ cells: [...document.querySelectorAll('.qt input')].map((i) => i.value), text: document.querySelector('.cm-content').innerText.slice(0, 400), active: document.activeElement?.className }))));
+    throw e;
+  }
+  await page.waitForFunction(() => document.querySelector('.qt input[data-r="4"][data-c="3"]')?.value === '7.5', null, { timeout: 8000 });
+
+  // The formula builder offers column letters.
+  await page.click('.qt button[title*="ormula"], .qt .qt-fx');
+  await page.waitForSelector('.qt-builder .qt-select');
+  assert.match(await page.locator('.qt-builder .qt-preview').innerText(), /^[A-Z] = /);
+
+  // Properties: add tags from the panel; the note text gets the front matter.
+  await page.click('.props-head');
+  await page.click('.props-quick >> text=tags');
+  await page.fill('.props-grid input', 'work, plan');
+  await page.keyboard.press('Tab');
+  await page.waitForFunction(() => /tags:\s*\n\s*- work\s*\n\s*- plan/.test(document.querySelector('.cm-content')?.innerText ?? ''), null, { timeout: 5000 });
+  await page.click('.props-head');
+  assert.match(await page.locator('.props-summary').innerText(), /#work/);
+
+  // MkDocs blocks render as boxes and tabs.
+  await page.click('.cm-line >> nth=-1');
+  await page.keyboard.press('Control+End');
+  await page.keyboard.insertText('\n\n!!! warning "Careful"\n    Mind the gap.\n\n=== "One"\n    first\n\n=== "Two"\n    second\n\n```py title="a.py"\nprint(1)\n```\n\nend\n');
+  await page.click('.cm-line >> nth=-1');
+  await page.waitForSelector('.cm-callout-label');
+  assert.match(await page.locator('.cm-callout-label').first().innerText(), /Careful/);
+  assert.ok((await page.locator('.cm-tab-label').count()) >= 2);
+  assert.match(await page.locator('.cm-code-title').first().innerText(), /a\.py/);
+
+  // A pasted picture is uploaded and shown.
+  const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/q842iQAAAABJRU5ErkJggg==', 'base64');
+  const res = await page.evaluate(async (b64) => {
+    const tok = JSON.parse(localStorage.getItem('qm.settings') ?? '{}').token;
+    const bin = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+    const r = await fetch('/api/images', { method: 'POST', headers: { authorization: 'Bearer ' + tok, 'content-type': 'image/png' }, body: bin });
+    return r.json();
+  }, png.toString('base64'));
+  assert.match(res.markdown, /_images\//);
+  await page.click('.cm-line >> nth=-1');
+  await page.keyboard.insertText('\n' + res.markdown + '\n\nafter\n');
+  await page.click('.cm-line >> nth=-1');
+  try {
+    await page.waitForSelector('.cm-picture img[src^="blob:"]', { timeout: 8000 });
+  } catch (e) {
+    console.log('DEBUG2', JSON.stringify(await page.evaluate(() => ({ pic: [...document.querySelectorAll('.cm-picture')].map((p) => p.outerHTML), tail: document.querySelector('.cm-content').innerText.slice(-200) }))));
+    throw e;
+  }
+
+  // Layout settings: text size reaches the table, the page can be centered.
+  await page.click('aside header button[aria-label="Settings"]');
+  await page.waitForSelector('dialog[open]');
+  await page.locator('dialog input[type=range]').first().fill('24');
+  const tableFont = await page.evaluate(() => getComputedStyle(document.querySelector('.qt-cell')).fontSize);
+  assert.equal(tableFont, '22.8px');
+  assert.deepEqual(errors, []);
 });

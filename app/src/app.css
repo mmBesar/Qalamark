@@ -647,13 +647,40 @@ dialog label {
   margin: 0.8em 0;
 }
 .cm-task {
-  accent-color: var(--accent);
+  display: inline-block;
+  box-sizing: border-box;
   width: 1.05em;
   height: 1.05em;
-  vertical-align: -0.12em;
-  margin: 0 0.2em;
+  vertical-align: -0.15em;
+  margin: 0 0.35em;
+  border: 2px solid var(--accent);
+  border-radius: 0.28em;
   cursor: pointer;
+  text-decoration: none;
 }
+.cm-task-checked {
+  background: var(--accent);
+  position: relative;
+}
+.cm-task-checked::after {
+  content: '';
+  position: absolute;
+  inset-inline-start: 0.28em;
+  top: 0.02em;
+  width: 0.28em;
+  height: 0.55em;
+  border: solid var(--bg);
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+/* done tasks: a light strike-through */
+.cm-task-done {
+  color: var(--muted);
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
+  text-decoration-color: color-mix(in srgb, var(--muted) 70%, transparent);
+}
+
 .cm-image {
   max-width: 100%;
   border-radius: 8px;
@@ -695,6 +722,7 @@ dialog label {
 }
 .qt th,
 .qt td {
+  font-size: calc(var(--font-size, 17px) * 0.95);
   border: 1px solid var(--line);
   padding: 0;
   position: relative;
@@ -732,7 +760,7 @@ dialog label {
   border-radius: 0;
   background: transparent;
   padding: 0.45rem 0.7rem;
-  font-size: inherit;
+  font-size: calc(var(--font-size, 17px) * 0.95);
 }
 .qt th .qt-cell {
   font-weight: 700;
@@ -874,8 +902,8 @@ dialog label {
 /* ---------- view modes, help, small additions ---------- */
 .cm-source .cm-content,
 .cm-source .cm-line {
-  font-family: var(--mono);
-  font-size: 0.95rem;
+  font-family: var(--source-font, var(--mono));
+  font-size: var(--source-size, 15px);
 }
 .seg {
   display: inline-flex;
@@ -1062,8 +1090,8 @@ dialog.wide {
   background: transparent;
   color: var(--muted);
   border: 0;
-  font-family: var(--mono);
-  font-size: 0.8rem;
+  font-family: var(--source-font, var(--mono));
+  font-size: calc(var(--source-size, 15px) * 0.85);
 }
 .cm-source .cm-activeLine {
   background: var(--accent-soft);
@@ -1094,4 +1122,370 @@ dialog.wide {
 .userlist .uname {
   flex: 1;
   min-width: 6rem;
+}
+
+/* page position: centered in the browser window instead of beside the sidebar */
+@media (min-width: 1100px) {
+  html[data-page='center'] .cm-editor:not(.cm-source) .cm-content {
+    position: relative;
+    inset-inline-start: calc(var(--side-w, 304px) / -2);
+  }
+}
+.fontlist {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  margin: 0.3rem 0;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  padding: 0.1rem 0.4rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+}
+.filebtn {
+  display: inline-block;
+  cursor: pointer;
+  padding: 0.25rem 0.6rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  margin: 0.3rem 0;
+}
+
+/* folder tree */
+aside li.row {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+}
+aside li.row > .main {
+  flex: 1;
+  min-width: 0;
+  padding-inline-start: calc(0.7rem + var(--depth, 0) * 1rem);
+}
+aside li.folder > .main {
+  font-weight: 600;
+  justify-content: flex-start;
+}
+aside .caret {
+  width: 1rem;
+  color: var(--muted);
+}
+aside li .dots {
+  width: 1.8rem;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  opacity: 0;
+  border-radius: 8px;
+}
+aside li.row:hover .dots,
+aside li .dots:focus-visible {
+  opacity: 1;
+}
+@media (hover: none) {
+  aside li .dots {
+    opacity: 1;
+  }
+}
+aside .menu {
+  position: absolute;
+  inset-inline-end: 0;
+  top: 100%;
+  z-index: 20;
+  min-width: 11rem;
+  max-height: 16rem;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 0.25rem;
+  box-shadow: 0 6px 20px rgb(0 0 0 / 0.25);
+}
+aside .menu button {
+  width: 100%;
+  text-align: start;
+  border: 0;
+  background: transparent;
+  padding: 0.4rem 0.6rem;
+  border-radius: 6px;
+  justify-content: flex-start;
+}
+aside .menu button:hover:not(:disabled) {
+  background: var(--accent-soft);
+}
+aside .menu button:disabled {
+  opacity: 0.45;
+}
+aside .menu .danger {
+  color: var(--danger);
+}
+aside li.dropping > .main,
+aside ul.dropping {
+  background: var(--accent-soft);
+}
+aside .askbox {
+  display: flex;
+  gap: 0.3rem;
+}
+aside .askbox input {
+  flex: 1;
+  min-width: 0;
+}
+
+.cm-picture {
+  display: inline-block;
+  max-width: 100%;
+  vertical-align: middle;
+}
+.cm-picture img {
+  max-width: 100%;
+  max-height: 32rem;
+  border-radius: 8px;
+}
+.cm-picture-broken {
+  color: var(--muted);
+  font-size: 0.85em;
+}
+
+/* MkDocs tabs and code titles */
+.cm-tab-head {
+  font-weight: 650;
+  border-bottom: 1px solid var(--line);
+  margin-top: 0.4rem;
+}
+.cm-tab-label {
+  display: inline-block;
+  padding: 0.15rem 0.8rem;
+  border: 1px solid var(--line);
+  border-bottom: 2px solid var(--accent);
+  border-radius: 8px 8px 0 0;
+  color: var(--accent);
+}
+.cm-tab-body {
+  border-inline-start: 2px solid var(--line);
+  padding-inline-start: 0.9rem !important;
+  margin-inline-start: 0.4rem;
+}
+.cm-code-title {
+  margin-inline-start: 0.8rem;
+  padding: 0 0.5rem;
+  font-size: 0.8em;
+  color: var(--muted);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  font-family: var(--mono);
+}
+
+/* properties panel */
+.props {
+  width: min(100%, var(--editor-w, 50rem));
+  margin: 0.4rem auto 0;
+  padding: 0 1.2rem;
+  font-size: 0.9rem;
+}
+.props-head {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  width: 100%;
+  border: 0;
+  background: transparent;
+  padding: 0.25rem 0;
+  color: var(--muted);
+  text-align: start;
+}
+.props-summary {
+  display: flex;
+  gap: 0.3rem;
+  flex-wrap: wrap;
+}
+.props .tag {
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-radius: 99px;
+  padding: 0 0.5em;
+}
+.props-grid {
+  display: grid;
+  grid-template-columns: max-content 1fr auto;
+  gap: 0.35rem 0.6rem;
+  align-items: center;
+  padding: 0.4rem 0;
+}
+.props-grid .pkey {
+  color: var(--muted);
+}
+.props-quick,
+.props-add {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  padding-bottom: 0.4rem;
+}
+
+aside .relative {
+  position: relative;
+  display: inline-flex;
+}
+aside .menu .pad {
+  display: block;
+  padding: 0.4rem 0.6rem;
+  max-width: 14rem;
+}
+
+.toolbar .relative {
+  position: relative;
+  display: inline-flex;
+}
+.insmenu {
+  position: absolute;
+  top: 100%;
+  inset-inline-start: 0;
+  z-index: 30;
+  min-width: 15rem;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 0.25rem;
+  box-shadow: 0 6px 20px rgb(0 0 0 / 0.25);
+}
+.insmenu button {
+  text-align: start;
+  border: 0;
+  background: transparent;
+  padding: 0.4rem 0.6rem;
+  border-radius: 6px;
+}
+.insmenu button:hover {
+  background: var(--accent-soft);
+}
+
+.cm-frontmatter {
+  font-family: var(--mono);
+  font-size: 0.8em;
+  color: var(--muted);
+  background: color-mix(in srgb, var(--muted) 8%, transparent);
+  padding-inline: 0.9rem !important;
+}
+
+.cm-bullet {
+  display: inline-block; /* so a done task's strike-through does not run through the bullet */
+}
+.cm-editor .cm-content {
+  box-sizing: border-box;
+}
+
+/* ---------- phones: everything reachable, nothing cut off ---------- */
+@media (max-width: 760px) {
+  input,
+  select,
+  textarea {
+    font-size: 16px; /* stops iOS from zooming in on focus */
+  }
+  .topbar {
+    flex-wrap: wrap;
+    padding: 0.4rem 0.6rem;
+    gap: 0.3rem 0.4rem;
+  }
+  .topbar .title {
+    flex: 1 1 6rem;
+    min-width: 6rem;
+    font-size: 1.05rem;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+  }
+  .topbar .seg {
+    order: 10;
+    flex: 1 1 100%;
+  }
+  .topbar .seg button {
+    flex: 1;
+    white-space: nowrap;
+    padding: 0.45rem 0.2rem;
+  }
+  .topbar .lbl {
+    display: none;
+  }
+  .toolbar {
+    padding: 0.25rem 0.5rem;
+    -webkit-overflow-scrolling: touch;
+  }
+  .toolbar button {
+    flex: none;
+    min-width: 2.6rem;
+    min-height: 2.6rem;
+  }
+  .qt-bar {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+    padding-bottom: 0.2rem;
+  }
+  .qt-ctx {
+    display: flex;
+    flex-wrap: nowrap;
+    gap: 0.4rem;
+    flex: none;
+  }
+  .qt-btn {
+    flex: none;
+    white-space: nowrap;
+    min-height: 2.2rem;
+  }
+  .qt-builder-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .qt-select {
+    max-width: none;
+    width: 100%;
+  }
+  .cm-editor .cm-content {
+    padding-inline: 0.9rem;
+  }
+  .props {
+    padding: 0 0.9rem;
+  }
+  .props-grid {
+    grid-template-columns: 1fr auto;
+  }
+  .props-grid .pkey {
+    grid-column: 1 / -1;
+    margin-top: 0.3rem;
+  }
+  aside li.row > .main {
+    padding-block: 0.65rem;
+  }
+  aside li .dots {
+    width: 2.6rem;
+  }
+  aside .actions button {
+    min-height: 2.6rem;
+  }
+  dialog {
+    width: 94vw;
+    max-width: 94vw;
+    max-height: 92dvh;
+    overflow: auto;
+  }
+  .insmenu,
+  aside .menu {
+    max-width: 82vw;
+  }
+  .userlist li {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  main {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
 }

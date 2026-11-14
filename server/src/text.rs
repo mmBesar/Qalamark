@@ -24,6 +24,18 @@ pub fn safe_name(title: &str) -> String {
     }
 }
 
+/// A folder path like "Work/Projects": every part made safe, empty and dot parts dropped.
+pub fn safe_folder(folder: &str) -> String {
+    folder
+        .split('/')
+        .map(|p| p.trim().trim_matches('.').trim().to_string())
+        .filter(|p| !p.is_empty())
+        .take(8)
+        .map(|p| safe_name(&p))
+        .collect::<Vec<_>>()
+        .join("/")
+}
+
 /// Usernames: 2-32 characters, a-z 0-9 . _ -  (lower case).
 pub fn valid_username(name: &str) -> bool {
     (2..=32).contains(&name.len())

@@ -3,12 +3,13 @@
 <script lang="ts">
   import { onMount, untrack } from 'svelte';
   import { yUndoManagerKeymap } from 'y-codemirror.next';
-  import { cycleHeading, insertLink, insertTable, toggleLinePrefix, toggleWrap } from '../editor/commands.ts';
+  import { cycleHeading, insertLink, insertSnippet, insertTable, SNIPPETS, toggleLinePrefix, toggleWrap } from '../editor/commands.ts';
   import { createEditor, type Editor, type ViewMode } from '../editor/editor.ts';
   import type { TableLabels } from '../editor/tables.ts';
   import type { NoteMeta } from '../lib/server.ts';
   import { type LinkStatus, NoteSession } from '../lib/session.ts';
   import { store } from '../lib/store.svelte.ts';
+  import Properties from './Properties.svelte';
   import HelpDialog from './HelpDialog.svelte';
   import ShareDialog from './ShareDialog.svelte';
 
@@ -45,6 +46,7 @@
   let menu = $state(false);
   let err = $state('');
   let session: NoteSession;
+  let liveText = $state.raw<import('yjs').Text | null>(null);
   let editor: Editor;
 
   const readOnly = first.role === 'view';
@@ -81,6 +83,7 @@
       server ? store.api : undefined,
       server ? note.id : undefined,
     );
+    liveText = session.ytext;
     editor = createEditor({
       parent: host,
       ytext: session.ytext,
@@ -92,6 +95,10 @@
       titles: () => store.notes.map((n) => n.title).filter((x) => x !== first.title),
       openLink: (title) => void store.openTitle(title).catch((e) => (err = e instanceof Error ? e.message : String(e))),
       onChange: changed,
+      images: {
+        resolve: resolveImage,
+        upload: server && !readOnly ? uploadImage : undefined,
+      },
     });
     host.addEventListener('qalamark-help', () => (help = true));
     changed();
@@ -102,6 +109,33 @@
       session.destroy();
     };
   });
+
+  // Pictures live on the server, in the owner's _images folder; they need the sign-in header,
+  // so they are fetched and shown from a local blob.
+  const blobs = new Map<string, Promise<string | null>>();
+  function resolveImage(url: string): Promise<string | null> {
+    if (/^(https?:|data:|blob:)/i.test(url)) return Promise.resolve(url);
+    const m = /^(?:\.\/)?(?:\.\.\/)*_images\/([A-Za-z0-9._-]+)$/.exec(url);
+    if (!m || store.mode !== 'server') return Promise.resolve(null);
+    const key = `${note.owner}/${m[1]}`;
+    let p = blobs.get(key);
+    if (!p) {
+      p = store.api
+        .imageBlob(note.owner, m[1]!)
+        .then((b) => URL.createObjectURL(b))
+        .catch(() => null);
+      blobs.set(key, p);
+    }
+    return p;
+  }
+  async function uploadImage(blob: Blob): Promise<string | null> {
+    try {
+      return (await store.api.uploadImage(blob)).markdown;
+    } catch (e) {
+      err = e instanceof Error ? e.message : String(e);
+      return null;
+    }
+  }
 
   async function loadLinks() {
     try {
@@ -131,6 +165,19 @@
     v.focus();
   }
 
+  let insMenu = $state(false);
+  let picInput: HTMLInputElement;
+  const snippet = (s: string) => {
+    insMenu = false;
+    insertSnippet(editor.view, s);
+  };
+  async function pickPicture() {
+    const f = picInput.files?.[0];
+    picInput.value = '';
+    if (!f) return;
+    const md = await uploadImage(f);
+    if (md) insertSnippet(editor.view, md + '\n');
+  }
   const run = (f: (v: typeof editor.view) => boolean) => () => f(editor.view);
 
   async function rename() {
@@ -174,6 +221,7 @@
   onpointerdown={(e) => {
     if (menu && !(e.target as Element).closest('.menu-wrap')) menu = false;
     if (showLinks && !(e.target as Element).closest('.links-wrap')) showLinks = false;
+    if (insMenu && !(e.target as Element).closest('.relative')) insMenu = false;
   }}
   onkeydown={(e) => e.key === 'Escape' && (menu = false)}
 />
@@ -197,7 +245,7 @@
     </div>
     {#if readOnly}<span class="pill">{t('readOnly')}</span>{/if}
     {#if store.mode === 'server' && note.role === 'owner'}
-      <button class="ghost small" onclick={() => (sharing = true)}>👥 {t('share')}</button>
+      <button class="ghost small" onclick={() => (sharing = true)}>👥<span class="lbl"> {t('share')}</span></button>
     {/if}
     <div class="menu-wrap">
       <button class="icon" aria-label={t('menu')} aria-expanded={menu} onclick={() => (menu = !menu)}>⋯</button>
@@ -225,11 +273,29 @@
       <span class="sep"></span>
       <button title={t('link')} onclick={run(insertLink)}>🔗</button>
       <button title={t('table')} onclick={run(insertTable)}>▦</button>
+      <span class="relative">
+        <button title={t('insert')} aria-haspopup="menu" onclick={(e) => { e.stopPropagation(); insMenu = !insMenu; }}>＋ ▾</button>
+        {#if insMenu}
+          <div class="menu insmenu" role="menu">
+            <button onclick={() => snippet(SNIPPETS.callout)}>{t('insCallout')}</button>
+            <button onclick={() => snippet(SNIPPETS.admonition)}>{t('insAdmonition')}</button>
+            <button onclick={() => snippet(SNIPPETS.collapsible)}>{t('insCollapsible')}</button>
+            <button onclick={() => snippet(SNIPPETS.tabs)}>{t('insTabs')}</button>
+            <button onclick={() => snippet(SNIPPETS.codeTitle)}>{t('insCodeTitle')}</button>
+            {#if store.mode === 'server'}
+              <button onclick={() => { insMenu = false; picInput.click(); }}>{t('insPicture')}</button>
+            {/if}
+          </div>
+        {/if}
+      </span>
+      <input bind:this={picInput} type="file" accept="image/*" hidden onchange={pickPicture} />
       <button title={t('help')} onclick={() => (help = true)}>ƒ?</button>
     </div>
   {/if}
 
   {#if err}<p class="error banner" role="alert">{err} <button class="link" onclick={() => (err = '')}>×</button></p>{/if}
+
+  {#if liveText}<Properties ytext={liveText} {readOnly} noteId={note.id} />{/if}
 
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div class="cm-host" bind:this={host} onmousedown={focusEnd}></div>

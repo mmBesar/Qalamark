@@ -111,7 +111,8 @@ there becomes a note. More in **[docs/SELF-HOSTING.md](docs/SELF-HOSTING.md)**
 
 - **Notes as `.md` files**, per user, with rename, delete (to a trash folder), import and export.
 - **Live preview editor** (CodeMirror 6): headings, bold, italic, strikethrough, code, fenced code with colours, quotes, lists, task checkboxes, links, images, rules. The text is never rewritten, only drawn nicely.
-- **Tables you can type in**, with formulas, results and a formula box (see below).
+- **Tables you can type in** that always stay a grid: formulas, results, add/delete rows and columns with the buttons under the table, undo from inside a table.
+- **Obsidian-style extras:** `[[links]]` between notes (with `[[` autocomplete, click to open, create-on-click and a *Linked from* list), callouts (`> [!tip] ...`), `==highlights==`, `#tags`.
 - **Users, sharing, real-time co-editing.** Share a note with someone as *can edit* or *can view*; you both see each other's typing and cursors live.
 - **Files edited from outside** (Syncthing, a text editor) are merged in and shown live.
 - **Works offline.** The app installs as a PWA; a note you opened keeps working without internet and syncs when you are back.
@@ -147,7 +148,7 @@ Everything also runs in GitHub Actions on every push (see the badges).
 - [x] **5. Collaboration and offline:** real-time co-editing, works offline (PWA)
 - [x] **6. Container:** Docker image with `PUID`/`PGID`/`TZ`, amd64 + arm64 on native runners
 - [ ] **7. Apps:** Linux desktop and Android shells (Tauri) that sync with your server
-- [ ] **Later:** folders, search inside notes, offline note creation, riscv64 image, version history
+- [ ] **Later:** folders, search inside notes, note embeds `![[note]]`, math and diagrams, renaming a note updates links, offline note creation, riscv64 image, version history
 
 Design decisions and the reasons behind them are in
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).

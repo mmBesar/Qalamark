@@ -7,8 +7,8 @@
 
 import { describeTables, editCell, setFormulas, tableOp, type TableOp, type TableView } from '@qalamark/tables';
 import { type EditorState, type Range, StateField } from '@codemirror/state';
-import { readingMode } from './livepreview.ts';
 import { Decoration, type DecorationSet, EditorView, WidgetType } from '@codemirror/view';
+import { yUndoManagerKeymap } from 'y-codemirror.next';
 
 export interface TableLabels {
   addRow: string;
@@ -34,6 +34,8 @@ export function applyDiff(view: EditorView, oldText: string, newText: string): v
     userEvent: 'input.table',
   });
 }
+
+const history = (key: string) => yUndoManagerKeymap.find((b) => b.key === key)?.run;
 
 const ERRORS = /^#(DIV\/0!|VALUE!|REF!|NAME\?|CYCLE!|ERR!)$/;
 const unescape = (s: string) => s.replace(/\\\|/g, '|').replace(/<br\s*\/?>/gi, '\n');
@@ -96,11 +98,12 @@ class TableWidget extends WidgetType {
     const table = el('table');
     const formulaAt = (r: number, c: number) => v.formulas.find((f) => f.row === r && f.col === c);
 
+    // The cell being edited, so the buttons under the table know what "this row / column" means.
+    let active: { r: number; c: number } | null = null;
+    let commitActive: () => void = () => {};
+
     for (let r = 1; r <= nrows; r++) {
       const tr = el('tr');
-      const tools = el(r === 1 ? 'th' : 'td', 'qt-tools');
-      if (!readOnly && r > 1) tools.append(button(labels.deleteRow, '×', 'qt-x', () => run(tableOp(mdNow(), index, { op: 'deleteRow', row: r }))));
-      tr.append(tools);
       for (let c = 0; c < ncols; c++) {
         const cell = el(r === 1 ? 'th' : 'td');
         const shown = unescape(v.rows[r - 1]![c] ?? '');
@@ -118,23 +121,36 @@ class TableWidget extends WidgetType {
         if (f) input.title = (f.column ? '==' : '=') + f.source;
 
         let start = shown;
+        const commit = () => {
+          if (input.value === start) return;
+          const text = input.value;
+          start = text;
+          run(editCell(mdNow(), index, r, c, text));
+        };
         input.addEventListener('focus', () => {
+          active = { r, c };
+          commitActive = commit;
           // A calculated cell shows its formula while you edit it.
           if (f) input.value = (f.column ? '==' : '=') + f.source;
           start = input.value;
+          root.classList.add('qt-active');
         });
-        const commit = () => {
-          if (input.value === start) {
-            input.value = shown;
-            return false;
-          }
-          run(editCell(mdNow(), index, r, c, input.value));
-          return true;
-        };
         input.addEventListener('blur', () => {
           if (!readOnly && input.isConnected) commit();
+          // Whatever happened, show the real content again once we leave.
+          // (If the table was rebuilt, this input is already gone and nothing is lost.)
+          input.value = shown;
         });
         input.addEventListener('keydown', (e) => {
+          const mod = e.ctrlKey || e.metaKey;
+          if (mod && !e.altKey && (e.key.toLowerCase() === 'z' || e.key.toLowerCase() === 'y')) {
+            // Undo / redo work for the whole note, also from inside a table.
+            e.preventDefault();
+            input.value = start; // drop what is half typed
+            const redo = e.key.toLowerCase() === 'y' || e.shiftKey;
+            history(redo ? 'Mod-y' : 'Mod-z')?.(view);
+            return;
+          }
           const go = (dr: number, dc: number) => {
             e.preventDefault();
             if (!readOnly) commit();
@@ -148,10 +164,12 @@ class TableWidget extends WidgetType {
               nc = ncols - 1;
               nr--;
             }
-            if (nr > nrows && !readOnly) {
-              run(tableOp(mdNow(), index, { op: 'addRow', at: nrows + 1 }));
+            if (nr > nrows) {
+              if (e.key === 'ArrowDown') return leave(view, v, true);
+              if (!readOnly) run(tableOp(mdNow(), index, { op: 'addRow', at: nrows + 1 }));
             }
-            if (nr >= 1) focusCell(view, index, nr, nc);
+            if (nr < 1) return leave(view, v, false);
+            focusCell(view, index, nr, nc);
           };
           if (e.key === 'Enter') go(1, 0);
           else if (e.key === 'Tab') go(0, e.shiftKey ? -1 : 1);
@@ -161,21 +179,10 @@ class TableWidget extends WidgetType {
             input.value = shown;
             start = shown;
             input.blur();
+            view.focus();
           }
         });
         cell.append(input);
-
-        if (r === 1 && !readOnly) {
-          const bar = el('span', 'qt-colbtns');
-          bar.append(
-            button('left / center / right', '↔', 'qt-x', () => {
-              const next = ({ none: 'left', left: 'center', center: 'right', right: 'none' } as const)[v.align[c] ?? 'none'];
-              run(tableOp(mdNow(), index, { op: 'align', col: c, align: next } as TableOp));
-            }),
-          );
-          if (ncols > 1) bar.append(button(labels.deleteColumn, '×', 'qt-x', () => run(tableOp(mdNow(), index, { op: 'deleteColumn', col: c }))));
-          cell.append(bar);
-        }
         tr.append(cell);
       }
       table.append(tr);
@@ -183,7 +190,7 @@ class TableWidget extends WidgetType {
     scroll.append(table);
     root.append(scroll);
 
-    // Buttons under the table, and the formula box.
+    // ---- the buttons under the table (they act on the cell you are in) ----
     const bar = el('div', 'qt-bar');
     const box = el('div', 'qt-formulas');
     box.hidden = v.problems.length === 0;
@@ -206,26 +213,68 @@ class TableWidget extends WidgetType {
     box.append(head, area);
     for (const p of v.problems) box.append(el('div', 'qt-problem', p));
 
+    // Do an operation, then put the cursor back in a sensible cell.
+    const act = (op: TableOp, focus: (a: { r: number; c: number }) => { r: number; c: number }) => {
+      commitActive();
+      const a = active ?? { r: 1, c: 0 };
+      run(tableOp(mdNow(), index, op));
+      const f = focus(a);
+      focusCell(view, index, f.r, f.c);
+    };
+
     if (!readOnly) {
-      bar.append(
-        button(labels.addRow, '+ ' + labels.addRow, 'qt-btn', () => run(tableOp(mdNow(), index, { op: 'addRow', at: nrows + 1 }))),
-        button(labels.addColumn, '+ ' + labels.addColumn, 'qt-btn', () => run(tableOp(mdNow(), index, { op: 'addColumn', at: ncols }))),
+      const ctx = el('span', 'qt-ctx');
+      ctx.append(
+        button(labels.addRow, '＋ ' + labels.addRow, 'qt-btn', () => {
+          const at = Math.max(2, (active?.r ?? nrows) + 1);
+          act({ op: 'addRow', at }, (a) => ({ r: at, c: a.c }));
+        }),
+        button(labels.addColumn, '＋ ' + labels.addColumn, 'qt-btn', () => {
+          const at = (active?.c ?? ncols - 1) + 1;
+          act({ op: 'addColumn', at }, (a) => ({ r: a.r, c: at }));
+        }),
+        button(labels.deleteRow, '－ ' + labels.deleteRow, 'qt-btn qt-del', () => {
+          if (!active || active.r < 2) return;
+          act({ op: 'deleteRow', row: active.r }, (a) => ({ r: Math.min(a.r, nrows - 1), c: a.c }));
+        }),
+        button(labels.deleteColumn, '－ ' + labels.deleteColumn, 'qt-btn qt-del', () => {
+          if (!active || ncols < 2) return;
+          act({ op: 'deleteColumn', col: active.c }, (a) => ({ r: a.r, c: Math.min(a.c, ncols - 2) }));
+        }),
+        button('left / center / right', '↔', 'qt-btn', () => {
+          if (!active) return;
+          const next = ({ none: 'left', left: 'center', center: 'right', right: 'none' } as const)[v.align[active.c] ?? 'none'];
+          act({ op: 'align', col: active.c, align: next } as TableOp, (a) => a);
+        }),
       );
+      bar.append(ctx);
     }
     bar.append(
       button(labels.formulas, 'ƒ', 'qt-btn', () => {
         box.hidden = !box.hidden;
         if (!box.hidden) area.focus();
       }),
-      button(labels.editSource, '</>', 'qt-btn', () => {
-        const pos = view.posAtDOM(root);
-        view.dispatch({ selection: { anchor: pos }, scrollIntoView: true });
-        view.focus();
-      }),
     );
     root.append(bar, box);
     return root;
   }
+}
+
+/** Move the cursor out of the table, to the line after it (or before it). */
+function leave(view: EditorView, v: TableView, after: boolean): void {
+  const doc = view.state.doc;
+  if (after) {
+    if (v.toLine + 2 <= doc.lines) {
+      view.dispatch({ selection: { anchor: doc.line(v.toLine + 2).from }, scrollIntoView: true });
+    } else {
+      view.dispatch({ changes: { from: doc.length, insert: '\n' }, selection: { anchor: doc.length + 1 }, scrollIntoView: true });
+    }
+  } else if (v.fromLine > 0) {
+    view.dispatch({ selection: { anchor: doc.line(v.fromLine).to }, scrollIntoView: true });
+  } else {
+    view.dispatch({ changes: { from: 0, insert: '\n' }, selection: { anchor: 0 }, scrollIntoView: true });
+  }
+  view.focus();
 }
 
 function build(state: EditorState, labels: () => TableLabels): DecorationSet {
@@ -236,17 +285,17 @@ function build(state: EditorState, labels: () => TableLabels): DecorationSet {
   describeTables(text).forEach((v, i) => {
     const from = state.doc.line(v.fromLine + 1).from;
     const to = state.doc.line(v.toLine + 1).to;
-    // While the cursor is inside, show the plain text so it can be edited by hand.
-    if (!state.facet(readingMode) && state.selection.ranges.some((r) => r.from <= to && r.to >= from)) return;
     ranges.push(Decoration.replace({ widget: new TableWidget(i, v, L), block: true }).range(from, to));
   });
   return Decoration.set(ranges, true);
 }
 
 export function tablesExtension(labels: () => TableLabels) {
-  return StateField.define<DecorationSet>({
+  const field = StateField.define<DecorationSet>({
     create: (state) => build(state, labels),
-    update: (value, tr) => (tr.docChanged || tr.selection ? build(tr.state, labels) : value),
+    update: (value, tr) => (tr.docChanged ? build(tr.state, labels) : value),
     provide: (f) => EditorView.decorations.from(f),
   });
+  // The cursor jumps over a table instead of getting lost inside it.
+  return [field, EditorView.atomicRanges.of((view) => view.state.field(field))];
 }

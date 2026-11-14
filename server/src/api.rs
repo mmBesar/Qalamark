@@ -6,7 +6,7 @@
 use crate::auth::{check_password, hash_password, new_token, token_hash, user_for_token, User};
 use crate::db::now;
 use crate::state::{Shared, Signup};
-use crate::text::{safe_name, valid_username};
+use crate::text::{safe_name, valid_username, wiki_links};
 use axum::{
     extract::{ws::{Message as WsMessage, WebSocket, WebSocketUpgrade}, Path, Query, State},
     http::StatusCode,
@@ -540,4 +540,44 @@ async fn serve_socket(s: Shared, id: String, can_write: bool, socket: WebSocket)
         }
     }
     s.rooms.leave(&s, &room);
+}
+
+// ------------------------------------------------------------ backlinks
+
+#[derive(Serialize)]
+pub struct Backlink {
+    id: String,
+    title: String,
+}
+
+/// Notes (that you can open) which link to this one with [[Title]].
+pub async fn backlinks(State(s): State<Shared>, user: User, Path(id): Path<String>) -> ApiResult<Vec<Backlink>> {
+    let me = access(&s, &user, &id)?;
+    let title = title_of(&me.path).to_lowercase();
+    let candidates: Vec<(String, String)> = {
+        let db = s.db.lock().unwrap();
+        let mut st = db
+            .prepare(
+                "SELECT n.id, n.path FROM notes n
+                 LEFT JOIN shares sh ON sh.note_id = n.id AND sh.user_id = ?1
+                 WHERE (n.owner_id = ?1 OR sh.user_id IS NOT NULL) AND n.id <> ?2",
+            )
+            .map_err(internal)?;
+        st.query_map(params![user.id, id], |r| Ok((r.get(0)?, r.get(1)?)))
+            .map_err(internal)?
+            .filter_map(Result::ok)
+            .collect()
+    };
+    let mut out = Vec::new();
+    for (nid, path) in candidates {
+        let text = match s.rooms.get(&nid) {
+            Some(room) => room.text(),
+            None => std::fs::read_to_string(s.cfg.notes_dir().join(&path)).unwrap_or_default(),
+        };
+        if wiki_links(&text).iter().any(|l| l.to_lowercase() == title) {
+            out.push(Backlink { id: nid, title: title_of(&path) });
+        }
+    }
+    out.sort_by(|a, b| a.title.to_lowercase().cmp(&b.title.to_lowercase()));
+    Ok(Json(out))
 }

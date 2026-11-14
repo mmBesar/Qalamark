@@ -76,6 +76,8 @@ jobs:
       - name: Push (by digest)
         if: github.event_name != 'pull_request'
         run: |
+          # Pushing by digest needs a builder that is not the plain "docker" one.
+          docker buildx create --name qalamark-builder --driver docker-container --use
           docker buildx build --platform linux/${{ matrix.arch }} --provenance=false \
             --output type=image,name=${IMAGE},push-by-digest=true,name-canonical=true,push=true \
             --metadata-file meta.json .

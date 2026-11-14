@@ -43,10 +43,9 @@ export function toggleLinePrefix(view: EditorView, prefix: string): boolean {
   }
   const list = [...lines].map((n) => state.doc.line(n));
   const all = list.every((l) => l.text.startsWith(prefix));
-  view.dispatch({
-    changes: list.map((l) => (all ? { from: l.from, to: l.from + prefix.length } : { from: l.from, insert: prefix })),
-    userEvent: 'input.format',
-  });
+  const changes = state.changes(list.map((l) => (all ? { from: l.from, to: l.from + prefix.length } : { from: l.from, insert: prefix })));
+  // assoc 1: the cursor stays AFTER what was added, so you can type right away.
+  view.dispatch({ changes, selection: state.selection.map(changes, 1), userEvent: 'input.format' });
   view.focus();
   return true;
 }
@@ -58,10 +57,8 @@ export function cycleHeading(view: EditorView): boolean {
   const m = /^(#{1,6})\s/.exec(line.text);
   const level = m ? m[1]!.length : 0;
   const next = level >= 3 ? 0 : level + 1;
-  view.dispatch({
-    changes: { from: line.from, to: line.from + (m ? m[0].length : 0), insert: next ? '#'.repeat(next) + ' ' : '' },
-    userEvent: 'input.format',
-  });
+  const changes = state.changes({ from: line.from, to: line.from + (m ? m[0].length : 0), insert: next ? '#'.repeat(next) + ' ' : '' });
+  view.dispatch({ changes, selection: state.selection.map(changes, 1), userEvent: 'input.format' });
   view.focus();
   return true;
 }

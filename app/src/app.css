@@ -424,6 +424,12 @@ main {
   flex: 1;
   min-height: 0;
   overflow: auto;
+  display: flex;
+  flex-direction: column;
+  cursor: text;
+}
+.cm-host > .cm-editor {
+  flex: 1;
 }
 .statusbar {
   display: flex;
@@ -921,4 +927,73 @@ dialog label {
 dialog.wide {
   width: min(44rem, calc(100vw - 1.5rem));
   max-height: calc(100vh - 2rem);
+}
+
+/* ---------- links, callouts, highlights, tags ---------- */
+.cm-wikilink,
+.cm-wikilink-src {
+  color: var(--accent);
+  cursor: pointer;
+}
+.cm-wikilink {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.cm-wikilink-missing {
+  opacity: 0.65;
+  text-decoration-style: dashed;
+}
+.cm-highlight {
+  background: color-mix(in srgb, var(--gold) 35%, transparent);
+  border-radius: 3px;
+}
+.cm-tag {
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-radius: 99px;
+  padding: 0 0.4em;
+  font-size: 0.92em;
+}
+.cm-callout {
+  --cc: var(--c-function);
+  background: color-mix(in srgb, var(--cc) 11%, transparent);
+  border-inline-start: 3px solid var(--cc);
+  padding-inline: 0.9rem !important;
+}
+.cm-callout-head {
+  font-weight: 650;
+  color: var(--cc);
+  border-start-start-radius: 8px;
+  border-start-end-radius: 8px;
+  padding-top: 0.2rem !important;
+}
+.cm-callout-label {
+  color: var(--cc);
+  font-weight: 650;
+}
+.cm-callout-tip, .cm-callout-hint, .cm-callout-important, .cm-callout-abstract, .cm-callout-summary, .cm-callout-tldr { --cc: var(--c-property); }
+.cm-callout-success, .cm-callout-check, .cm-callout-done { --cc: var(--ok); }
+.cm-callout-question, .cm-callout-help, .cm-callout-faq { --cc: var(--c-number); }
+.cm-callout-warning, .cm-callout-caution, .cm-callout-attention { --cc: var(--gold); }
+.cm-callout-failure, .cm-callout-fail, .cm-callout-missing, .cm-callout-danger, .cm-callout-error, .cm-callout-bug { --cc: var(--danger); }
+.cm-callout-example { --cc: var(--c-keyword); }
+.cm-callout-quote, .cm-callout-cite { --cc: var(--muted); }
+.links-wrap {
+  position: relative;
+}
+.menu.up {
+  top: auto;
+  bottom: 1.8rem;
+  inset-inline-end: 0;
+}
+.qt-ctx {
+  display: inline-flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+.qt-del:hover {
+  color: var(--danger);
+}
+.qt-bar {
+  flex-wrap: wrap;
 }

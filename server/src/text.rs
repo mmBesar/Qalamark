@@ -56,6 +56,25 @@ pub fn diff(old: &str, new: &str) -> Option<(u32, u32, String)> {
     Some((start, del, ins))
 }
 
+/// The pages a text links to with [[Page]], [[Page|shown text]] or [[Page#Heading]].
+pub fn wiki_links(text: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut rest = text;
+    while let Some(i) = rest.find("[[") {
+        rest = &rest[i + 2..];
+        let Some(j) = rest.find("]]") else { break };
+        let inner = &rest[..j];
+        if !inner.contains('\n') {
+            let target = inner.split('|').next().unwrap_or("").split('#').next().unwrap_or("").trim();
+            if !target.is_empty() {
+                out.push(target.to_string());
+            }
+        }
+        rest = &rest[j + 2..];
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -65,6 +84,12 @@ mod tests {
         assert_eq!(safe_name("a/b:c"), "a-b-c");
         assert_eq!(safe_name("  ..  "), "Untitled");
         assert_eq!(safe_name("قائمة التسوق"), "قائمة التسوق");
+    }
+
+    #[test]
+    fn finds_wiki_links() {
+        let t = "See [[Shopping]], [[Ideas|my ideas]] and [[Plan#Week 2]]. Not [[ ]] or [[broken";
+        assert_eq!(wiki_links(t), vec!["Shopping", "Ideas", "Plan"]);
     }
 
     #[test]

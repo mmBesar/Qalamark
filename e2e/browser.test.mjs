@@ -101,7 +101,7 @@ test('write a note with a table, share it, edit it together', async () => {
   assert.deepEqual(errors, []);
 });
 
-test('without a server the app still works on this device', async () => {
+async function staticApp() {
   // A plain file server stands in for GitHub Pages: no API at all.
   const { createServer } = await import('node:http');
   const { readFile } = await import('node:fs/promises');
@@ -115,9 +115,14 @@ test('without a server the app still works on this device', async () => {
     } catch { res.writeHead(404); res.end('no'); }
   }).listen(0);
   await new Promise((r) => srv.once('listening', r));
+  return { srv, url: `http://127.0.0.1:${srv.address().port}/` };
+}
+
+test('without a server the app still works on this device', async () => {
+  const { srv, url } = await staticApp();
   const errors = [];
   const page = await newPage(errors);
-  await page.goto(`http://127.0.0.1:${srv.address().port}/`);
+  await page.goto(url);
   await page.waitForSelector('aside');
   await page.click('aside .actions .primary');
   await page.waitForSelector('.cm-content');
@@ -130,6 +135,73 @@ test('without a server the app still works on this device', async () => {
   await page.reload();
   await page.waitForSelector('.qt');
   assert.equal(await page.locator('.qt input[data-r="2"][data-c="1"]').inputValue(), '6');
+  assert.deepEqual(errors, []);
+  srv.close();
+});
+
+test('editing feels right: click anywhere, tables stay tables, links, callouts, undo', async () => {
+  const { srv, url } = await staticApp();
+  const errors = [];
+  const page = await newPage(errors);
+  await page.goto(url);
+  await page.waitForSelector('aside');
+  const newNote = async () => { await page.click('aside .actions .primary'); await page.waitForSelector('.cm-content'); };
+
+  // A note to link to.
+  await newNote();
+  await page.click('.topbar .title');
+  await page.fill('.topbar .title', 'Target');
+  await page.keyboard.press('Enter');
+
+  // Second note: click in the EMPTY area (not on a line) and type.
+  await newNote();
+  await page.mouse.click(700, 520);
+  await page.keyboard.insertText('Hello [[Target]] and ==marked== #tag\n\n> [!tip] Remember\n> be kind\n\n');
+  await page.keyboard.insertText('| Item | Qty | Price | Total |\n| --- | --- | --- | --- |\n| Tea | 2 | 3.5 |  |\n| Sum |  |  |  |\n<!-- qalamark\nD = B * C\nD3 = SUM(D)\n-->\n\nend');
+  await page.waitForSelector('.qt');
+  assert.ok(await page.locator('.cm-wikilink').count() >= 1, 'wiki link drawn');
+  assert.ok(await page.locator('.cm-highlight').count() >= 1, 'highlight drawn');
+  assert.ok(await page.locator('.cm-tag').count() >= 1, 'tag drawn');
+  assert.ok(await page.locator('.cm-callout-label').count() >= 1, 'callout drawn');
+
+  // The table stays a grid while you work in it; formula cells show the value again after you leave.
+  await page.waitForFunction(() => document.querySelector('.qt input[data-r="3"][data-c="3"]')?.value === '7', null, { timeout: 8000 });
+  const total = page.locator('.qt input[data-r="2"][data-c="3"]');
+  await total.click();
+  assert.match(await total.inputValue(), /^==/, 'formula visible while editing');
+  await page.locator('.qt input[data-r="2"][data-c="0"]').click();
+  assert.equal(await page.locator('.qt input[data-r="2"][data-c="3"]').inputValue(), '7', 'value back after leaving');
+  assert.equal(await page.locator('.qt').count(), 1, 'still a grid');
+
+  // Undo works from inside the table.
+  const qty = page.locator('.qt input[data-r="2"][data-c="1"]');
+  await qty.click();
+  await qty.fill('9');
+  await page.keyboard.press('Tab');
+  await page.waitForFunction(() => document.querySelector('.qt input[data-r="2"][data-c="3"]')?.value === '31.5');
+  await page.locator('.qt input[data-r="2"][data-c="0"]').click();
+  await page.keyboard.press('Control+z');
+  await page.waitForFunction(() => document.querySelector('.qt input[data-r="2"][data-c="1"]')?.value === '2', null, { timeout: 5000 });
+
+  // Delete a row with the buttons under the table (no extra column).
+  assert.equal(await page.locator('.qt .qt-tools').count(), 0);
+  await page.locator('.qt input[data-r="2"][data-c="0"]').click();
+  await page.click('.qt-del >> nth=0');
+  await page.waitForFunction(() => document.querySelectorAll('.qt tr').length === 2);
+
+  // Bullets: the cursor ends up after the marker.
+  await page.locator('.cm-line', { hasText: 'end' }).click();
+  await page.click('.toolbar button[title="Bullet list"]');
+  await page.keyboard.insertText('X');
+  assert.match(await page.locator('.cm-content').innerText(), /•\s*endX|end.*X/);
+
+  // Backlinks and following a link.
+  await page.click('.cm-line >> nth=0', { modifiers: ['Control'], position: { x: 5, y: 5 } }).catch(() => {});
+  await page.locator('.cm-wikilink').first().click({ modifiers: ['Control'] });
+  await page.waitForFunction(() => document.querySelector('.topbar .title')?.value === 'Target');
+  await page.click('.links-wrap button');
+  await page.waitForSelector('.links-wrap .menu button');
+
   assert.deepEqual(errors, []);
   srv.close();
 });

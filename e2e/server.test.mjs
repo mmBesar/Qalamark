@@ -181,3 +181,12 @@ test('removing a share takes access away; people can leave a share themselves', 
   assert.equal((await api('DELETE', `/api/notes/${n.id}/shares/bob`, bob)).status, 200);
   assert.equal((await api('GET', `/api/notes/${n.id}`, bob)).status, 404);
 });
+
+test('backlinks: notes that link to a note with [[Title]]', async () => {
+  const target = (await api('POST', '/api/notes', alice, { title: 'Target page' })).body;
+  await api('POST', '/api/notes', alice, { title: 'Linker', content: 'See [[target page]] and [[Other|x]]' });
+  await api('POST', '/api/notes', alice, { title: 'Nope', content: 'no links' });
+  const r = await api('GET', `/api/notes/${target.id}/backlinks`, alice);
+  assert.deepEqual(r.body.map((b) => b.title), ['Linker']);
+  assert.equal((await api('GET', `/api/notes/${target.id}/backlinks`, bob)).status, 404);
+});

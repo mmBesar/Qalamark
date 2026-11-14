@@ -267,6 +267,34 @@ class Store {
     if (this.currentId === id) this.currentId = this.notes[0]?.id ?? null;
   }
 
+  /** Open the note called `title`; make it if it does not exist yet (like Obsidian). */
+  async openTitle(title: string) {
+    const want = title.trim().toLowerCase();
+    const found = this.notes.find((n) => n.title.toLowerCase() === want);
+    if (found) this.currentId = found.id;
+    else await this.createNote(title.trim());
+  }
+
+  /** Notes that link to this one with [[its title]]. */
+  async backlinks(id: string): Promise<Array<{ id: string; title: string }>> {
+    if (this.mode === 'server') return this.api.backlinks(id);
+    const me = this.notes.find((n) => n.id === id);
+    if (!me) return [];
+    const want = me.title.toLowerCase();
+    const out: Array<{ id: string; title: string }> = [];
+    for (const n of this.notes) {
+      if (n.id === id) continue;
+      const text = await readStoredText(`local:${n.id}`);
+      for (const m of text.matchAll(/(?<!!)\[\[([^\]\n|#]*)/g)) {
+        if (m[1]!.trim().toLowerCase() === want) {
+          out.push({ id: n.id, title: n.title });
+          break;
+        }
+      }
+    }
+    return out;
+  }
+
   async importFiles(files: FileList | File[]) {
     let last = '';
     for (const f of Array.from(files)) {

@@ -3,7 +3,7 @@
 //
 // Puts the editor together: Markdown, live preview, tables, co-editing.
 
-import { autocompletion, closeBrackets, closeBracketsKeymap, completionKeymap } from '@codemirror/autocomplete';
+import { autocompletion, closeBrackets, closeBracketsKeymap, type CompletionContext, completionKeymap } from '@codemirror/autocomplete';
 import { defaultKeymap, indentWithTab } from '@codemirror/commands';
 import { markdown, markdownKeymap, markdownLanguage } from '@codemirror/lang-markdown';
 import { languages } from '@codemirror/language-data';
@@ -18,7 +18,7 @@ import type { Awareness } from 'y-protocols/awareness';
 import type * as Y from 'yjs';
 import { cycleHeading, toggleWrap } from './commands.ts';
 import { autoCalc } from './autocalc.ts';
-import { livePreview, readingMode } from './livepreview.ts';
+import { livePreview, readingMode, wikiConfig } from './livepreview.ts';
 import { type TableLabels, tablesExtension } from './tables.ts';
 
 // Colours for code inside code blocks (other Markdown looks come from live preview).
@@ -53,6 +53,9 @@ export interface EditorOptions {
   labels: () => TableLabels;
   hint: string;
   mode: ViewMode;
+  /** Titles of the other notes (for [[links]]). */
+  titles: () => string[];
+  openLink: (title: string) => void;
   onChange?: () => void;
 }
 
@@ -66,6 +69,24 @@ export interface Editor {
 
 export function createEditor(o: EditorOptions): Editor {
   const undo = new UndoManager(o.ytext);
+  // Typing [[ offers the titles of your notes.
+  const wikiSource = (ctx: CompletionContext) => {
+    const m = ctx.matchBefore(/\[\[[^\]\n]*/);
+    if (!m) return null;
+    const q = m.text.slice(2).toLowerCase();
+    const options = o
+      .titles()
+      .filter((t) => t.toLowerCase().includes(q))
+      .slice(0, 30)
+      .map((label) => ({
+        label,
+        apply: (view: EditorView, _c: unknown, from: number, to: number) => {
+          const closed = view.state.sliceDoc(to, to + 2) === ']]';
+          view.dispatch({ changes: { from, to, insert: label + (closed ? '' : ']]') }, selection: { anchor: from + label.length + 2 } });
+        },
+      }));
+    return { from: m.from + 2, options, filter: false, validFor: /^[^\]\n]*$/ };
+  };
   const tables = tablesExtension(o.labels);
   const modeSlot = new Compartment();
   // What changes between the three ways of looking at a note.
@@ -86,7 +107,8 @@ export function createEditor(o: EditorOptions): Editor {
     indentOnInput(),
     bracketMatching(),
     closeBrackets(),
-    autocompletion({ icons: false }),
+    autocompletion({ icons: false, override: [wikiSource] }),
+    wikiConfig.of({ titles: o.titles, open: o.openLink }),
     highlightSelectionMatches(),
     EditorView.lineWrapping,
     EditorView.perLineTextDirection.of(true), // Arabic and English lines each get their own direction

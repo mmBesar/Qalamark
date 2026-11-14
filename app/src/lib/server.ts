@@ -104,6 +104,9 @@ export class Api {
   deleteNote(id: string) {
     return this.call<void>('DELETE', `/api/notes/${id}`);
   }
+  backlinks(id: string) {
+    return this.call<Array<{ id: string; title: string }>>('GET', `/api/notes/${id}/backlinks`);
+  }
   shares(id: string) {
     return this.call<Share[]>('GET', `/api/notes/${id}/shares`);
   }

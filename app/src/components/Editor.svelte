@@ -2,6 +2,7 @@
 <!-- Copyright (C) 2026 mmBesar -->
 <script lang="ts">
   import { onMount, untrack } from 'svelte';
+  import { yUndoManagerKeymap } from 'y-codemirror.next';
   import { cycleHeading, insertLink, insertTable, toggleLinePrefix, toggleWrap } from '../editor/commands.ts';
   import { createEditor, type Editor, type ViewMode } from '../editor/editor.ts';
   import type { TableLabels } from '../editor/tables.ts';
@@ -22,6 +23,8 @@
   let title = $state(first.title);
   let sharing = $state(false);
   let help = $state(false);
+  let links = $state<Array<{ id: string; title: string }>>([]);
+  let showLinks = $state(false);
   let mode = $state<ViewMode>((() => {
     try {
       const m = localStorage.getItem('qm.mode');
@@ -85,16 +88,47 @@
       labels: () => labels,
       hint: '',
       mode,
+      titles: () => store.notes.map((n) => n.title).filter((x) => x !== first.title),
+      openLink: (title) => void store.openTitle(title).catch((e) => (err = e instanceof Error ? e.message : String(e))),
       onChange: changed,
     });
     host.addEventListener('qalamark-help', () => (help = true));
     changed();
+    void loadLinks();
     return () => {
       clearTimeout(timer);
       editor.destroy();
       session.destroy();
     };
   });
+
+  async function loadLinks() {
+    try {
+      links = await store.backlinks(first.id);
+    } catch {
+      links = [];
+    }
+  }
+
+  const history = (key: string) => () => {
+    yUndoManagerKeymap.find((b) => b.key === key)?.run?.(editor.view);
+    editor.view.focus();
+  };
+
+  /** Click anywhere in the empty page area to start typing there (at the end), like other editors. */
+  function focusEnd(e: MouseEvent) {
+    const el = e.target as HTMLElement;
+    if (el.closest('.cm-content') || el.closest('.qt') || readOnly || mode === 'read') return;
+    e.preventDefault();
+    const v = editor.view;
+    const doc = v.state.doc;
+    const last = doc.line(doc.lines).text.trim();
+    // Never leave the cursor stuck right behind a table.
+    if (last.startsWith('|') || last.endsWith('-->')) {
+      v.dispatch({ changes: { from: doc.length, insert: '\n' }, selection: { anchor: doc.length + 1 } });
+    } else v.dispatch({ selection: { anchor: doc.length } });
+    v.focus();
+  }
 
   const run = (f: (v: typeof editor.view) => boolean) => () => f(editor.view);
 
@@ -138,6 +172,7 @@
 <svelte:window
   onpointerdown={(e) => {
     if (menu && !(e.target as Element).closest('.menu-wrap')) menu = false;
+    if (showLinks && !(e.target as Element).closest('.links-wrap')) showLinks = false;
   }}
   onkeydown={(e) => e.key === 'Escape' && (menu = false)}
 />
@@ -195,10 +230,24 @@
 
   {#if err}<p class="error banner" role="alert">{err} <button class="link" onclick={() => (err = '')}>×</button></p>{/if}
 
-  <div class="cm-host" bind:this={host}></div>
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <div class="cm-host" bind:this={host} onmousedown={focusEnd}></div>
 
   <footer class="statusbar">
     <span>{t('words', { n: words })}</span>
+    <span class="grow"></span>
+    <div class="links-wrap">
+      <button class="link" onclick={() => ((showLinks = !showLinks), loadLinks())} aria-expanded={showLinks}>↩ {t('backlinks')} ({links.length})</button>
+      {#if showLinks}
+        <div class="menu up">
+          {#each links as l (l.id)}
+            <button onclick={() => ((store.currentId = l.id), (showLinks = false))}>{l.title}</button>
+          {:else}
+            <span class="muted pad">{t('noBacklinks')}</span>
+          {/each}
+        </div>
+      {/if}
+    </div>
     {#if store.mode === 'server' && note.role !== 'owner'}<span>· {t('sharedByOther', { name: note.owner })}</span>{/if}
   </footer>
 </section>

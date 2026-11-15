@@ -10,6 +10,8 @@
   import { type LinkStatus, NoteSession } from '../lib/session.ts';
   import { store } from '../lib/store.svelte.ts';
   import Properties from './Properties.svelte';
+  import Icon from './Icon.svelte';
+  import { confirmBox } from '../lib/dialog.svelte.ts';
   import HelpDialog from './HelpDialog.svelte';
   import ShareDialog from './ShareDialog.svelte';
 
@@ -204,7 +206,7 @@
   async function remove() {
     menu = false;
     const ask = store.mode === 'server' ? t('deleteAsk') : t('deleteAskLocal');
-    if (note.role === 'owner' || store.mode === 'local' ? !confirm(ask) : !confirm(t('leave') + '?')) return;
+    if (!(await confirmBox(note.role === 'owner' || store.mode === 'local' ? ask : t('leave') + '?'))) return;
     try {
       await store.deleteNote(note.id);
     } catch (e) {
@@ -228,7 +230,7 @@
 
 <section class="editor-pane">
   <header class="topbar">
-    <button class="icon menu-btn" aria-label={t('menu')} onclick={onMenu}>☰</button>
+    <button class="icon menu-btn" aria-label={t('menu')} onclick={onMenu}><Icon name="menu" /></button>
     <input
       class="title"
       bind:value={title}
@@ -245,10 +247,10 @@
     </div>
     {#if readOnly}<span class="pill">{t('readOnly')}</span>{/if}
     {#if store.mode === 'server' && note.role === 'owner'}
-      <button class="ghost small" onclick={() => (sharing = true)}>👥<span class="lbl"> {t('share')}</span></button>
+      <button class="ghost small" onclick={() => (sharing = true)}><Icon name="share" size={16} /><span class="lbl">{t('share')}</span></button>
     {/if}
     <div class="menu-wrap">
-      <button class="icon" aria-label={t('menu')} aria-expanded={menu} onclick={() => (menu = !menu)}>⋯</button>
+      <button class="icon" aria-label={t('menu')} aria-expanded={menu} onclick={() => (menu = !menu)}><Icon name="more" /></button>
       {#if menu}
         <div class="menu" role="menu">
           <button role="menuitem" onclick={() => ((help = true), (menu = false))}>{t('help')} · ƒ</button>
@@ -261,20 +263,20 @@
 
   {#if !readOnly && mode !== 'read'}
     <div class="toolbar" role="toolbar">
-      <button title="{t('bold')} (Ctrl+B)" onclick={run((v) => toggleWrap(v, '**'))}><b>B</b></button>
-      <button title="{t('italic')} (Ctrl+I)" onclick={run((v) => toggleWrap(v, '*'))}><i>I</i></button>
-      <button title={t('strike')} onclick={run((v) => toggleWrap(v, '~~'))}><s>S</s></button>
-      <button title={t('code')} onclick={run((v) => toggleWrap(v, '`'))}>&lt;/&gt;</button>
+      <button title="{t('bold')} (Ctrl+B)" onclick={run((v) => toggleWrap(v, '**'))}><Icon name="bold" /></button>
+      <button title="{t('italic')} (Ctrl+I)" onclick={run((v) => toggleWrap(v, '*'))}><Icon name="italic" /></button>
+      <button title={t('strike')} onclick={run((v) => toggleWrap(v, '~~'))}><Icon name="strike" /></button>
+      <button title={t('code')} onclick={run((v) => toggleWrap(v, '`'))}><Icon name="code" /></button>
       <span class="sep"></span>
-      <button title={t('heading')} onclick={run(cycleHeading)}>H</button>
-      <button title={t('bullet')} onclick={run((v) => toggleLinePrefix(v, '- '))}>•</button>
-      <button title={t('task')} onclick={run((v) => toggleLinePrefix(v, '- [ ] '))}>☑</button>
-      <button title={t('quote')} onclick={run((v) => toggleLinePrefix(v, '> '))}>❝</button>
+      <button title={t('heading')} onclick={run(cycleHeading)}><Icon name="heading" /></button>
+      <button title={t('bullet')} onclick={run((v) => toggleLinePrefix(v, '- '))}><Icon name="list" /></button>
+      <button title={t('task')} onclick={run((v) => toggleLinePrefix(v, '- [ ] '))}><Icon name="check" /></button>
+      <button title={t('quote')} onclick={run((v) => toggleLinePrefix(v, '> '))}><Icon name="quote" /></button>
       <span class="sep"></span>
-      <button title={t('link')} onclick={run(insertLink)}>🔗</button>
-      <button title={t('table')} onclick={run(insertTable)}>▦</button>
+      <button title={t('link')} onclick={run(insertLink)}><Icon name="link" /></button>
+      <button title={t('table')} onclick={run(insertTable)}><Icon name="table" /></button>
       <span class="relative">
-        <button title={t('insert')} aria-haspopup="menu" onclick={(e) => { e.stopPropagation(); insMenu = !insMenu; }}>＋ ▾</button>
+        <button title={t('insert')} aria-haspopup="menu" onclick={(e) => { e.stopPropagation(); insMenu = !insMenu; }}><Icon name="plus" /><Icon name="chevron" size={12} /></button>
         {#if insMenu}
           <div class="menu insmenu" role="menu">
             <button onclick={() => snippet(SNIPPETS.callout)}>{t('insCallout')}</button>
@@ -289,7 +291,7 @@
         {/if}
       </span>
       <input bind:this={picInput} type="file" accept="image/*" hidden onchange={pickPicture} />
-      <button title={t('help')} onclick={() => (help = true)}>ƒ?</button>
+      <button title={t('help')} onclick={() => (help = true)}><Icon name="fx" /></button>
     </div>
   {/if}
 

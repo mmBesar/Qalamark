@@ -6,6 +6,7 @@
   import Login from './components/Login.svelte';
   import SettingsDialog from './components/SettingsDialog.svelte';
   import Sidebar from './components/Sidebar.svelte';
+  import DialogHost from './components/DialogHost.svelte';
   import { store } from './lib/store.svelte.ts';
 
   let drawer = $state(false);
@@ -73,3 +74,4 @@
     <SettingsDialog onClose={() => (settings = false)} />
   {/if}
 {/if}
+<DialogHost />

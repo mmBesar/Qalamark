@@ -1,6 +1,7 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
 <!-- Copyright (C) 2026 mmBesar -->
 <script lang="ts">
+  import { askBox, confirmBox } from '../lib/dialog.svelte.ts';
   import { addUserFont, removeUserFont } from '../lib/fonts';
   import { onMount } from 'svelte';
   import { store, type Theme } from '../lib/store.svelte.ts';
@@ -49,13 +50,13 @@
     void loadUsers();
   });
   const toggleSignup = (on: boolean) => attempt(async () => { signup = (await store.api.setSignup(on)).signup; });
-  const resetPw = (name: string) => {
-    const pw = prompt(t('newPasswordFor', { name }));
+  const resetPw = async (name: string) => {
+    const pw = await askBox(t('newPasswordFor', { name }), true);
     if (pw) void attempt(async () => { await store.api.updateUser(name, { password: pw }); return '✓'; });
   };
   const setAdmin = (name: string, admin: boolean) => attempt(async () => { await store.api.updateUser(name, { admin }); await loadUsers(); });
-  const removeUser = (name: string) => {
-    if (confirm(t('confirmDeleteUser', { name }))) void attempt(async () => { await store.api.deleteUser(name); await loadUsers(); });
+  const removeUser = async (name: string) => {
+    if (await confirmBox(t('confirmDeleteUser', { name }))) void attempt(async () => { await store.api.deleteUser(name); await loadUsers(); });
   };
 
   async function attempt(f: () => Promise<string | void>) {

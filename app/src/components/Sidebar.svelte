@@ -1,6 +1,7 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
 <!-- Copyright (C) 2026 mmBesar -->
 <script lang="ts">
+  import Icon from './Icon.svelte';
   import { store } from '../lib/store.svelte.ts';
   import type { NoteMeta } from '../lib/server.ts';
   import { BUILT_IN } from '../lib/templates.ts';
@@ -180,13 +181,13 @@
     <img src="./icon.svg" alt="" width="28" height="28" />
     <strong>{t('appName')}</strong>
     <span class="grow"></span>
-    <button class="icon" aria-label={t('settings')} title={t('settings')} onclick={onSettings}>⚙</button>
+    <button class="icon" aria-label={t('settings')} title={t('settings')} onclick={onSettings}><Icon name="settings" /></button>
   </header>
 
   <div class="actions">
-    <button class="primary" onclick={() => create()}>＋ {t('newNote')}</button>
+    <button class="primary" onclick={() => create()}><Icon name="plus" size={16} />{t('newNote')}</button>
     <span class="relative">
-      <button class="icon" title={t('newFromTemplate')} aria-label={t('newFromTemplate')} onclick={(e) => { e.stopPropagation(); tmpl = !tmpl; }}>▾</button>
+      <button class="icon" title={t('newFromTemplate')} aria-label={t('newFromTemplate')} onclick={(e) => { e.stopPropagation(); tmpl = !tmpl; }}><Icon name="chevron" size={16} /></button>
       {#if tmpl}
         <div class="menu" role="menu">
           {#each BUILT_IN as b (b.id)}
@@ -202,8 +203,8 @@
         </div>
       {/if}
     </span>
-    <button class="icon" title={t('newFolder')} aria-label={t('newFolder')} onclick={() => ask(t('folderName'), '', (v) => store.createFolder(v))}>🗀</button>
-    <button class="icon" title={t('import')} aria-label={t('import')} onclick={() => fileInput.click()}>⇪</button>
+    <button class="icon" title={t('newFolder')} aria-label={t('newFolder')} onclick={() => ask(t('folderName'), '', (v) => store.createFolder(v))}><Icon name="folder-plus" /></button>
+    <button class="icon" title={t('import')} aria-label={t('import')} onclick={() => fileInput.click()}><Icon name="upload" /></button>
     <input bind:this={fileInput} type="file" accept=".md,.markdown,.txt,text/markdown,text/plain" multiple hidden onchange={imported} />
   </div>
 
@@ -212,7 +213,7 @@
       <!-- svelte-ignore a11y_autofocus -->
       <input autofocus bind:value={asking.value} placeholder={asking.label} aria-label={asking.label} />
       <button class="primary small" type="submit">OK</button>
-      <button class="ghost small" type="button" onclick={() => (asking = null)}>✕</button>
+      <button class="ghost small" type="button" aria-label="Cancel" onclick={() => (asking = null)}><Icon name="close" size={14} /></button>
     </form>
   {/if}
 
@@ -242,11 +243,12 @@
               ondragover={(e) => { e.preventDefault(); e.stopPropagation(); dropOn = r.path; }}
               ondrop={(e) => drop(e, r.path)}
             >
-              <span class="caret">{open.includes(r.path) ? '▾' : store.lang === 'ar' ? '◂' : '▸'}</span>
+              <span class="caret" class:open={open.includes(r.path)}><Icon name="chevron-right" size={14} /></span>
+              <span class="fico"><Icon name="folder" size={16} /></span>
               <span class="title">{r.path === SHARED ? t('sharedWithMe') : nameOf(r.path)}</span>
             </button>
             {#if r.path !== SHARED}
-              <button class="dots" aria-label={t('menu')} onclick={(e) => openMenu(e, 'folder', r.path)}>⋯</button>
+              <button class="dots" aria-label={t('menu')} onclick={(e) => openMenu(e, 'folder', r.path)}><Icon name="more" size={16} /></button>
               {#if menu?.key === r.path}
                 <div class="menu" role="menu">
                   <button onclick={() => run(async () => { if (!open.includes(r.path)) toggle(r.path); await create(r.path); })}>{t('newNoteHere')}</button>
@@ -273,7 +275,7 @@
                 <small class="badge" title={t('sharedByOther', { name: n.owner })}>{n.owner}{n.role === 'view' ? ' · 👁' : ''}</small>
               {/if}
             </button>
-            <button class="dots" aria-label={t('menu')} onclick={(e) => openMenu(e, 'note', n.id)}>⋯</button>
+            <button class="dots" aria-label={t('menu')} onclick={(e) => openMenu(e, 'note', n.id)}><Icon name="more" size={16} /></button>
             {#if menu?.key === n.id}
               <div class="menu" role="menu">
                 {#if menu.step === 'main'}

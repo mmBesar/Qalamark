@@ -337,6 +337,30 @@ class Store {
     return this.createNote(title, body, folder);
   }
 
+  /** Open today's daily note, making it from the Daily template the first time. */
+  async openDaily(): Promise<void> {
+    const d = new Date();
+    const title = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    const have = this.notes.find((n) => n.title === title && (n.folder ?? '') === '' && (n.role === 'owner' || this.mode !== 'server'));
+    if (have) this.currentId = have.id;
+    else await this.newFromTemplate('builtin:daily');
+  }
+
+  /** Search inside note text (needs the server; on-device notes only match by title). */
+  async searchText(q: string): Promise<Array<{ id: string; title: string; snippet: string }>> {
+    if (this.mode !== 'server') return [];
+    return this.api.search(q).catch(() => []);
+  }
+
+  /** Recently opened notes, newest first. */
+  recent = $state<string[]>(read<string[]>('qm.recent', []));
+  touchRecent(id: string) {
+    this.recent = [id, ...this.recent.filter((x) => x !== id)].slice(0, 12);
+    write('qm.recent', this.recent);
+  }
+
+  palette = $state(false);
+
   /** Keep a copy of a note in the Templates folder. */
   async saveAsTemplate(id: string, liveText?: string) {
     const n = this.notes.find((x) => x.id === id);

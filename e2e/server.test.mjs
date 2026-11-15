@@ -306,3 +306,13 @@ test('renaming a note updates [[links]] to it and its own title: property', asyn
   live.close();
   void other;
 });
+
+test('search looks inside note text, only in notes you can open', async () => {
+  await api('POST', '/api/notes', alice, { title: 'Recipes', content: 'Mix flour with a pinch of Zanzibar saffron and wait.' });
+  const hit = (await api('GET', '/api/search?q=zanzibar', alice)).body;
+  assert.equal(hit.length, 1);
+  assert.equal(hit[0].title, 'Recipes');
+  assert.match(hit[0].snippet, /pinch of Zanzibar saffron/);
+  assert.equal((await api('GET', '/api/search?q=zanzibar', bob)).body.length, 0);
+  assert.equal((await api('GET', '/api/search?q=z', alice)).body.length, 0);
+});

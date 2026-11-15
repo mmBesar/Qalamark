@@ -200,8 +200,8 @@ test('editing feels right: click anywhere, tables stay tables, links, callouts, 
   await page.click('.cm-line >> nth=0', { modifiers: ['Control'], position: { x: 5, y: 5 } }).catch(() => {});
   await page.locator('.cm-wikilink').first().click({ modifiers: ['Control'] });
   await page.waitForFunction(() => document.querySelector('.topbar .title')?.value === 'Target');
-  await page.click('.links-wrap button');
-  await page.waitForSelector('.links-wrap .menu button');
+  await page.click('.links-wrap:last-child button');
+  await page.waitForSelector('.links-wrap:last-child .menu button');
 
   assert.deepEqual(errors, []);
   srv.close();
@@ -369,5 +369,33 @@ test('round 4: a note becomes a Kanban board and stays plain Markdown', async ()
   assert.match(md, /kanban: board/);
   assert.match(md, /## Todo\s*\n- \[ \] write docs\s*\n- \[x\] fix bug/);
   assert.match(md, /## Done\s*\n- \[x\] ship\s*\n- \[ \] new card/);
+  assert.deepEqual(errors, []);
+});
+
+test('round 5: quick switcher, text search, today note, outline', async () => {
+  const errors = [];
+  const page = await newPage(errors);
+  await signIn(page, 'alice', 'alice-password');
+  await page.click('aside .actions .primary');
+  await page.waitForSelector('.cm-content');
+  await page.click('.cm-content');
+  await page.keyboard.insertText('# Big title\n\nsome words about Quokka habitats\n\n## Second part\n\nmore\n');
+  await page.click('.topbar .title');
+  await page.keyboard.press('Control+p');
+  await page.waitForSelector('.pal');
+  await page.keyboard.type('quokka');
+  await page.waitForSelector('.pal li:has-text("Quokka")', { timeout: 5000 }); // found by text, not title
+  await page.keyboard.press('Escape');
+  assert.equal(await page.locator('.pal').count(), 0);
+  // outline jumps
+  await page.click('button:has-text("Outline")');
+  await page.click('.menu.outline button:has-text("Second part")');
+  await page.keyboard.type('Z');
+  assert.match(await page.locator('.cm-line:has-text("Second part")').innerText(), /Z/);
+  // today note
+  await page.click('aside .actions button[aria-label="Open today\'s note"]');
+  const d = new Date();
+  const today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  await page.waitForFunction((x) => document.querySelector('.topbar .title')?.value === x, today);
   assert.deepEqual(errors, []);
 });

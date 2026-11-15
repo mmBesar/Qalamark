@@ -820,6 +820,65 @@ pub async fn backlinks(State(s): State<Shared>, user: User, Path(id): Path<Strin
     Ok(Json(out))
 }
 
+// --------------------------------------------------------------- search
+
+#[derive(Deserialize)]
+pub struct SearchQuery {
+    q: String,
+}
+
+#[derive(Serialize)]
+pub struct Hit {
+    id: String,
+    title: String,
+    snippet: String,
+}
+
+/// Looks inside the text of every note you can open (your own and shared ones).
+pub async fn search(State(s): State<Shared>, user: User, Query(q): Query<SearchQuery>) -> ApiResult<Vec<Hit>> {
+    let needle = q.q.trim().to_lowercase();
+    if needle.chars().count() < 2 {
+        return Ok(Json(Vec::new()));
+    }
+    let rows: Vec<(String, String)> = {
+        let db = s.db.lock().unwrap();
+        let mut st = db
+            .prepare(
+                "SELECT n.id, n.path FROM notes n
+                 LEFT JOIN shares sh ON sh.note_id = n.id AND sh.user_id = ?1
+                 WHERE n.owner_id = ?1 OR sh.user_id IS NOT NULL ORDER BY n.updated DESC",
+            )
+            .map_err(internal)?;
+        st.query_map(params![user.id], |r| Ok((r.get(0)?, r.get(1)?)))
+            .map_err(internal)?
+            .filter_map(Result::ok)
+            .collect()
+    };
+    let mut out = Vec::new();
+    for (id, path) in rows {
+        let text = match s.rooms.get(&id) {
+            Some(room) => room.text(),
+            None => std::fs::read_to_string(s.cfg.notes_dir().join(&path)).unwrap_or_default(),
+        };
+        let lower = text.to_lowercase();
+        // lowercasing can change byte offsets for a few scripts; fall back to the title then
+        let Some(at) = lower.find(&needle).filter(|_| lower.len() == text.len()) else {
+            if title_of(&path).to_lowercase().contains(&needle) {
+                out.push(Hit { id, title: title_of(&path), snippet: String::new() });
+            }
+            continue;
+        };
+        let from = text[..at].char_indices().rev().nth(40).map(|c| c.0).unwrap_or(0);
+        let to = text[at..].char_indices().nth(needle.chars().count() + 70).map(|c| at + c.0).unwrap_or(text.len());
+        let snippet = text[from..to].split_whitespace().collect::<Vec<_>>().join(" ");
+        out.push(Hit { id, title: title_of(&path), snippet });
+        if out.len() >= 40 {
+            break;
+        }
+    }
+    Ok(Json(out))
+}
+
 // -------------------------------------------------------------- folders
 
 #[derive(Serialize, Deserialize)]

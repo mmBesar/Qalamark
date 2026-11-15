@@ -7,6 +7,7 @@
   import SettingsDialog from './components/SettingsDialog.svelte';
   import Sidebar from './components/Sidebar.svelte';
   import DialogHost from './components/DialogHost.svelte';
+  import Palette from './components/Palette.svelte';
   import { store } from './lib/store.svelte.ts';
 
   let drawer = $state(false);
@@ -74,4 +75,6 @@
     <SettingsDialog onClose={() => (settings = false)} />
   {/if}
 {/if}
+{#if store.palette}<Palette onSettings={() => (settings = true)} />{/if}
+<svelte:window onkeydown={(e) => { if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && (e.key === 'p' || e.key === 'k') && store.mode !== 'login' && store.mode !== 'boot') { e.preventDefault(); store.palette = !store.palette; } }} />
 <DialogHost />

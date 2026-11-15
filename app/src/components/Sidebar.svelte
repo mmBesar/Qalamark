@@ -204,7 +204,8 @@
       {/if}
     </span>
     <button class="icon" title={t('newFolder')} aria-label={t('newFolder')} onclick={() => ask(t('folderName'), '', (v) => store.createFolder(v))}><Icon name="folder-plus" /></button>
-    <button class="icon" title={t('import')} aria-label={t('import')} onclick={() => fileInput.click()}><Icon name="upload" /></button>
+    <button class="icon" type="button" title={t('dailyNote')} aria-label={t('dailyNote')} onclick={() => void store.openDaily()}><Icon name="calendar" /></button>
+        <button class="icon" title={t('import')} aria-label={t('import')} onclick={() => fileInput.click()}><Icon name="upload" /></button>
     <input bind:this={fileInput} type="file" accept=".md,.markdown,.txt,text/markdown,text/plain" multiple hidden onchange={imported} />
   </div>
 

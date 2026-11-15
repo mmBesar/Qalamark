@@ -12,6 +12,7 @@
   import Properties from './Properties.svelte';
   import Icon from './Icon.svelte';
   import Board from './Board.svelte';
+  import { EditorView } from '@codemirror/view';
   import { isBoard, makeBoard } from '../lib/kanban.ts';
   import { applyText } from '../lib/ytext.ts';
   import { confirmBox } from '../lib/dialog.svelte.ts';
@@ -47,6 +48,35 @@
     } catch {
       /* fine */
     }
+  }
+  let outline = $state<Array<{ level: number; text: string; pos: number }>>([]);
+  let showOutline = $state(false);
+  function openOutline() {
+    const text = liveText?.toString() ?? '';
+    const out: typeof outline = [];
+    let pos = 0;
+    let fence = false;
+    let inFront = text.startsWith('---');
+    for (const [i, line] of text.split('\n').entries()) {
+      if (inFront) { if (i > 0 && line.trim() === '---') inFront = false; }
+      else {
+        if (/^\s*(```|~~~)/.test(line)) fence = !fence;
+        const m = !fence && /^(#{1,6})\s+(.*?)\s*#*\s*$/.exec(line);
+        if (m) out.push({ level: m[1]!.length, text: m[2]!, pos });
+      }
+      pos += line.length + 1;
+    }
+    outline = out;
+    showOutline = true;
+  }
+  function jump(pos: number) {
+    showOutline = false;
+    if (mode === 'board') setMode('live');
+    queueMicrotask(() => {
+      const v = editor.view;
+      v.dispatch({ selection: { anchor: pos }, effects: EditorView.scrollIntoView(pos, { y: 'start', yMargin: 24 }) });
+      if (mode !== 'read') v.focus();
+    });
   }
   let boardNote = $state(false);
   let boardSeen = false;
@@ -116,9 +146,17 @@
       },
     });
     host.addEventListener('qalamark-help', () => (help = true));
+    store.touchRecent(note.id);
+    const onCmd = (e: Event) => {
+      const c = (e as CustomEvent<string>).detail;
+      if (c.startsWith('mode:')) setMode(c.slice(5) as ViewMode);
+      else if (c === 'outline') openOutline();
+    };
+    window.addEventListener('qalamark-cmd', onCmd);
     changed();
     void loadLinks();
     return () => {
+      window.removeEventListener('qalamark-cmd', onCmd);
       clearTimeout(timer);
       editor.destroy();
       session.destroy();
@@ -321,6 +359,18 @@
   <footer class="statusbar">
     <span>{t('words', { n: words })}</span>
     <span class="grow"></span>
+    <div class="links-wrap">
+      <button class="link" onclick={() => (showOutline ? (showOutline = false) : openOutline())} aria-expanded={showOutline}><Icon name="outline" size={14} /> {t('outline')}</button>
+      {#if showOutline}
+        <div class="menu up outline">
+          {#each outline as h (h.pos)}
+            <button style="padding-inline-start: {0.75 + (h.level - 1) * 0.8}rem" onclick={() => jump(h.pos)}>{h.text}</button>
+          {:else}
+            <span class="muted pad">{t('noHeadings')}</span>
+          {/each}
+        </div>
+      {/if}
+    </div>
     <div class="links-wrap">
       <button class="link" onclick={() => ((showLinks = !showLinks), loadLinks())} aria-expanded={showLinks}>↩ {t('backlinks')} ({links.length})</button>
       {#if showLinks}

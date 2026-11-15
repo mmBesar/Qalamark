@@ -128,6 +128,8 @@ there becomes a note. More in **[docs/SELF-HOSTING.md](docs/SELF-HOSTING.md)**
 - **Your fonts, your size:** Roboto, Noto Naskh Arabic UI and JetBrains Mono Nerd Font are built in; pick any other or add your own font file. The editor can be centered with a width of your choice.
 - **Plain-words table formulas** next to the usual spreadsheet ones, with a point-and-click formula builder.
 - **Works on a phone:** the layout adapts, controls stay reachable.
+- **Code blocks in many languages:** bash/sh, yml, ini/conf, toml, nginx, Dockerfile, Python, JS and more, also inside tabs and boxes. In Reading mode, tabs are real clickable tabs.
+- **Properties follow the mode:** hidden behind the panel in Live and Reading, plain text in Source.
 - **English and Arabic** interface, right-to-left.
 
 ## Try the pieces from source
@@ -156,7 +158,7 @@ Everything also runs in GitHub Actions on every push (see the badges).
 - [x] **4. Editor:** CodeMirror live preview, editable tables with formulas
 - [x] **5. Collaboration and offline:** real-time co-editing, works offline (PWA)
 - [x] **6. Container:** Docker image with `PUID`/`PGID`/`TZ`, amd64 + arm64 on native runners
-- [ ] **7. Apps:** Linux desktop and Android shells (Tauri) that sync with your server
+- [x] **7. Apps (first version):** Linux (AppImage, deb, rpm) and Android (APK) shells with Tauri 2, built by the *Apps* workflow; they connect to your server or keep notes on the device. Still to come: Android dynamic colour (Material You), system colours on Linux
 - [ ] **Later:** search inside notes, note embeds `![[note]]`, math and diagrams, renaming a note updates links, offline note creation, riscv64 image, version history
 
 Design decisions and the reasons behind them are in
@@ -166,7 +168,7 @@ Design decisions and the reasons behind them are in
 
 ```
 server/             The server (Rust): accounts, notes, sharing, live sync
-app/                The web app (Svelte + CodeMirror), base of the desktop/Android apps
+app/                The web app (Svelte + CodeMirror); app/src-tauri is the Linux/Android shell
 packages/tables/    Table formula engine (TypeScript, no dependencies)
 e2e/                End-to-end tests: real server, real clients, real browser
 docker/ Dockerfile  The container image
@@ -193,3 +195,11 @@ later version. See [LICENSE](LICENSE) for the full text.
 
 AGPL was chosen on purpose: if someone runs a modified Qalamark as a network
 service, they must share their changes too.
+
+## Linux and Android apps
+
+Run the **Apps (Linux + Android)** workflow in GitHub Actions (or push a `v*` tag): it builds
+AppImage, deb, rpm and an APK. Optional repository secrets for a release-signed APK:
+`ANDROID_KEYSTORE_B64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD`.
+Plain `http://` servers on your home network work on Android. On first start, type your server
+address on the sign-in screen, or choose to keep notes on the device only.

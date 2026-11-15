@@ -1,0 +1,119 @@
+# Builds the Linux (AppImage, deb, rpm) and Android (APK) apps: the web app in a Tauri 2 shell.
+# Runs by hand or when a version tag (v*) is pushed; tagged builds are attached to a GitHub release.
+#
+# Optional secrets for a release-signed Android APK (without them the APK is signed with a debug key,
+# which installs fine but cannot update an APK signed with another key):
+#   ANDROID_KEYSTORE_B64, ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS, ANDROID_KEY_PASSWORD
+
+name: Apps (Linux + Android)
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  linux:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: app/src-tauri
+      - name: System libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libssl-dev patchelf rpm file
+      - name: Build
+        working-directory: app
+        run: |
+          npm ci
+          npx tauri build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: qalamark-linux
+          path: |
+            app/src-tauri/target/release/bundle/appimage/*.AppImage
+            app/src-tauri/target/release/bundle/deb/*.deb
+            app/src-tauri/target/release/bundle/rpm/*.rpm
+
+  android:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: android-actions/setup-android@v3
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: app/src-tauri
+      - name: Prepare the Android project
+        working-directory: app
+        run: |
+          npm ci
+          sdkmanager "platforms;android-35" "build-tools;35.0.0" "ndk;27.2.12479018"
+          echo "NDK_HOME=$ANDROID_HOME/ndk/27.2.12479018" >> "$GITHUB_ENV"
+          export NDK_HOME="$ANDROID_HOME/ndk/27.2.12479018"
+          npx tauri android init --ci
+          # self-hosted servers are often plain http:// on the home network
+          sed -i 's|<application|<application android:usesCleartextTraffic="true"|' src-tauri/gen/android/app/src/main/AndroidManifest.xml
+      - name: Build the APK
+        working-directory: app
+        run: npx tauri android build --apk --target aarch64 --target armv7 --target x86_64
+      - name: Sign the APK
+        working-directory: app
+        env:
+          KS_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+          KS_PASS: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KS_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASS: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          APK=$(find src-tauri/gen/android -name '*universal*release*.apk' | head -1)
+          [ -n "$APK" ] || { echo "no APK found"; find src-tauri/gen/android -name '*.apk'; exit 1; }
+          BT="$ANDROID_HOME/build-tools/35.0.0"
+          if [ -n "$KS_B64" ]; then
+            echo "$KS_B64" | base64 -d > "$RUNNER_TEMP/release.jks"
+            KS="$RUNNER_TEMP/release.jks"; ALIAS="$KS_ALIAS"; SPASS="$KS_PASS"; KPASS="$KEY_PASS"
+          else
+            keytool -genkeypair -keystore "$RUNNER_TEMP/debug.jks" -alias debug -keyalg RSA -keysize 2048 -validity 10000 -storepass android -keypass android -dname "CN=Qalamark debug"
+            KS="$RUNNER_TEMP/debug.jks"; ALIAS=debug; SPASS=android; KPASS=android
+          fi
+          "$BT/zipalign" -f -p 4 "$APK" aligned.apk
+          "$BT/apksigner" sign --ks "$KS" --ks-key-alias "$ALIAS" --ks-pass "pass:$SPASS" --key-pass "pass:$KPASS" --out Qalamark.apk aligned.apk
+          "$BT/apksigner" verify Qalamark.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: qalamark-android
+          path: app/Qalamark.apk
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [linux, android]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/**

@@ -271,7 +271,7 @@
           {@const n = r.note}
           <li class="row" style:--depth={r.depth}>
             <button class="main" class:active={n.id === store.currentId} draggable="true" ondragstart={(e) => dragStart(e, n.id)} onclick={() => pick(n.id)}>
-              <span class="title">{n.title}</span>
+              <span class="nicon"><Icon name="note" size={15} /></span><span class="title">{n.title}</span>
               {#if n.role !== 'owner' && store.mode === 'server'}
                 <small class="badge" title={t('sharedByOther', { name: n.owner })}>{n.owner}{n.role === 'view' ? ' · 👁' : ''}</small>
               {/if}

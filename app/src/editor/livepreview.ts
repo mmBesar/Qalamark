@@ -246,7 +246,9 @@ function build(view: EditorView): DecorationSet {
             break;
           case 'ListMark': {
             const list = n.node.parent?.parent?.name;
-            if (list === 'BulletList') {
+            if (list === 'BulletList' && n.node.nextSibling?.name === 'Task') {
+              out.push(Decoration.replace({}).range(n.from, Math.min(n.to + 1, state.doc.lineAt(n.from).to)));
+            } else if (list === 'BulletList') {
               out.push(Decoration.replace({ widget: new BulletWidget() }).range(n.from, n.to));
             } else mark(n.from, n.to, 'cm-listmark');
             break;

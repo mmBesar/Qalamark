@@ -337,3 +337,37 @@ test('round 3: code languages, tabbed code, properties by mode, centred page', a
   assert.ok(Math.abs(mid - 0.5) < 0.03, 'page is centred in the writing area');
   assert.deepEqual(errors, []);
 });
+
+test('round 4: a note becomes a Kanban board and stays plain Markdown', async () => {
+  const errors = [];
+  const page = await newPage(errors);
+  await signIn(page, 'alice', 'alice-password');
+  await page.click('aside .actions .primary');
+  await page.waitForSelector('.cm-content');
+  await page.click('.cm-content');
+  await page.keyboard.insertText('# Work\n\n## Todo\n- [ ] write docs\n- [ ] fix bug\n\n## Done\n- [x] ship\n');
+  await page.click('.topbar .title');
+  await page.click('.topbar .menu-wrap > button');
+  await page.click('button[role=menuitem]:has-text("Kanban")');
+  await page.waitForSelector('.board .bcol');
+  assert.equal(await page.locator('.bcol:not(.newcol)').count(), 2);
+  assert.equal(await page.locator('.bcol:not(.newcol) >> nth=0').locator('.card').count(), 2);
+  // add a card, then move it to the next column with the arrow button
+  await page.click('.bcol >> nth=0 >> .addbtn');
+  await page.keyboard.type('new card');
+  await page.keyboard.press('Enter');
+  await page.waitForSelector('.bcol >> nth=0 >> .card:has-text("new card")');
+  await page.hover('.bcol >> nth=0 >> .card:has-text("new card")');
+  await page.click('.bcol >> nth=0 >> .card:has-text("new card") >> button[aria-label="Move to the next column"]');
+  await page.waitForSelector('.bcol >> nth=1 >> .card:has-text("new card")');
+  // tick a card
+  await page.click('.bcol >> nth=0 >> .card:has-text("fix bug") >> .tick');
+  await page.waitForSelector('.bcol >> nth=0 >> .card.done:has-text("fix bug")');
+  // the text is still plain Markdown
+  await page.click('button:has-text("Source")');
+  const md = await page.locator('.cm-content').innerText();
+  assert.match(md, /kanban: board/);
+  assert.match(md, /## Todo\s*\n- \[ \] write docs\s*\n- \[x\] fix bug/);
+  assert.match(md, /## Done\s*\n- \[x\] ship\s*\n- \[ \] new card/);
+  assert.deepEqual(errors, []);
+});

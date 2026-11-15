@@ -11,6 +11,9 @@
   import { store } from '../lib/store.svelte.ts';
   import Properties from './Properties.svelte';
   import Icon from './Icon.svelte';
+  import Board from './Board.svelte';
+  import { isBoard, makeBoard } from '../lib/kanban.ts';
+  import { applyText } from '../lib/ytext.ts';
   import { confirmBox } from '../lib/dialog.svelte.ts';
   import HelpDialog from './HelpDialog.svelte';
   import ShareDialog from './ShareDialog.svelte';
@@ -28,7 +31,7 @@
   let help = $state(false);
   let links = $state<Array<{ id: string; title: string }>>([]);
   let showLinks = $state(false);
-  let mode = $state<ViewMode>((() => {
+  let mode = $state<ViewMode | 'board'>((() => {
     try {
       const m = localStorage.getItem('qm.mode');
       return m === 'read' || m === 'source' ? m : 'live';
@@ -36,15 +39,17 @@
       return 'live';
     }
   })());
-  function setMode(m: ViewMode) {
+  function setMode(m: ViewMode | 'board') {
     mode = m;
-    editor.setMode(m);
+    editor.setMode(m === 'board' ? 'live' : m);
     try {
-      localStorage.setItem('qm.mode', m);
+      if (m !== 'board') localStorage.setItem('qm.mode', m);
     } catch {
       /* fine */
     }
   }
+  let boardNote = $state(false);
+  let boardSeen = false;
   let menu = $state(false);
   let err = $state('');
   let session: NoteSession;
@@ -86,6 +91,14 @@
       server ? note.id : undefined,
     );
     liveText = session.ytext;
+    const watchBoard = () => {
+      const now = isBoard(session.ytext.toString());
+      if (now && !boardNote && !boardSeen) setMode('board');
+      boardNote = now;
+      if (now) boardSeen = true;
+    };
+    session.ytext.observe(watchBoard);
+    watchBoard();
     editor = createEditor({
       parent: host,
       ytext: session.ytext,
@@ -93,7 +106,7 @@
       readOnly,
       labels: () => labels,
       hint: '',
-      mode,
+      mode: mode === 'board' ? 'live' : mode,
       titles: () => store.notes.map((n) => n.title).filter((x) => x !== first.title),
       openLink: (title) => void store.openTitle(title).catch((e) => (err = e instanceof Error ? e.message : String(e))),
       onChange: changed,
@@ -241,6 +254,7 @@
     />
     <span class="status {status}" title={statusText}><i></i><span class="label">{statusText}</span></span>
     <div class="seg" role="group" aria-label={t('viewMode')}>
+      {#if boardNote}<button class:on={mode === 'board'} onclick={() => setMode('board')}>{t('modeBoard')}</button>{/if}
       <button class:on={mode === 'live'} onclick={() => setMode('live')}>{t('modeLive')}</button>
       <button class:on={mode === 'read'} onclick={() => setMode('read')}>{t('modeRead')}</button>
       <button class:on={mode === 'source'} onclick={() => setMode('source')}>{t('modeSource')}</button>
@@ -254,6 +268,7 @@
       {#if menu}
         <div class="menu" role="menu">
           <button role="menuitem" onclick={() => ((help = true), (menu = false))}>{t('help')} · ƒ</button>
+          {#if !boardNote && !readOnly}<button role="menuitem" onclick={() => { menu = false; if (liveText) applyText(liveText, makeBoard(liveText.toString(), t('boardColumns').split('|') as [string, string, string])); setMode('board'); }}>{t('boardUse')}</button>{/if}
           <button role="menuitem" onclick={exportMd}>{t('export')}</button>
           <button role="menuitem" class="danger" onclick={remove}>{note.role === 'owner' || store.mode === 'local' ? t('delete') : t('leave')}</button>
         </div>
@@ -261,7 +276,7 @@
     </div>
   </header>
 
-  {#if !readOnly && mode !== 'read'}
+  {#if !readOnly && mode !== 'read' && mode !== 'board'}
     <div class="toolbar" role="toolbar">
       <button title="{t('bold')} (Ctrl+B)" onclick={run((v) => toggleWrap(v, '**'))}><Icon name="bold" /></button>
       <button title="{t('italic')} (Ctrl+I)" onclick={run((v) => toggleWrap(v, '*'))}><Icon name="italic" /></button>
@@ -297,10 +312,11 @@
 
   {#if err}<p class="error banner" role="alert">{err} <button class="link" onclick={() => (err = '')}>×</button></p>{/if}
 
-  {#if liveText && mode !== 'source'}<Properties ytext={liveText} readOnly={readOnly || mode === 'read'} noteId={note.id} />{/if}
+  {#if liveText && mode === 'board'}<Board ytext={liveText} {readOnly} />{/if}
+  {#if liveText && mode !== 'source' && mode !== 'board'}<Properties ytext={liveText} readOnly={readOnly || mode === 'read'} noteId={note.id} />{/if}
 
   <!-- svelte-ignore a11y_no_static_element_interactions -->
-  <div class="cm-host" bind:this={host} onmousedown={focusEnd}></div>
+  <div class="cm-host" hidden={mode === 'board'} bind:this={host} onmousedown={focusEnd}></div>
 
   <footer class="statusbar">
     <span>{t('words', { n: words })}</span>

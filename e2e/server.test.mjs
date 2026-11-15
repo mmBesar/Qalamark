@@ -291,3 +291,18 @@ test('people list for sharing, and the title: property shows as display name', a
   assert.equal(n.title, 'file-name');
   assert.equal((await api('GET', '/api/notes', alice)).body.find((x) => x.id === n.id).display, 'A Nicer Title');
 });
+
+test('renaming a note updates [[links]] to it and its own title: property', async () => {
+  const target = (await api('POST', '/api/notes', alice, { title: 'Plan A', content: '---\ntitle: Plan A\n---\n# Plan' })).body;
+  const other = (await api('POST', '/api/notes', alice, { title: 'Diary', content: 'see [[Plan A]] and [[plan a|the plan]] and [[Plan A#Week]] and [[Other]]' })).body;
+  const open1 = (await api('POST', '/api/notes', alice, { title: 'Open', content: 'live [[Plan A]]' })).body;
+  const live = open(open1.id, alice);
+  await until(() => live.doc.getText('content').toString().includes('live'), 'open note loaded');
+  assert.equal((await api('PATCH', `/api/notes/${target.id}`, alice, { title: 'Plan B' })).status, 200);
+  await until(() => readFileSync(join(data, 'notes/alice/Diary.md'), 'utf8') === 'see [[Plan B]] and [[Plan B|the plan]] and [[Plan B#Week]] and [[Other]]', 'closed note links follow');
+  await until(() => live.doc.getText('content').toString() === 'live [[Plan B]]', 'open note links follow (live)');
+  await until(() => readFileSync(join(data, 'notes/alice/Open.md'), 'utf8') === 'live [[Plan B]]', 'open note file follows');
+  assert.match(readFileSync(join(data, 'notes/alice/Plan B.md'), 'utf8'), /^---\ntitle: Plan B\n---/);
+  live.close();
+  void other;
+});

@@ -42,6 +42,11 @@
       ytext.delete(0, oldEnd);
       ytext.insert(0, target.slice(0, head));
     });
+    // The title property and the file name are one thing: changing one renames the other.
+    const titleOf = (ps: Prop[]) => ps.find((x) => x.key.toLowerCase() === 'title')?.text.trim() ?? '';
+    const was = titleOf(old?.props ?? []);
+    const now = titleOf(next);
+    if (now && now !== was) void store.renameNote(noteId, now).catch(() => {});
   }
 
   const update = (i: number, patch: Partial<Prop>) => commit(plist.map((p, k) => (k === i ? { ...p, ...patch } : p)));

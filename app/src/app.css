@@ -1593,3 +1593,4 @@ dialog::backdrop { background: rgba(10, 8, 20, 0.42); backdrop-filter: blur(3px)
 /* page position: left by default; centred inside the writing area (never under the sidebar) */
 html[data-page='center'] .cm-editor:not(.cm-source) .cm-content { margin-inline: auto !important; }
 html:not([data-page='center']) .props { margin-inline: 0; }
+.cm-host[hidden]{display:none}

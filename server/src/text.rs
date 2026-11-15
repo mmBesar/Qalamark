@@ -87,6 +87,60 @@ pub fn wiki_links(text: &str) -> Vec<String> {
     out
 }
 
+/// Rewrites links to the page `old` so they point to `new` (`[[Old]]`, `[[Old|text]]`, `[[Old#Head]]`,
+/// `[[Folder/Old]]`). Returns None when nothing changed.
+pub fn rewrite_links(text: &str, old: &str, new: &str) -> Option<String> {
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    let mut changed = false;
+    while let Some(i) = rest.find("[[") {
+        out.push_str(&rest[..i + 2]);
+        rest = &rest[i + 2..];
+        let Some(j) = rest.find("]]") else { break };
+        let inner = &rest[..j];
+        if inner.contains('\n') {
+            out.push_str(inner);
+        } else {
+            let cut = inner.find(|c| c == '|' || c == '#').unwrap_or(inner.len());
+            let (target, tail) = inner.split_at(cut);
+            let (dir, name) = match target.trim_end().rfind('/') {
+                Some(k) => (&target[..=k], target[k + 1..].trim()),
+                None => ("", target.trim()),
+            };
+            if !name.is_empty() && name.to_lowercase() == old.to_lowercase() {
+                out.push_str(dir);
+                out.push_str(new);
+                out.push_str(tail);
+                changed = true;
+            } else {
+                out.push_str(inner);
+            }
+        }
+        out.push_str("]]");
+        rest = &rest[j + 2..];
+    }
+    out.push_str(rest);
+    changed.then_some(out)
+}
+
+/// Sets the `title:` property of the note when it already has one. None when nothing changed.
+pub fn set_title_property(text: &str, new: &str) -> Option<String> {
+    let mut lines: Vec<&str> = text.split('\n').collect();
+    if lines.first().map(|l| l.trim_end()) != Some("---") {
+        return None;
+    }
+    let end = lines.iter().skip(1).position(|l| l.trim_end() == "---")? + 1;
+    let idx = (1..end).find(|&i| lines[i].starts_with("title:"))?;
+    let quoted = new.contains(|c: char| ":#[]{}'\"&*!|>%@`".contains(c));
+    let want = if quoted { format!("title: \"{}\"", new.replace('"', "\\\"")) } else { format!("title: {}", new) };
+    if lines[idx].trim_end() == want {
+        return None;
+    }
+    let owned = want;
+    lines[idx] = &owned;
+    Some(lines.join("\n"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -102,6 +156,21 @@ mod tests {
     fn finds_wiki_links() {
         let t = "See [[Shopping]], [[Ideas|my ideas]] and [[Plan#Week 2]]. Not [[ ]] or [[broken";
         assert_eq!(wiki_links(t), vec!["Shopping", "Ideas", "Plan"]);
+    }
+
+    #[test]
+    fn rewrites_links() {
+        let t = "A [[Old]] b [[old|shown]] c [[Old#Head]] d [[Dir/Old]] e [[Other]] f [[Older]]";
+        assert_eq!(rewrite_links(t, "Old", "New").unwrap(), "A [[New]] b [[New|shown]] c [[New#Head]] d [[Dir/New]] e [[Other]] f [[Older]]");
+        assert!(rewrite_links("nothing [[x]] here", "Old", "New").is_none());
+    }
+
+    #[test]
+    fn sets_title_property() {
+        assert_eq!(set_title_property("---\ntitle: A\ntags: [x]\n---\nbody", "B").unwrap(), "---\ntitle: B\ntags: [x]\n---\nbody");
+        assert!(set_title_property("---\ntags: [x]\n---\nbody", "B").is_none());
+        assert!(set_title_property("no front matter\ntitle: A", "B").is_none());
+        assert!(set_title_property("---\ntitle: B\n---", "B").is_none());
     }
 
     #[test]

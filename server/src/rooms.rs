@@ -91,6 +91,18 @@ impl Room {
         replies
     }
 
+    /// Change the text in place (used when a rename updates links); everyone connected sees it.
+    pub fn rewrite(&self, f: impl Fn(&str) -> Option<String>) -> bool {
+        let cur = self.text();
+        match f(&cur) {
+            Some(new) if self.merge_text(&new) => {
+                self.dirty.notify_one();
+                true
+            }
+            _ => false,
+        }
+    }
+
     /// Merge text that was changed outside (in the .md file) into the document.
     fn merge_text(&self, new_text: &str) -> bool {
         let t = self.doc.get_or_insert_text(TEXT);

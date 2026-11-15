@@ -6,7 +6,7 @@
 use crate::auth::{check_password, hash_password, new_token, token_hash, user_for_token, User};
 use crate::db::now;
 use crate::state::{Shared, Signup};
-use crate::text::{safe_folder, safe_name, valid_username, wiki_links};
+use crate::text::{rewrite_links, safe_folder, safe_name, set_title_property, valid_username, wiki_links};
 use axum::{
     extract::{ws::{Message as WsMessage, WebSocket, WebSocketUpgrade}, Path, Query, State},
     http::StatusCode,
@@ -579,6 +579,45 @@ pub struct Rename {
     folder: Option<String>,
 }
 
+/// After a rename: links to the page in the owner's other notes follow the new name, and the
+/// renamed note's own `title:` property (if it has one) is kept the same as its file name.
+fn relink(s: &Shared, owner: &str, renamed: &str, old: &str, new: &str) {
+    let rows: Vec<(String, String)> = {
+        let db = s.db.lock().unwrap();
+        let Ok(mut st) = db.prepare("SELECT n.id, n.path FROM notes n JOIN users u ON u.id = n.owner_id WHERE u.username = ?1") else { return };
+        let Ok(it) = st.query_map([owner], |r| Ok((r.get(0)?, r.get(1)?))) else { return };
+        it.filter_map(Result::ok).collect()
+    };
+    for (nid, path) in rows {
+        let own = nid == renamed;
+        let edit = |t: &str| -> Option<String> {
+            let mut cur = t.to_string();
+            let mut changed = false;
+            if let Some(x) = rewrite_links(&cur, old, new) {
+                cur = x;
+                changed = true;
+            }
+            if own {
+                if let Some(x) = set_title_property(&cur, new) {
+                    cur = x;
+                    changed = true;
+                }
+            }
+            changed.then_some(cur)
+        };
+        if let Some(room) = s.rooms.get(&nid) {
+            room.rewrite(edit);
+        } else {
+            let file = s.cfg.notes_dir().join(&path);
+            if let Ok(text) = std::fs::read_to_string(&file) {
+                if let Some(new_text) = edit(&text) {
+                    let _ = std::fs::write(&file, new_text);
+                }
+            }
+        }
+    }
+}
+
 pub async fn rename_note(State(s): State<Shared>, user: User, Path(id): Path<String>, Json(r): Json<Rename>) -> ApiResult<NoteMeta> {
     let a = access(&s, &user, &id)?;
     if a.role != "owner" {
@@ -595,6 +634,10 @@ pub async fn rename_note(State(s): State<Shared>, user: User, Path(id): Path<Str
             std::fs::rename(&from, &to).map_err(internal)?;
         }
         s.db.lock().unwrap().execute("UPDATE notes SET path = ?2 WHERE id = ?1", params![id, rel]).map_err(internal)?;
+        let (old_title, new_title) = (title_of(&a.path), title_of(&rel));
+        if old_title != new_title {
+            relink(&s, &a.owner, &id, &old_title, &new_title);
+        }
     }
     Ok(Json(NoteMeta { display: display_of(&s, &rel), folder: folder_of(&rel), id, title: title_of(&rel), owner: a.owner, role: "owner", updated: a.updated }))
 }

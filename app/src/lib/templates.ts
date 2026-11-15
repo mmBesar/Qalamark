@@ -35,6 +35,15 @@ export function fill(text: string, title: string, now = new Date(), lang: Lang =
 
 export const BUILT_IN: BuiltIn[] = [
   {
+    id: 'kanban',
+    name: { en: 'Kanban board', ar: 'لوحة كانبان' },
+    title: 'Board',
+    body: {
+      en: '---\nkanban: board\n---\n\n## To do\n- [ ] First card\n\n## Doing\n\n## Done\n',
+      ar: '---\nkanban: board\n---\n\n## للتنفيذ\n- [ ] أول بطاقة\n\n## قيد العمل\n\n## تم\n',
+    },
+  },
+  {
     id: 'daily',
     name: { en: 'Daily note', ar: 'ملاحظة يومية' },
     title: '{{date}}',

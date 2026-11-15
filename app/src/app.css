@@ -1128,7 +1128,7 @@ dialog.wide {
 @media (min-width: 1100px) {
   html[data-page='center'] .cm-editor:not(.cm-source) .cm-content {
     position: relative;
-    inset-inline-start: calc(var(--side-w, 304px) / -2);
+    inset-inline-start: calc(var(--page-shift, 0px) * -1);
   }
 }
 .fontlist {
@@ -1489,3 +1489,18 @@ aside .menu .pad {
     padding-bottom: env(safe-area-inset-bottom);
   }
 }
+
+/* Source mode: properties are plain text, no Markdown colours. */
+.cm-fm-plain, .cm-fm-plain * { color: var(--ink) !important; font-weight: 400 !important; font-style: normal !important; font-size: inherit !important; text-decoration: none !important; }
+@media (min-width: 1100px) {
+  html[data-page='center'] .props { position: relative; inset-inline-start: calc(var(--page-shift, 0px) * -1); }
+}
+
+/* code written inside tabs / admonitions, and real tabs in Reading mode */
+.cm-code-edge { color: var(--muted); }
+.cm-code-in { margin-inline-start: 0; }
+.cm-tab-off { display: none !important; }
+.cm-tabstrip { display: inline-flex; flex-wrap: wrap; gap: 0.3rem; vertical-align: bottom; }
+.cm-tabstrip .cm-tab-label { cursor: pointer; border-bottom-color: transparent; color: var(--muted); font-weight: 500; }
+.cm-tabstrip .cm-tab-label:hover { color: var(--accent); }
+.cm-tabstrip .cm-tab-label.on { border-bottom-color: var(--accent); color: var(--accent); font-weight: 650; }

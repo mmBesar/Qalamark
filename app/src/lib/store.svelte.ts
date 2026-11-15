@@ -130,6 +130,21 @@ class Store {
     if (this.s.fontSource.trim()) css.setProperty('--source-font', `${q(this.s.fontSource.trim())}, ${code}`);
     else css.removeProperty('--source-font');
     document.documentElement.dataset.page = this.s.centerPage ? 'center' : 'side';
+    this.applyShift();
+    if (!this.shiftBound && typeof window !== 'undefined') {
+      this.shiftBound = true;
+      window.addEventListener('resize', () => this.applyShift());
+    }
+  }
+  private shiftBound = false;
+  /** Moves a centred page half a sidebar to the side, but never further than the free room, so it can not slide under the sidebar. */
+  private applyShift() {
+    const side = this.s.sideWidth;
+    const main = window.innerWidth - side;
+    const page = this.s.editorWidth > 0 ? this.s.editorWidth * 16 : main;
+    const room = Math.max(0, (main - page) / 2);
+    const shift = this.s.centerPage && window.innerWidth >= 1100 ? Math.min(side / 2, room) : 0;
+    document.documentElement.style.setProperty('--page-shift', `${shift}px`);
   }
   setLayout(patch: Partial<Pick<Settings, 'fontSize' | 'editorWidth' | 'fontEn' | 'fontAr' | 'fontCode' | 'sideWidth' | 'sourceSize' | 'fontSource' | 'centerPage'>>) {
     Object.assign(this.s, patch);

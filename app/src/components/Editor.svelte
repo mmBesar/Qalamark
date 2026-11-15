@@ -295,7 +295,7 @@
 
   {#if err}<p class="error banner" role="alert">{err} <button class="link" onclick={() => (err = '')}>×</button></p>{/if}
 
-  {#if liveText}<Properties ytext={liveText} {readOnly} noteId={note.id} />{/if}
+  {#if liveText && mode !== 'source'}<Properties ytext={liveText} readOnly={readOnly || mode === 'read'} noteId={note.id} />{/if}
 
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div class="cm-host" bind:this={host} onmousedown={focusEnd}></div>

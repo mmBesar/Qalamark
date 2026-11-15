@@ -6,7 +6,8 @@
 import { autocompletion, closeBrackets, closeBracketsKeymap, type CompletionContext, completionKeymap } from '@codemirror/autocomplete';
 import { copyLineDown, copyLineUp, defaultKeymap, deleteLine, indentLess, indentMore, indentWithTab, insertBlankLine, moveLineDown, moveLineUp, selectLine } from '@codemirror/commands';
 import { markdown, markdownKeymap, markdownLanguage } from '@codemirror/lang-markdown';
-import { languages } from '@codemirror/language-data';
+import { codeStyle } from './codestyle.ts';
+import { findLanguage } from './langs.ts';
 import { bracketMatching, foldGutter, foldKeymap, HighlightStyle, indentOnInput, syntaxHighlighting } from '@codemirror/language';
 import { highlightSelectionMatches, searchKeymap, selectNextOccurrence, selectSelectionMatches } from '@codemirror/search';
 import { Compartment, EditorSelection, EditorState, type Extension } from '@codemirror/state';
@@ -20,19 +21,8 @@ import { cycleHeading, toggleWrap } from './commands.ts';
 import { autoCalc } from './autocalc.ts';
 import { codeTitles, mkdocsBlocks } from './mkdocs.ts';
 import { pictures, type ImageHooks } from './images.ts';
-import { livePreview, readingMode, wikiConfig } from './livepreview.ts';
+import { livePreview, plainFrontMatter, readingMode, wikiConfig } from './livepreview.ts';
 import { type TableLabels, tablesExtension } from './tables.ts';
-
-// Colours for code inside code blocks (other Markdown looks come from live preview).
-const codeStyle = HighlightStyle.define([
-  { tag: [t.keyword, t.operatorKeyword, t.modifier], color: 'var(--c-keyword)' },
-  { tag: [t.string, t.regexp, t.special(t.string)], color: 'var(--c-string)' },
-  { tag: [t.number, t.bool, t.null, t.atom], color: 'var(--c-number)' },
-  { tag: [t.comment, t.lineComment, t.blockComment], color: 'var(--c-comment)', fontStyle: 'italic' },
-  { tag: [t.function(t.variableName), t.function(t.propertyName), t.definition(t.variableName)], color: 'var(--c-function)' },
-  { tag: [t.typeName, t.className, t.tagName], color: 'var(--c-type)' },
-  { tag: [t.propertyName, t.attributeName], color: 'var(--c-property)' },
-]);
 
 // Colours for Source mode (plain Markdown text, nicely coloured).
 const sourceStyle = HighlightStyle.define([
@@ -157,13 +147,13 @@ export function createEditor(o: EditorOptions): Editor {
   const forMode = (mode: ViewMode): Extension => {
     const locked = o.readOnly || mode === 'read';
     const common = [EditorState.readOnly.of(locked), EditorView.editable.of(!o.readOnly && mode !== 'read')];
-    if (mode === 'source') return [common, syntaxHighlighting(sourceStyle), vscodeEditing, EditorView.editorAttributes.of({ class: 'cm-source' })];
+    if (mode === 'source') return [common, syntaxHighlighting(sourceStyle), plainFrontMatter, vscodeEditing, EditorView.editorAttributes.of({ class: 'cm-source' })];
     return [common, livePreview, mkdocsBlocks, codeTitles, tables, readingMode.of(mode === 'read'), ...(o.images ? [pictures(o.images)] : [])];
   };
   const extensions = [
     modeSlot.of(forMode(o.mode)),
     yCollab(o.ytext, o.awareness, { undoManager: undo }),
-    markdown({ base: markdownLanguage, codeLanguages: languages, addKeymap: true }),
+    markdown({ base: markdownLanguage, codeLanguages: (info) => findLanguage(info), addKeymap: true }),
     syntaxHighlighting(codeStyle),
     autoCalc(o.awareness),
     EditorState.allowMultipleSelections.of(true),

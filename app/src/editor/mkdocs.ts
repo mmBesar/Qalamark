@@ -11,7 +11,10 @@
 //
 // and  ```py title="main.py"  on a code block.
 
-import { type Text } from '@codemirror/state';
+import { StateEffect, type Text } from '@codemirror/state';
+import { highlightTree } from '@lezer/highlight';
+import { codeStyle } from './codestyle.ts';
+import { findLanguage } from './langs.ts';
 import { Decoration, type DecorationSet, EditorView, ViewPlugin, type ViewUpdate, WidgetType } from '@codemirror/view';
 import { type Range } from '@codemirror/state';
 import { readingMode } from './livepreview.ts';
@@ -22,6 +25,7 @@ export interface BlockLine {
   kind: string; // note, tip, warning ... (admonitions)
   title: string;
   collapsible: boolean;
+  head: number; // line number of the block's first line
 }
 
 const ADMONITION = /^(!!!|\?\?\?\+?)[ \t]+([A-Za-z][\w-]*)(?:[ \t]+"([^"]*)")?[ \t]*$/;
@@ -53,6 +57,7 @@ export function scanBlocks(doc: Text): Map<number, BlockLine> {
       kind: a ? a[2]!.toLowerCase() : 'tab',
       title: a ? (a[3] ?? '') : t![1]!,
       collapsible: !!a && a[1]!.startsWith('???'),
+      head: n,
     });
     // the indented lines that follow (blank lines inside the block are allowed)
     let last = n;
@@ -68,6 +73,163 @@ export function scanBlocks(doc: Text): Map<number, BlockLine> {
   }
   cache.set(doc, out);
   return out;
+}
+
+
+export interface Fence {
+  first: number; // opening fence line
+  last: number; // closing fence line (or the last line when never closed)
+  lang: string;
+}
+
+const fenceCache = new WeakMap<Text, Fence[]>();
+
+/** Code fences written inside a tab or admonition body (they are indented by four spaces). */
+export function scanFences(doc: Text): Fence[] {
+  const hit = fenceCache.get(doc);
+  if (hit) return hit;
+  const blocks = scanBlocks(doc);
+  const out: Fence[] = [];
+  let open: Fence | null = null;
+  let mark = '';
+  let prevHead = -1;
+  for (let n = 1; n <= doc.lines; n++) {
+    const info = blocks.get(n);
+    if (!info || info.role !== 'body' || info.head !== prevHead) {
+      if (open) {
+        open.last = n - 1;
+        out.push(open);
+        open = null;
+      }
+    }
+    prevHead = info?.head ?? -1;
+    if (!info || info.role !== 'body') {
+      if (info?.role === 'head') prevHead = n;
+      continue;
+    }
+    const text = doc.line(n).text.replace(/^( {4}|\t)/, '');
+    const f = /^[ \t]*(```|~~~)[ \t]*([^\n]*)$/.exec(text);
+    if (open) {
+      if (f && f[1] === mark && f[2]!.trim() === '') {
+        open.last = n;
+        out.push(open);
+        open = null;
+      }
+    } else if (f) {
+      mark = f[1]!;
+      open = { first: n, last: n, lang: f[2]!.trim() };
+    }
+  }
+  if (open) {
+    open.last = doc.lines;
+    out.push(open);
+  }
+  fenceCache.set(doc, out);
+  return out;
+}
+
+const refresh = StateEffect.define<null>();
+const asked = new Set<string>();
+
+/** Colour marks for one code block written inside a tab or admonition. */
+function codeMarks(view: EditorView, f: Fence, out: Range<Decoration>[]) {
+  const desc = findLanguage(f.lang);
+  if (!desc) return;
+  if (!desc.support) {
+    if (!asked.has(desc.name)) {
+      asked.add(desc.name);
+      desc.load().then(() => view.dispatch({ effects: refresh.of(null) })).catch(() => asked.delete(desc.name));
+    }
+    return;
+  }
+  const doc = view.state.doc;
+  const lines: { pos: number; start: number }[] = []; // doc position of the code, and offset in the joined text
+  let text = '';
+  for (let n = f.first + 1; n < f.last || (n === f.last && f.last === doc.lines && !/^[ \t]*(```|~~~)/.test(doc.line(n).text.replace(/^( {4}|\t)/, ''))); n++) {
+    const l = doc.line(n);
+    const ind = l.text.startsWith('\t') ? 1 : l.text.startsWith('    ') ? 4 : 0;
+    lines.push({ pos: l.from + ind, start: text.length });
+    text += l.text.slice(ind) + '\n';
+  }
+  if (!text) return;
+  const tree = desc.support.language.parser.parse(text);
+  const at = (off: number) => {
+    let i = lines.length - 1;
+    while (i > 0 && lines[i]!.start > off) i--;
+    return lines[i]!.pos + (off - lines[i]!.start);
+  };
+  highlightTree(tree, codeStyle, (from, to, cls) => {
+    // a highlighted span may cross lines: split it so each piece stays on its own line
+    let a = from;
+    while (a < to) {
+      let nl = text.indexOf('\n', a);
+      if (nl < 0 || nl > to) nl = to;
+      if (nl > a) out.push(Decoration.mark({ class: cls }).range(at(a), at(a) + (nl - a)));
+      a = nl + 1;
+    }
+  });
+}
+
+
+interface TabGroup {
+  heads: number[]; // line numbers of the tab labels
+  titles: string[];
+}
+
+/** Tabs that follow each other form one group (in Reading mode they become real tabs). */
+function tabGroups(doc: Text, blocks: Map<number, BlockLine>, gaps: Set<number> = new Set()): Map<number, { group: TabGroup; index: number }> {
+  const out = new Map<number, { group: TabGroup; index: number }>();
+  const heads = [...blocks.entries()].filter(([, b]) => b.role === 'head' && b.type === 'tab').map(([n]) => n);
+  let cur: TabGroup | null = null;
+  let lastBody = 0;
+  for (const h of heads) {
+    let tail = h;
+    for (const [n, b] of blocks) if (b.head === h && n > tail) tail = n;
+    let joins = false;
+    if (cur) {
+      joins = true;
+      for (let k = lastBody + 1; k < h; k++) if (doc.line(k).text.trim() !== '') joins = false;
+      if (joins) for (let k = lastBody + 1; k < h; k++) gaps.add(k);
+    }
+    if (!joins) cur = { heads: [], titles: [] };
+    cur!.heads.push(h);
+    cur!.titles.push(blocks.get(h)!.title);
+    out.set(h, { group: cur!, index: cur!.heads.length - 1 });
+    lastBody = tail;
+  }
+  return out;
+}
+
+class TabStrip extends WidgetType {
+  constructor(
+    readonly titles: string[],
+    readonly active: number,
+    readonly pick: (i: number) => void,
+  ) {
+    super();
+  }
+  eq(o: TabStrip) {
+    return o.active === this.active && o.titles.join('\u0000') === this.titles.join('\u0000');
+  }
+  toDOM() {
+    const bar = document.createElement('span');
+    bar.className = 'cm-tabstrip';
+    this.titles.forEach((title, i) => {
+      const b = document.createElement('span');
+      b.className = 'cm-tab-label' + (i === this.active ? ' on' : '');
+      b.setAttribute('role', 'tab');
+      b.textContent = title;
+      b.onmousedown = (e) => {
+        e.preventDefault();
+        this.pick(i);
+      };
+      bar.append(b);
+    });
+    return bar;
+  }
+  ignoreEvent() {
+    return true;
+  }
 }
 
 const ICONS: Record<string, string> = {
@@ -105,9 +267,14 @@ class Gap extends WidgetType {
   }
 }
 
-function build(view: EditorView): DecorationSet {
+function build(view: EditorView, active: Map<number, number>, pick: (group: number, i: number) => void): DecorationSet {
   const { state } = view;
   const blocks = scanBlocks(state.doc);
+  const fences = scanFences(state.doc);
+  const fenceOf = new Map<number, Fence>();
+  for (const f of fences) for (let n = f.first; n <= f.last; n++) fenceOf.set(n, f);
+  const gaps = new Set<number>();
+  const groups = tabGroups(state.doc, blocks, gaps);
   const out: Range<Decoration>[] = [];
   const reading = state.facet(readingMode);
   const sel = state.selection.ranges;
@@ -117,6 +284,7 @@ function build(view: EditorView): DecorationSet {
     const b = state.doc.lineAt(to).number;
     for (let n = a; n <= b; n++) {
       const info = blocks.get(n);
+      if (!info && reading && gaps.has(n)) out.push(Decoration.line({ class: 'cm-tab-off' }).range(state.doc.line(n).from));
       if (!info) continue;
       const line = state.doc.line(n);
       const cls =
@@ -125,8 +293,22 @@ function build(view: EditorView): DecorationSet {
           : info.role === 'head'
             ? 'cm-tab-head'
             : 'cm-tab-body';
-      out.push(Decoration.line({ class: cls }).range(line.from));
-      if (info.role === 'head' && !touches(line.from, line.to)) {
+      const g = info.type === 'tab' ? groups.get(info.head) : undefined;
+      const shown = !reading || !g || (info.role === 'head' ? g.index === 0 : false) || (active.get(g.group.heads[0]!) ?? 0) === g.index;
+      out.push(Decoration.line({ class: cls + (shown ? '' : ' cm-tab-off') }).range(line.from));
+      const fence = fenceOf.get(n);
+      if (fence && info.role === 'body') {
+        const edge = n === fence.first || (n === fence.last && n !== fence.first);
+        out.push(Decoration.line({ class: 'cm-codeblock cm-code-in' + (edge ? ' cm-code-edge' : '') + (n === fence.first ? ' cm-code-first' : '') + (n === fence.last ? ' cm-code-last' : '') }).range(line.from));
+      }
+      if (reading && g && info.role === 'head') {
+        if (g.index === 0) {
+          const cur = active.get(g.group.heads[0]!) ?? 0;
+          out.push(Decoration.replace({ widget: new TabStrip(g.group.titles, cur, (i) => pick(g.group.heads[0]!, i)) }).range(line.from, line.to));
+        } else {
+          out.push(Decoration.replace({ widget: new Gap() }).range(line.from, line.to));
+        }
+      } else if (info.role === 'head' && !touches(line.from, line.to)) {
         const label =
           info.type === 'admonition'
             ? new Label(info.title || info.kind.charAt(0).toUpperCase() + info.kind.slice(1), (info.collapsible ? '▸ ' : '') + (ICONS[info.kind] ?? '✎'), 'cm-callout-label')
@@ -137,6 +319,9 @@ function build(view: EditorView): DecorationSet {
         out.push(Decoration.replace({ widget: new Gap() }).range(line.from, line.from + indent));
       }
     }
+  }
+  for (const f of fences) {
+    if (view.visibleRanges.some((r) => state.doc.line(f.last).to >= r.from && state.doc.line(f.first).from <= r.to)) codeMarks(view, f, out);
   }
   return Decoration.set(out, true);
 }
@@ -172,11 +357,18 @@ function titles(view: EditorView): DecorationSet {
 export const mkdocsBlocks = ViewPlugin.fromClass(
   class {
     decorations: DecorationSet;
-    constructor(view: EditorView) {
-      this.decorations = build(view);
+    active = new Map<number, number>();
+    constructor(readonly view: EditorView) {
+      this.decorations = build(view, this.active, this.pick);
     }
+    pick = (group: number, i: number) => {
+      this.active.set(group, i);
+      this.view.dispatch({ effects: refresh.of(null) });
+    };
     update(u: ViewUpdate) {
-      if (u.docChanged || u.viewportChanged || u.selectionSet) this.decorations = build(u.view);
+      if (u.docChanged || u.viewportChanged || u.selectionSet || u.startState.facet(readingMode) !== u.state.facet(readingMode) || u.transactions.some((t) => t.effects.some((e) => e.is(refresh)))) {
+        this.decorations = build(u.view, this.active, this.pick);
+      }
     }
   },
   { decorations: (v) => v.decorations },

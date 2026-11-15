@@ -8,7 +8,7 @@
 import { readFrontMatter } from '../lib/frontmatter.ts';
 import { scanBlocks } from './mkdocs.ts';
 import { syntaxTree } from '@codemirror/language';
-import { Facet, type EditorState, type Range } from '@codemirror/state';
+import { Facet, type EditorState, type Range, StateField } from '@codemirror/state';
 import type { SyntaxNode } from '@lezer/common';
 import { Decoration, type DecorationSet, EditorView, ViewPlugin, type ViewUpdate, WidgetType } from '@codemirror/view';
 
@@ -405,4 +405,38 @@ const plugin = ViewPlugin.fromClass(
   },
 );
 
-export const livePreview = [plugin];
+// The properties block is hidden here: the Properties panel above the note shows and edits it.
+// A block it cannot edit safely stays visible as plain text so nothing is hidden that you cannot reach.
+const frontMatterHidden = StateField.define<DecorationSet>({
+  create: (state) => hideFront(state),
+  update: (v, tr) => (tr.docChanged ? hideFront(tr.state) : v),
+  provide: (f) => EditorView.decorations.from(f),
+});
+
+function hideFront(state: EditorState): DecorationSet {
+  if (state.doc.lines < 2 || state.doc.line(1).text.trim() !== '---') return Decoration.none;
+  const fm = readFrontMatter(state.sliceDoc(0, 4000));
+  if (!fm || !fm.editable) return Decoration.none;
+  const to = Math.min(state.doc.length, Math.max(0, fm.end - (state.doc.sliceString(fm.end - 1, fm.end) === '\n' ? 1 : 0)));
+  if (to <= 0) return Decoration.none;
+  return Decoration.set([Decoration.replace({ block: true }).range(0, to)]);
+}
+
+export const livePreview = [plugin, frontMatterHidden];
+
+/** Source mode: the properties block is plain, uncoloured text. */
+export const plainFrontMatter = StateField.define<DecorationSet>({
+  create: plainFront,
+  update: (v, tr) => (tr.docChanged ? plainFront(tr.state) : v),
+  provide: (f) => EditorView.decorations.from(f),
+});
+
+function plainFront(state: EditorState): DecorationSet {
+  if (state.doc.lines < 2 || state.doc.line(1).text.trim() !== '---') return Decoration.none;
+  const fm = readFrontMatter(state.sliceDoc(0, 4000));
+  if (!fm) return Decoration.none;
+  const last = state.doc.lineAt(Math.max(0, fm.end - 1)).number;
+  const out: Range<Decoration>[] = [];
+  for (let p = 1; p <= last; p++) out.push(Decoration.line({ class: 'cm-fm-plain' }).range(state.doc.line(p).from));
+  return Decoration.set(out);
+}

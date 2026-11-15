@@ -220,7 +220,7 @@ test('round 2: folders, templates, properties, MkDocs blocks, pictures, builder,
   await page.click('.menu >> text=New note here');
   await page.waitForSelector('.cm-content');
   assert.equal(await page.locator('aside li.folder').count(), 1);
-  assert.ok(await page.locator('aside li.row[style*="--depth: 1"]').count() >= 1, 'the note sits under the folder');
+  await page.waitForSelector('aside li.row[style*="--depth: 1"]', { timeout: 8000 });
 
   // A ready-made template with plain-words formulas calculates itself.
   await page.click('aside .actions .relative button');
@@ -251,8 +251,12 @@ test('round 2: folders, templates, properties, MkDocs blocks, pictures, builder,
   await page.click('.props-quick >> text=tags');
   await page.fill('.props-grid input', 'work, plan');
   await page.keyboard.press('Tab');
+  // Live preview hides the block; Source mode shows it as plain text and has no panel.
+  await page.click('button:has-text("Source")');
   await page.waitForFunction(() => /tags:\s*\n\s*- work\s*\n\s*- plan/.test(document.querySelector('.cm-content')?.innerText ?? ''), null, { timeout: 5000 });
-  await page.click('.props-head');
+  assert.equal(await page.locator('.props-head').count(), 0);
+  await page.click('button:has-text("Live preview")');
+  assert.ok(!/tags:/.test(await page.locator('.cm-content').innerText()), 'front matter is hidden in live preview');
   assert.match(await page.locator('.props-summary').innerText(), /#work/);
 
   // MkDocs blocks render as boxes and tabs.
@@ -290,5 +294,43 @@ test('round 2: folders, templates, properties, MkDocs blocks, pictures, builder,
   await page.locator('dialog input[type=range]').first().fill('24');
   const tableFont = await page.evaluate(() => getComputedStyle(document.querySelector('.qt-cell')).fontSize);
   assert.equal(tableFont, '22.8px');
+  assert.deepEqual(errors, []);
+});
+
+test('round 3: code languages, tabbed code, properties by mode, centred page', async () => {
+  const errors = [];
+  const page = await newPage(errors);
+  await signIn(page, 'alice', 'alice-password');
+  await page.click('aside .actions .primary');
+  await page.waitForSelector('.cm-content');
+  await page.click('.cm-content');
+  await page.keyboard.insertText('---\ntitle: Demo\n---\n# Hi\n\n```yml\nname: x\n```\n\n=== "Fedora"\n\n    ``` sh\n    sudo dnf install foo # c\n    ```\n\n=== "Arch"\n\n    ``` sh\n    sudo pacman -S foo\n    ```\n\nend\n');
+  await page.click('.topbar .title');
+  await page.waitForTimeout(800);
+  // yaml and the code inside a tab are coloured
+  const coloured = (sel) => page.locator(sel).evaluate((el) => el.querySelectorAll('span[class]').length);
+  assert.ok((await coloured('.cm-line:has-text("name: x")')) > 0, 'yml is highlighted');
+  assert.ok((await coloured('.cm-line:has-text("sudo dnf install")')) > 0, 'code inside a tab is highlighted');
+  assert.ok(!/title: Demo/.test(await page.locator('.cm-content').innerText()), 'properties hidden in live mode');
+  // Reading mode: real tabs, only the chosen one is shown, properties are read-only
+  await page.click('button:has-text("Reading")');
+  await page.waitForSelector('.cm-tabstrip');
+  assert.equal(await page.locator('.cm-tabstrip .cm-tab-label').count(), 2);
+  assert.ok(await page.locator('.cm-line:has-text("sudo dnf install"):visible').count() === 1);
+  assert.ok(await page.locator('.cm-line:has-text("sudo pacman"):visible').count() === 0);
+  await page.click('.cm-tabstrip .cm-tab-label >> nth=1');
+  assert.ok(await page.locator('.cm-line:has-text("sudo pacman"):visible').count() === 1);
+  assert.ok(await page.locator('.cm-line:has-text("sudo dnf install"):visible').count() === 0);
+  // Source mode: plain text, no panel
+  await page.click('button:has-text("Source")');
+  assert.match(await page.locator('.cm-content').innerText(), /title: Demo/);
+  assert.equal(await page.locator('.props-head').count(), 0);
+  // Centred page never slides under the sidebar
+  await page.setViewportSize({ width: 1300, height: 800 });
+  await page.evaluate(() => { document.documentElement.dataset.page = 'center'; });
+  await page.click('button:has-text("Live preview")');
+  const box = await page.locator('.cm-content').boundingBox();
+  const side = await page.locator('aside').boundingBox();
+  assert.ok(box.x >= side.x + side.width, 'page stays right of the sidebar');
   assert.deepEqual(errors, []);
 });

@@ -106,11 +106,41 @@ fn vault_mkdir(app: AppHandle, folder: String) -> Result<(), String> {
     vault::mkdir(&root(&app), &folder).map_err(err)
 }
 
+/// Show a note or folder in the system file manager (Linux: select it when the manager supports it).
+#[tauri::command]
+fn vault_reveal(app: AppHandle, path: String) -> Result<(), String> {
+    use std::process::Command;
+    let target = vault::resolve(&root(&app), &path).map_err(err)?;
+    let target = if target.exists() { target } else { root(&app) };
+    #[cfg(target_os = "linux")]
+    {
+        let uri = format!("file://{}", target.display());
+        let shown = Command::new("dbus-send")
+            .args(["--session", "--print-reply", "--dest=org.freedesktop.FileManager1", "/org/freedesktop/FileManager1", "org.freedesktop.FileManager1.ShowItems"])
+            .arg(format!("array:string:{uri}"))
+            .arg("string:")
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false);
+        if !shown {
+            let dir = if target.is_dir() { target.clone() } else { target.parent().map(|p| p.to_path_buf()).unwrap_or(target.clone()) };
+            Command::new("xdg-open").arg(dir).spawn().map_err(err)?;
+        }
+    }
+    #[cfg(target_os = "macos")]
+    Command::new("open").arg("-R").arg(&target).spawn().map_err(err)?;
+    #[cfg(target_os = "windows")]
+    Command::new("explorer").arg(format!("/select,{}", target.display())).spawn().map_err(err)?;
+    #[cfg(target_os = "android")]
+    let _ = target;
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
-        .invoke_handler(tauri::generate_handler![vault_info, vault_set, vault_list, vault_read, vault_write, vault_trash, vault_rename, vault_mkdir])
+        .invoke_handler(tauri::generate_handler![vault_info, vault_set, vault_list, vault_read, vault_write, vault_trash, vault_rename, vault_mkdir, vault_reveal])
         .run(tauri::generate_context!())
         .expect("error while running Qalamark");
 }

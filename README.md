@@ -131,6 +131,9 @@ there becomes a note. More in **[docs/SELF-HOSTING.md](docs/SELF-HOSTING.md)**
 - **Code blocks in many languages:** bash/sh, yml, ini/conf, toml, nginx, Dockerfile, Python, JS and more, also inside tabs and boxes. In Reading mode, tabs are real clickable tabs.
 - **Properties follow the mode:** hidden behind the panel in Live and Reading, plain text in Source.
 - **Kanban boards from any note:** a note with a `kanban` property gets a *Board* view. Every `##` heading is a column, every task line is a card; drag cards, tick them, add columns. The file stays plain Markdown (use *Show as Kanban board* in the note menu, or the Kanban template).
+- **An Obsidian-style side panel:** Files / Search / Recent views, a file tree with guide lines, *collapse all folders*, and one themed menu everywhere: **right-click** (or **press and hold** on a touchscreen) a note or folder to rename, copy, move, delete or *show it in your file manager* (Linux app). Right-click in the editor for cut/copy/paste and formatting.
+- **Touch friendly:** swipe the side panel in from the screen edge (and out again), bigger tap targets, safe-area aware.
+- **Type `/`** at the start of a line to insert a heading, list, table, code block, callout, MkDocs box or tabs. Tabbed code shows as real tabs in live view and reading; code blocks are clean (language badge + copy button instead of the ``` lines).
 - **Quick switcher** (`Ctrl+P` / `Ctrl+K`): jump to a note, search inside note text, or run a command. Also: an **outline** of the headings, a **today's note** button, and a *recent notes* list.
 - **Rename keeps everything in step:** the file name, the `title:` property and every `[[link]]` to the note change together (server).
 - **Notes folder in the apps:** the Linux and Android apps keep your notes as real `.md` files in `Documents/Qalamark` (change it in Settings). Edits made outside show up when you return to the app.

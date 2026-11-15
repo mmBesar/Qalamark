@@ -8,6 +8,7 @@
 import { readFrontMatter } from '../lib/frontmatter.ts';
 import { scanBlocks } from './mkdocs.ts';
 import { syntaxTree } from '@codemirror/language';
+import { CodeBadge, fenceLang } from './codebadge.ts';
 import { Facet, type EditorState, type Range, StateField } from '@codemirror/state';
 import type { SyntaxNode } from '@lezer/common';
 import { Decoration, type DecorationSet, EditorView, ViewPlugin, type ViewUpdate, WidgetType } from '@codemirror/view';
@@ -176,9 +177,8 @@ function build(view: EditorView): DecorationSet {
         switch (name) {
           case 'HeaderMark': {
             if (n.node.parent?.name.startsWith('Setext')) break;
-            // Shown only while the cursor is on the mark itself, so the text does
-            // not jump sideways while you type on the line.
-            if (!touched(state, n.from, n.to + 1)) {
+            // The # marks show while the cursor is anywhere on the heading line.
+            if (!lineTouched(state, n.from, n.to)) {
               const next = state.sliceDoc(n.to, n.to + 1) === ' ' ? 1 : 0;
               cover(n.from, n.to + next);
             }
@@ -212,10 +212,24 @@ function build(view: EditorView): DecorationSet {
             const first = state.doc.lineAt(n.from).number;
             if (blocks.get(first)?.role === 'body') return false; // text inside a !!! admonition or === tab
             const last = state.doc.lineAt(n.to).number;
+            // Live and Reading show clean code: no ``` lines (they come back when the cursor is inside).
+            const closed = name === 'FencedCode' && last - first >= 2 && /^[ \t]*(```|~~~)[ \t]*$/.test(state.doc.line(last).text);
+            const clean = closed && !touched(state, n.from, n.to);
+            const top = clean ? first + 1 : first;
+            const bottom = clean ? last - 1 : last;
             for (let p = first; p <= last; p++) {
-              const cls = ['cm-codeblock', p === first ? 'cm-code-first' : '', p === last ? 'cm-code-last' : ''];
-              if (name === 'FencedCode' && (p === first || p === last)) cls.push('cm-fence');
+              if (clean && (p === first || p === last)) {
+                line(state.doc.line(p).from, 'cm-fence-off');
+                continue;
+              }
+              const cls = ['cm-codeblock', p === top ? 'cm-code-first' : '', p === bottom ? 'cm-code-last' : ''];
+              if (name === 'FencedCode' && !clean && (p === first || p === last)) cls.push('cm-fence');
+              if (clean && p === top) cls.push('cm-code-badged');
               line(state.doc.line(p).from, cls.filter(Boolean).join(' '));
+            }
+            if (clean) {
+              const code = state.doc.sliceString(state.doc.line(first + 1).from, state.doc.line(last - 1).to);
+              out.push(Decoration.widget({ widget: new CodeBadge(fenceLang(state.doc.line(first).text), code), side: -1 }).range(state.doc.line(first + 1).from));
             }
             return false;
           }
@@ -239,7 +253,7 @@ function build(view: EditorView): DecorationSet {
           }
           case 'QuoteMark':
             if (calloutHeads.has(state.doc.lineAt(n.from).number)) break;
-            if (!touched(state, n.from, n.to + 1)) {
+            if (!lineTouched(state, n.from, n.to)) {
               const next = state.sliceDoc(n.to, n.to + 1) === ' ' ? 1 : 0;
               cover(n.from, n.to + next);
             }

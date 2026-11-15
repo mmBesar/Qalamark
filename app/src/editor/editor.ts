@@ -50,6 +50,8 @@ export interface EditorOptions {
   openLink: (title: string) => void;
   onChange?: () => void;
   images?: ImageHooks;
+  /** The “/” insert menu: what to offer (typed at the start of a line). */
+  slash?: () => Array<{ label: string; keywords?: string; run: (view: EditorView) => void }>;
 }
 
 /** Cursors above or below every cursor (Ctrl+Alt+Up / Down in VS Code). */
@@ -141,6 +143,28 @@ export function createEditor(o: EditorOptions): Editor {
       }));
     return { from: m.from + 2, options, filter: false, validFor: /^[^\]\n]*$/ };
   };
+  // Typing / at the start of a line offers headings, lists, tables, boxes, code…
+  const slashSource = (ctx: CompletionContext) => {
+    if (!o.slash || o.readOnly) return null;
+    const line = ctx.state.doc.lineAt(ctx.pos);
+    const before = line.text.slice(0, ctx.pos - line.from);
+    const m = /^\s*\/([^\s/]*)$/.exec(before);
+    if (!m) return null;
+    const q = m[1]!.toLowerCase();
+    const from = line.from + before.indexOf('/');
+    const options = o
+      .slash()
+      .filter((i) => !q || (i.label + ' ' + (i.keywords ?? '')).toLowerCase().includes(q))
+      .map((i, n) => ({
+        label: i.label,
+        boost: -n,
+        apply: (view: EditorView, _c: unknown, f: number, t: number) => {
+          view.dispatch({ changes: { from: f, to: t, insert: '' } });
+          i.run(view);
+        },
+      }));
+    return options.length ? { from, options, filter: false, validFor: /^\/[^\s/]*$/ } : null;
+  };
   const tables = tablesExtension(o.labels);
   const modeSlot = new Compartment();
   // What changes between the three ways of looking at a note.
@@ -162,9 +186,21 @@ export function createEditor(o: EditorOptions): Editor {
     indentOnInput(),
     bracketMatching(),
     closeBrackets(),
-    autocompletion({ icons: false, override: [wikiSource] }),
+    autocompletion({ icons: false, override: [wikiSource, slashSource] }),
     wikiConfig.of({ titles: o.titles, open: o.openLink }),
-    highlightSelectionMatches(),
+    highlightSelectionMatches({ minSelectionLength: 3, wholeWords: true, highlightWordAroundCursor: false }),
+    // Triple-click selects the line itself, not the line break (which dragged the cursor onto the next line).
+    EditorView.domEventHandlers({
+      mousedown(e, view) {
+        if (e.detail !== 3 || e.button !== 0) return false;
+        const pos = view.posAtCoords({ x: e.clientX, y: e.clientY });
+        if (pos == null) return false;
+        const l = view.state.doc.lineAt(pos);
+        view.dispatch({ selection: { anchor: l.from, head: l.to }, userEvent: 'select.pointer' });
+        e.preventDefault();
+        return true;
+      },
+    }),
     EditorView.lineWrapping,
     EditorView.perLineTextDirection.of(true), // Arabic and English lines each get their own direction
     placeholder(o.hint),

@@ -2,6 +2,7 @@
 <!-- Copyright (C) 2026 mmBesar -->
 <script lang="ts">
   import Select from './Select.svelte';
+  import Icon from './Icon.svelte';
   import { onMount } from 'svelte';
   import type { Text as YText } from 'yjs';
   import { COMMON_PROPS, readFrontMatter, type Prop, type PropType, withProps } from '../lib/frontmatter.ts';
@@ -62,6 +63,8 @@
   function setItems(i: number, raw: string) {
     update(i, { items: raw.split(',').map((x) => x.trim().replace(/^#/, '')).filter(Boolean) });
   }
+  const ICON: Record<string, string> = { title: 'type', tags: 'tag', tag: 'tag', aliases: 'link', alias: 'link', description: 'text', summary: 'text', date: 'calendar', created: 'calendar', updated: 'calendar', modified: 'calendar', author: 'user', url: 'globe', link: 'globe', cssclasses: 'layers', kanban: 'board', draft: 'check-box', publish: 'check-box' };
+  const iconFor = (p: Prop) => ICON[p.key.toLowerCase()] ?? (p.type === 'checkbox' ? 'check-box' : p.type === 'list' ? 'list' : p.type === 'number' ? 'hash' : 'text');
   const unused = $derived(COMMON_PROPS.filter((c) => !plist.some((p) => p.key.toLowerCase() === c.key)));
   const tags = $derived(plist.find((p) => p.key.toLowerCase() === 'tags')?.items ?? []);
 </script>
@@ -85,9 +88,12 @@
       {:else}
         <div class="props-grid">
           {#each plist as p, i (p.key)}
-            <label class="pkey" for={'p' + i}>{p.key}</label>
+            <label class="pkey" for={'p' + i}><span class="pico"><Icon name={iconFor(p)} size={15} /></span>{p.key}</label>
             {#if p.type === 'checkbox'}
-              <input id={'p' + i} type="checkbox" checked={p.text === 'true'} disabled={readOnly} onchange={(e) => update(i, { text: e.currentTarget.checked ? 'true' : 'false' })} />
+              <span class="pcheck">
+                <input id={'p' + i} type="checkbox" checked={p.text === 'true'} disabled={readOnly} onchange={(e) => update(i, { text: e.currentTarget.checked ? 'true' : 'false' })} />
+                <span class="pbox" aria-hidden="true"><Icon name="check-small" size={16} /></span>
+              </span>
             {:else if p.type === 'list'}
               <input id={'p' + i} value={p.items.join(', ')} disabled={readOnly} placeholder={t('propsListHint')} onchange={(e) => setItems(i, e.currentTarget.value)} />
             {:else}

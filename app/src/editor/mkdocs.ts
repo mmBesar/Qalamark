@@ -13,6 +13,7 @@
 
 import { StateEffect, type Text } from '@codemirror/state';
 import { highlightTree } from '@lezer/highlight';
+import { CodeBadge, fenceLang } from './codebadge.ts';
 import { codeStyle } from './codestyle.ts';
 import { findLanguage } from './langs.ts';
 import { Decoration, type DecorationSet, EditorView, ViewPlugin, type ViewUpdate, WidgetType } from '@codemirror/view';
@@ -174,6 +175,7 @@ function codeMarks(view: EditorView, f: Fence, out: Range<Decoration>[]) {
 interface TabGroup {
   heads: number[]; // line numbers of the tab labels
   titles: string[];
+  end: number; // last line of the group
 }
 
 /** Tabs that follow each other form one group (in Reading mode they become real tabs). */
@@ -191,9 +193,10 @@ function tabGroups(doc: Text, blocks: Map<number, BlockLine>, gaps: Set<number> 
       for (let k = lastBody + 1; k < h; k++) if (doc.line(k).text.trim() !== '') joins = false;
       if (joins) for (let k = lastBody + 1; k < h; k++) gaps.add(k);
     }
-    if (!joins) cur = { heads: [], titles: [] };
+    if (!joins) cur = { heads: [], titles: [], end: h };
     cur!.heads.push(h);
     cur!.titles.push(blocks.get(h)!.title);
+    cur!.end = tail;
     out.set(h, { group: cur!, index: cur!.heads.length - 1 });
     lastBody = tail;
   }
@@ -278,13 +281,17 @@ function build(view: EditorView, active: Map<number, number>, pick: (group: numb
   const out: Range<Decoration>[] = [];
   const reading = state.facet(readingMode);
   const sel = state.selection.ranges;
+  const gapGroup = new Map<number, TabGroup>();
+  for (const group of new Set([...groups.values()].map((v) => v.group))) for (const n of gaps) if (n > group.heads[0]! && n < group.end) gapGroup.set(n, group);
+  const headTouched = (grp: TabGroup) => !reading && grp.heads.some((h) => sel.some((r) => r.from <= state.doc.line(h).to && r.to >= state.doc.line(h).from));
   const touches = (from: number, to: number) => !reading && sel.some((r) => r.from <= to && r.to >= from);
   for (const { from, to } of view.visibleRanges) {
     const a = state.doc.lineAt(from).number;
     const b = state.doc.lineAt(to).number;
     for (let n = a; n <= b; n++) {
       const info = blocks.get(n);
-      if (!info && reading && gaps.has(n)) out.push(Decoration.line({ class: 'cm-tab-off' }).range(state.doc.line(n).from));
+      const gg = !info && gaps.has(n) ? gapGroup.get(n) : undefined;
+      if (gg && (reading || !headTouched(gg))) out.push(Decoration.line({ class: 'cm-tab-off' }).range(state.doc.line(n).from));
       if (!info) continue;
       const line = state.doc.line(n);
       const cls =
@@ -294,14 +301,29 @@ function build(view: EditorView, active: Map<number, number>, pick: (group: numb
             ? 'cm-tab-head'
             : 'cm-tab-body';
       const g = info.type === 'tab' ? groups.get(info.head) : undefined;
-      const shown = !reading || !g || (info.role === 'head' ? g.index === 0 : false) || (active.get(g.group.heads[0]!) ?? 0) === g.index;
+      // real tabs in Reading and in live view; the plain source only while the cursor is on a tab label line
+      const tabbed = !!g && (reading || !headTouched(g.group));
+      const shown = !tabbed || !g || (info.role === 'head' ? g.index === 0 : false) || (active.get(g.group.heads[0]!) ?? 0) === g.index;
       out.push(Decoration.line({ class: cls + (shown ? '' : ' cm-tab-off') }).range(line.from));
       const fence = fenceOf.get(n);
       if (fence && info.role === 'body') {
-        const edge = n === fence.first || (n === fence.last && n !== fence.first);
-        out.push(Decoration.line({ class: 'cm-codeblock cm-code-in' + (edge ? ' cm-code-edge' : '') + (n === fence.first ? ' cm-code-first' : '') + (n === fence.last ? ' cm-code-last' : '') }).range(line.from));
+        // clean code: no ``` lines unless the cursor is in the block (a badge names the language and copies)
+        const closed = fence.last - fence.first >= 2 && /^[ \t]*(```|~~~)[ \t]*$/.test(state.doc.line(fence.last).text.replace(/^( {4}|\t)/, ''));
+        const clean = closed && !touches(state.doc.line(fence.first).from, state.doc.line(fence.last).to);
+        const top = clean ? fence.first + 1 : fence.first;
+        const bottom = clean ? fence.last - 1 : fence.last;
+        if (clean && (n === fence.first || n === fence.last)) {
+          out.push(Decoration.line({ class: 'cm-fence-off' }).range(line.from));
+        } else {
+          const edge = !clean && (n === fence.first || (n === fence.last && n !== fence.first));
+          out.push(Decoration.line({ class: 'cm-codeblock cm-code-in' + (edge ? ' cm-code-edge' : '') + (n === top ? ' cm-code-first cm-code-badged' : '') + (n === bottom ? ' cm-code-last' : '') }).range(line.from));
+          if (clean && n === top) {
+            const code = state.doc.sliceString(state.doc.line(fence.first + 1).from, state.doc.line(fence.last - 1).to).split('\n').map((l) => l.replace(/^( {4}|\t)/, '')).join('\n');
+            out.push(Decoration.widget({ widget: new CodeBadge(fenceLang(state.doc.line(fence.first).text.replace(/^( {4}|\t)/, '')), code), side: -1 }).range(line.from));
+          }
+        }
       }
-      if (reading && g && info.role === 'head') {
+      if (tabbed && g && info.role === 'head') {
         if (g.index === 0) {
           const cur = active.get(g.group.heads[0]!) ?? 0;
           out.push(Decoration.replace({ widget: new TabStrip(g.group.titles, cur, (i) => pick(g.group.heads[0]!, i)) }).range(line.from, line.to));

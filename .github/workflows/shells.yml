@@ -41,7 +41,7 @@ jobs:
         run: |
           npm ci
           npx tauri build
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: qalamark-linux
           path: |
@@ -58,7 +58,7 @@ jobs:
           node-version: 24
           cache: npm
           cache-dependency-path: app/package-lock.json
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: 17
@@ -80,7 +80,14 @@ jobs:
           export NDK_HOME="$ANDROID_HOME/ndk/27.2.12479018"
           npx tauri android init --ci
           # self-hosted servers are often plain http:// on the home network
-          sed -i 's|<application|<application android:usesCleartextTraffic="true"|' src-tauri/gen/android/app/src/main/AndroidManifest.xml
+          M=src-tauri/gen/android/app/src/main/AndroidManifest.xml
+          if grep -q usesCleartextTraffic "$M"; then
+            # the template already declares it (as a placeholder): set it, never duplicate it
+            sed -i -E 's|android:usesCleartextTraffic="[^"]*"|android:usesCleartextTraffic="true"|' "$M"
+          else
+            sed -i 's|<application|<application android:usesCleartextTraffic="true"|' "$M"
+          fi
+          python3 -c "import xml.dom.minidom,sys; xml.dom.minidom.parse(sys.argv[1])" "$M"
       - name: Build the APK
         working-directory: app
         run: npx tauri android build --apk --target aarch64 --target armv7 --target x86_64
@@ -105,7 +112,7 @@ jobs:
           "$BT/zipalign" -f -p 4 "$APK" aligned.apk
           "$BT/apksigner" sign --ks "$KS" --ks-key-alias "$ALIAS" --ks-pass "pass:$SPASS" --key-pass "pass:$KPASS" --out Qalamark.apk aligned.apk
           "$BT/apksigner" verify Qalamark.apk
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: qalamark-android
           path: app/Qalamark.apk
@@ -115,7 +122,7 @@ jobs:
     needs: [linux, android]
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v6
         with:
           path: dist
           merge-multiple: true

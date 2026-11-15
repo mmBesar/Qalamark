@@ -55,7 +55,7 @@ test('write a note with a table, share it, edit it together', async () => {
   await signIn(alice, 'alice', 'alice-password');
 
   // Alice writes a note. The table is calculated by itself.
-  await alice.click('aside .actions .primary');
+  await alice.click('aside .actions button:first-child');
   await alice.waitForSelector('.cm-content');
   await alice.click('.cm-content');
   await alice.keyboard.insertText(
@@ -125,7 +125,7 @@ test('without a server the app still works on this device', async () => {
   const page = await newPage(errors);
   await page.goto(url);
   await page.waitForSelector('aside');
-  await page.click('aside .actions .primary');
+  await page.click('aside .actions button:first-child');
   await page.waitForSelector('.cm-content');
   await page.click('.cm-content');
   await page.keyboard.insertText('# Local note\n\n| a | b |\n| - | - |\n| 2 |  |\n<!-- qalamark\nB = A * 3\n-->\n');
@@ -146,7 +146,7 @@ test('editing feels right: click anywhere, tables stay tables, links, callouts, 
   const page = await newPage(errors);
   await page.goto(url);
   await page.waitForSelector('aside');
-  const newNote = async () => { await page.click('aside .actions .primary'); await page.waitForSelector('.cm-content'); };
+  const newNote = async () => { await page.click('aside .actions button:first-child'); await page.waitForSelector('.cm-content'); };
 
   // A note to link to.
   await newNote();
@@ -217,15 +217,15 @@ test('round 2: folders, templates, properties, MkDocs blocks, pictures, builder,
   await page.fill('.askbox input', 'Work');
   await page.keyboard.press('Enter');
   await page.waitForSelector('aside li.folder');
-  await page.click('aside li.folder .dots', { force: true });
-  await page.click('.menu >> text=New note here');
+  await page.click('aside li.folder', { button: 'right' });
+  await page.click('.ctx >> text=New note here');
   await page.waitForSelector('.cm-content');
   assert.equal(await page.locator('aside li.folder').count(), 1);
   await page.waitForSelector('aside li.row[style*="--depth: 1"]', { timeout: 8000 });
 
   // A ready-made template with plain-words formulas calculates itself.
-  await page.click('aside .actions .relative button');
-  await page.click('.menu >> text=Expenses with total');
+  await page.click('aside .actions button[title="New from template"]');
+  await page.click('.ctx >> text=Expenses with total');
   await page.waitForSelector('.qt');
   for (const [c, v] of [[0, 'Tea'], [1, '3'], [2, '2.5']]) {
     await page.fill(`.qt input[data-r="2"][data-c="${c}"]`, v);
@@ -302,7 +302,7 @@ test('round 3: code languages, tabbed code, properties by mode, centred page', a
   const errors = [];
   const page = await newPage(errors);
   await signIn(page, 'alice', 'alice-password');
-  await page.click('aside .actions .primary');
+  await page.click('aside .actions button:first-child');
   await page.waitForSelector('.cm-content');
   await page.click('.cm-content');
   await page.keyboard.insertText('---\ntitle: Demo\n---\n# Hi\n\n```yml\nname: x\n```\n\n=== "Fedora"\n\n    ``` sh\n    sudo dnf install foo # c\n    ```\n\n=== "Arch"\n\n    ``` sh\n    sudo pacman -S foo\n    ```\n\nend\n');
@@ -342,7 +342,7 @@ test('round 4: a note becomes a Kanban board and stays plain Markdown', async ()
   const errors = [];
   const page = await newPage(errors);
   await signIn(page, 'alice', 'alice-password');
-  await page.click('aside .actions .primary');
+  await page.click('aside .actions button:first-child');
   await page.waitForSelector('.cm-content');
   await page.click('.cm-content');
   await page.keyboard.insertText('# Work\n\n## Todo\n- [ ] write docs\n- [ ] fix bug\n\n## Done\n- [x] ship\n');
@@ -376,7 +376,7 @@ test('round 5: quick switcher, text search, today note, outline', async () => {
   const errors = [];
   const page = await newPage(errors);
   await signIn(page, 'alice', 'alice-password');
-  await page.click('aside .actions .primary');
+  await page.click('aside .actions button:first-child');
   await page.waitForSelector('.cm-content');
   await page.click('.cm-content');
   await page.keyboard.insertText('# Big title\n\nsome words about Quokka habitats\n\n## Second part\n\nmore\n');
@@ -432,7 +432,7 @@ test('round 6: notes folder in the apps: files out, outside edits in, renames fo
   // the file that was already in the folder became a note, inside its folder
   await page.waitForSelector('aside li:has-text("Hello")');
   // a new note is written out as a real .md file
-  await page.click('aside .actions .primary');
+  await page.click('aside .actions button:first-child');
   await page.waitForSelector('.cm-content');
   await page.click('.cm-content');
   await page.keyboard.insertText('# Fresh\n\nwritten in the app');
@@ -453,4 +453,111 @@ test('round 6: notes folder in the apps: files out, outside edits in, renames fo
   await page.click('dialog.askdialog button.primary');
   await page.waitForFunction(() => !window.__fs.has('Journal.md'), null, { timeout: 5000 });
   assert.deepEqual(errors, []);
+});
+
+test('round 7: context menus, long-press, swipe drawer, live tabs, selection, clean code', async () => {
+  const errors = [];
+  const page = await newPage(errors);
+  await signIn(page, 'alice', 'alice-password');
+  await page.click('aside .actions button:first-child');
+  await page.waitForSelector('.cm-content');
+  await page.click('.cm-content');
+  await page.keyboard.insertText('# Heading one\n\nsome plain words here\nsecond line\n\n```bash\nls -la\n```\n\n=== "Fedora"\n\n    alpha-body\n\n=== "Arch"\n\n    beta-body\n\nend\n');
+  await page.click('.topbar .title');
+  await page.waitForTimeout(700);
+
+  // live view: no ```bash line, a language badge instead; tabs are real tabs with one body at a time
+  assert.ok(!/```/.test(await page.locator('.cm-content').innerText()), 'no fence marks in live view');
+  assert.ok(await page.locator('.cm-code-badge').count() >= 1, 'code badge');
+  assert.equal(await page.locator('.cm-tabstrip .cm-tab-label').count(), 2, 'tab strip in live view');
+  assert.equal(await page.locator('.cm-line:has-text("alpha-body"):visible').count(), 1);
+  assert.equal(await page.locator('.cm-line:has-text("beta-body"):visible').count(), 0);
+
+  // heading marks show while the cursor is anywhere on the heading line
+  await page.locator('.cm-line:has-text("Heading one")').click();
+  assert.ok(/^# /.test(await page.locator('.cm-line:has-text("Heading one")').innerText()), 'heading # visible at the cursor');
+
+  // triple-click selects the line, not the line break (the cursor must not land on the next line)
+  await page.locator('.cm-line:has-text("some plain words")').click({ clickCount: 3 });
+  const sel = await page.evaluate(() => getSelection().toString());
+  assert.equal(sel.trim(), 'some plain words here');
+  // double-click selects a word and the selection layer is visible
+  await page.locator('.cm-line:has-text("some plain words")').click({ clickCount: 2, position: { x: 60, y: 8 } });
+  await page.waitForSelector('.cm-selectionBackground', { state: 'attached', timeout: 4000 });
+
+  // right-click in the editor: themed app menu, inside the window
+  await page.locator('.cm-line:has-text("second line")').click({ button: 'right' });
+  await page.waitForSelector('.ctx');
+  const cb = await page.locator('.ctx').boundingBox();
+  assert.ok(cb.x >= 0 && cb.y >= 0 && cb.x + cb.width <= 1100 && cb.y + cb.height <= 760, 'menu stays on screen');
+  const bg = await page.locator('.ctx').evaluate((el) => getComputedStyle(el).backgroundColor);
+  assert.ok(bg !== 'rgba(0, 0, 0, 0)', 'menu has the theme background');
+  await page.keyboard.press('Escape');
+  assert.equal(await page.locator('.ctx').count(), 0);
+
+  // sidebar: right-click a note → rename/copy/move/delete menu with icons; no three-dots column left
+  assert.equal(await page.locator('aside .dots').count(), 0);
+  await page.locator('aside li.row .main').first().click({ button: 'right' });
+  await page.waitForSelector('.ctx');
+  for (const w of ['Rename', 'Move to', 'Delete']) assert.ok(await page.locator(`.ctx >> text=${w}`).count() >= 1, w);
+  await page.click('.ctx >> text=Move to');
+  assert.ok(await page.locator('.ctx >> text=Back').count() === 1, 'sub-list has a way back');
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('Escape');
+
+  // folder tree: guide lines, collapse all
+  await page.click('aside .actions button[title="New folder"]');
+  await page.fill('.askbox input', 'Work/Plans');
+  await page.keyboard.press('Enter');
+  await page.waitForSelector('aside li.folder');
+  await page.click('aside .actions button[title="Collapse all folders"]').catch(() => {});
+  assert.ok(await page.locator('aside .views button').count() === 3, 'files / search / recent views');
+  await page.click('aside .views button[title="Search"]');
+  assert.ok(await page.locator('aside input.search').isVisible());
+  await page.click('aside .views button[title="Files"]');
+  // "/" at the start of a line offers blocks to insert
+  await page.click('.cm-content');
+  await page.keyboard.press('Control+End');
+  await page.keyboard.insertText('\n/tabl');
+  await page.waitForSelector('.cm-tooltip-autocomplete');
+  await page.keyboard.press('Enter');
+  await page.waitForTimeout(300);
+  await page.waitForSelector('.qt-cell', { timeout: 4000 }); // the table the slash menu inserted
+  await page.screenshot({ path: process.env.SHOT_DIR ? join(process.env.SHOT_DIR, 'desktop.png') : '/tmp/qm-desktop.png' });
+  assert.deepEqual(errors, []);
+});
+
+test('round 7b: touch — long-press menu and swipe the side panel', async () => {
+  const errors = [];
+  const ctx = await browser.newContext({ viewport: { width: 390, height: 780 }, hasTouch: true, isMobile: true });
+  const page = await ctx.newPage();
+  page.on('pageerror', (e) => errors.push(e.message));
+  await signIn(page, 'alice', 'alice-password');
+  await page.waitForTimeout(500);
+  // side panel is hidden on a phone; swipe in from the left edge
+  const swipe = async (x0, x1) => page.evaluate(async ([a, b]) => {
+    const mk = (type, x) => {
+      const t = new Touch({ identifier: 1, target: document.body, clientX: x, clientY: 300 });
+      document.dispatchEvent(new TouchEvent(type, { touches: type === 'touchend' ? [] : [t], changedTouches: [t], bubbles: true }));
+      window.dispatchEvent(new TouchEvent(type, { touches: type === 'touchend' ? [] : [t], changedTouches: [t] }));
+    };
+    mk('touchstart', a);
+    for (let i = 1; i <= 8; i++) { mk('touchmove', a + ((b - a) * i) / 8); await new Promise((r) => setTimeout(r, 16)); }
+    mk('touchend', b);
+  }, [x0, x1]);
+  assert.ok(!(await page.locator('.shell.drawer-open').count()));
+  await swipe(8, 260);
+  await page.waitForSelector('.shell.drawer-open');
+  await swipe(280, 40);
+  await page.waitForFunction(() => !document.querySelector('.shell.drawer-open'));
+  await swipe(150, 20); // a swipe that does not start at the edge does nothing while closed
+  assert.ok(!(await page.locator('.shell.drawer-open').count()));
+  // long-press a note opens the same menu
+  await swipe(8, 260);
+  await page.waitForSelector('.shell.drawer-open');
+  await page.locator('aside li.row .main').first().dispatchEvent('pointerdown', { pointerType: 'touch', clientX: 120, clientY: 200 });
+  await page.waitForSelector('.ctx', { timeout: 3000 });
+  assert.ok(await page.locator('.ctx >> text=Rename').count() >= 1);
+  assert.deepEqual(errors, []);
+  await ctx.close();
 });

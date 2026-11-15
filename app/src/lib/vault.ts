@@ -30,6 +30,7 @@ export const vault = {
   trash: (path: string) => call<void>('vault_trash', { path }),
   rename: (from: string, to: string) => call<number>('vault_rename', { from, to }),
   mkdir: (folder: string) => call<void>('vault_mkdir', { folder }),
+  reveal: (path: string) => call<void>('vault_reveal', { path }),
   /** Ask the system for a folder (desktop only). */
   async pick(): Promise<string | null> {
     const { open } = await import('@tauri-apps/plugin-dialog');

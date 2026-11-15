@@ -8,6 +8,10 @@
   import Sidebar from './components/Sidebar.svelte';
   import DialogHost from './components/DialogHost.svelte';
   import Palette from './components/Palette.svelte';
+  import ContextMenu from './components/ContextMenu.svelte';
+  import { ctxmenu } from './lib/ctxmenu.svelte.ts';
+  import { inShell } from './lib/vault.ts';
+  import { editorMenu, fieldMenu } from './lib/menus.ts';
   import { store } from './lib/store.svelte.ts';
 
   let drawer = $state(false);
@@ -18,6 +22,54 @@
   });
 
   const t = store.t;
+
+  /** Right-click: the app's own themed menu in the editor and in text boxes; no stray browser menu in the apps. */
+  function onContext(e: MouseEvent) {
+    if (e.defaultPrevented) return;
+    const el = e.target as HTMLElement | null;
+    const field = el?.closest('input, textarea') as HTMLInputElement | HTMLTextAreaElement | null;
+    if (field && !(field instanceof HTMLInputElement && ['checkbox', 'radio', 'range', 'button'].includes(field.type))) {
+      e.preventDefault();
+      ctxmenu.show(e.clientX, e.clientY, fieldMenu(field, t));
+    } else if (el?.closest('.cm-content')) {
+      e.preventDefault();
+      ctxmenu.show(e.clientX, e.clientY, editorMenu(e, t));
+    } else if (inShell()) {
+      e.preventDefault();
+    }
+  }
+
+  // Swipe the side panel in from the screen edge and out again, following the finger (phones and small windows).
+  let prog = $state<number | null>(null); // 0 = closed … 1 = open, while a finger is down
+  let sw: { x: number; y: number; w: number; opening: boolean; live: boolean } | null = null;
+  const small = () => matchMedia('(max-width: 760px)').matches;
+  const rtl = () => document.documentElement.dir === 'rtl';
+  function swStart(e: TouchEvent) {
+    if (!small() || e.touches.length !== 1 || store.mode === 'login' || store.mode === 'boot') return;
+    const t0 = e.touches[0]!;
+    const fromEdge = rtl() ? t0.clientX >= innerWidth - 34 : t0.clientX <= 34;
+    if (!drawer && !fromEdge) return;
+    const w = document.querySelector('aside')?.getBoundingClientRect().width ?? 300;
+    sw = { x: t0.clientX, y: t0.clientY, w, opening: !drawer, live: false };
+  }
+  function swMove(e: TouchEvent) {
+    if (!sw) return;
+    const t0 = e.touches[0]!;
+    const dx = (rtl() ? -1 : 1) * (t0.clientX - sw.x);
+    const dy = t0.clientY - sw.y;
+    if (!sw.live) {
+      if (Math.abs(dy) > 12 && Math.abs(dy) > Math.abs(dx)) { sw = null; return; }
+      if (Math.abs(dx) < 10) return;
+      if ((sw.opening && dx < 0) || (!sw.opening && dx > 0)) { sw = null; return; }
+      sw.live = true;
+    }
+    prog = Math.max(0, Math.min(1, (sw.opening ? 0 : 1) + dx / sw.w));
+  }
+  function swEnd() {
+    if (sw?.live && prog !== null) drawer = prog > (sw.opening ? 0.35 : 0.65);
+    sw = null;
+    prog = null;
+  }
 
   // Drag the edge of the sidebar to change its width (double-click resets it).
   let dragging = $state(false);
@@ -41,7 +93,7 @@
 {:else if store.mode === 'login'}
   <Login />
 {:else}
-  <div class="shell" class:drawer-open={drawer}>
+  <div class="shell" class:drawer-open={drawer} class:swiping={prog !== null} style:--p={prog ?? (drawer ? 1 : 0)}>
     <Sidebar onSettings={() => (settings = true)} onPick={() => (drawer = false)} />
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <button
@@ -76,5 +128,6 @@
   {/if}
 {/if}
 {#if store.palette}<Palette onSettings={() => (settings = true)} />{/if}
-<svelte:window onkeydown={(e) => { if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && (e.key === 'p' || e.key === 'k') && store.mode !== 'login' && store.mode !== 'boot') { e.preventDefault(); store.palette = !store.palette; } }} />
+<svelte:window ontouchstart={swStart} ontouchmove={swMove} ontouchend={swEnd} ontouchcancel={swEnd} oncontextmenu={onContext} onkeydown={(e) => { if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && (e.key === 'p' || e.key === 'k') && store.mode !== 'login' && store.mode !== 'boot') { e.preventDefault(); store.palette = !store.palette; } }} />
 <DialogHost />
+<ContextMenu />

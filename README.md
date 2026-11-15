@@ -130,6 +130,10 @@ there becomes a note. More in **[docs/SELF-HOSTING.md](docs/SELF-HOSTING.md)**
 - **Works on a phone:** the layout adapts, controls stay reachable.
 - **Code blocks in many languages:** bash/sh, yml, ini/conf, toml, nginx, Dockerfile, Python, JS and more, also inside tabs and boxes. In Reading mode, tabs are real clickable tabs.
 - **Properties follow the mode:** hidden behind the panel in Live and Reading, plain text in Source.
+- **Kanban boards from any note:** a note with a `kanban` property gets a *Board* view. Every `##` heading is a column, every task line is a card; drag cards, tick them, add columns. The file stays plain Markdown (use *Show as Kanban board* in the note menu, or the Kanban template).
+- **Quick switcher** (`Ctrl+P` / `Ctrl+K`): jump to a note, search inside note text, or run a command. Also: an **outline** of the headings, a **today's note** button, and a *recent notes* list.
+- **Rename keeps everything in step:** the file name, the `title:` property and every `[[link]]` to the note change together (server).
+- **Notes folder in the apps:** the Linux and Android apps keep your notes as real `.md` files in `Documents/Qalamark` (change it in Settings). Edits made outside show up when you return to the app.
 - **English and Arabic** interface, right-to-left.
 
 ## Try the pieces from source
@@ -195,6 +199,12 @@ later version. See [LICENSE](LICENSE) for the full text.
 
 AGPL was chosen on purpose: if someone runs a modified Qalamark as a network
 service, they must share their changes too.
+
+## Where are my notes?
+
+- **Server:** in the `/data` volume you mount (see the run command above): `data/notes/<user>/...` holds the `.md` files, `data/trash/` deleted ones, `data/qalamark.db` the accounts and live-editing state.
+- **Linux and Android apps (without a server):** in `Documents/Qalamark` by default, or any folder you choose in *Settings → Notes folder*. On Android the default is the app's own documents folder, because Android only lets apps write to the shared Documents folder with special permission; pick another path in Settings if you grant that.
+- **Browser without a server:** inside the browser's own storage (the preview).
 
 ## Linux and Android apps
 

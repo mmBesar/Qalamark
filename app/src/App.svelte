@@ -58,7 +58,7 @@
     <button class="scrim" aria-label={t('close')} onclick={() => (drawer = false)}></button>
     <main>
       {#if store.current}
-        {#key store.current.id + store.mode}
+        {#key store.current.id + store.mode + store.epoch}
           <Editor note={store.current} onMenu={() => (drawer = true)} />
         {/key}
       {:else}

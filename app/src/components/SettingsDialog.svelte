@@ -1,6 +1,7 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
 <!-- Copyright (C) 2026 mmBesar -->
 <script lang="ts">
+  import { onAndroid, vault } from '../lib/vault.ts';
   import Select from './Select.svelte';
   import { askBox, confirmBox } from '../lib/dialog.svelte.ts';
   import { addUserFont, removeUserFont } from '../lib/fonts';
@@ -60,6 +61,7 @@
     if (await confirmBox(t('confirmDeleteUser', { name }))) void attempt(async () => { await store.api.deleteUser(name); await loadUsers(); });
   };
 
+  let folderDraft = $state(store.vaultPath);
   async function attempt(f: () => Promise<string | void>) {
     msg = '';
     error = '';
@@ -158,6 +160,20 @@
   <datalist id="fonts-en">{#each store.userFonts as f}<option value={f}></option>{/each}<option value="Roboto"></option><option value="Inter"></option><option value="Georgia"></option><option value="system-ui"></option></datalist>
   <datalist id="fonts-ar">{#each store.userFonts as f}<option value={f}></option>{/each}<option value="Noto Naskh Arabic UI"></option><option value="Noto Sans Arabic"></option><option value="Amiri"></option><option value="Cairo"></option></datalist>
   <datalist id="fonts-code">{#each store.userFonts as f}<option value={f}></option>{/each}<option value="JetBrainsMono Nerd Font Mono"></option><option value="JetBrains Mono"></option><option value="Fira Code"></option><option value="Cascadia Code"></option></datalist>
+
+  {#if store.vaultPath}
+    <h3>{t('notesFolder')}</h3>
+    <p class="muted small">{t('notesFolderHelp')}</p>
+    <div class="row">
+      <input dir="ltr" bind:value={folderDraft} placeholder={t('folderPathPlaceholder')} aria-label={t('notesFolder')} />
+      {#if !onAndroid()}<button type="button" onclick={async () => { const p = await vault.pick(); if (p) folderDraft = p; }}>{t('chooseFolder')}</button>{/if}
+    </div>
+    <div class="row">
+      <button class="primary" type="button" onclick={() => void store.vaultChange(folderDraft)}>{t('useFolder')}</button>
+      <button type="button" class="ghost" onclick={() => { folderDraft = ''; void store.vaultChange(''); }}>{t('defaultFolder')}</button>
+    </div>
+    {#if store.vaultError}<p class="err">{store.vaultError}</p>{/if}
+  {/if}
 
   <h3>{t('accent')}</h3>
   <div class="swatches" role="group" aria-label={t('accent')}>

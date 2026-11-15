@@ -33,6 +33,9 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libssl-dev patchelf rpm file
+      - name: Notes-folder tests
+        working-directory: app/src-tauri
+        run: rustc --edition 2021 --test src/vault.rs -o /tmp/vault_test && /tmp/vault_test
       - name: Build
         working-directory: app
         run: |

@@ -3,5 +3,5 @@
   "identifier": "default",
   "description": "The web app needs no native permissions.",
   "windows": ["main"],
-  "permissions": ["core:default"]
+  "permissions": ["core:default", "dialog:default"]
 }

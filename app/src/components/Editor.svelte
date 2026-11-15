@@ -108,6 +108,7 @@
     timer = setTimeout(() => {
       words = (session.ytext.toString().match(/[\p{L}\p{N}]+/gu) ?? []).length;
       store.touch(note.id);
+      if (store.vaultPath) void store.vaultPush(note.id, session.ytext.toString());
     }, 400);
   }
 

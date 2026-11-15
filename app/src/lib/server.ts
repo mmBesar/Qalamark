@@ -11,6 +11,8 @@ export interface NoteMeta {
   owner: string;
   role: 'owner' | 'edit' | 'view';
   updated: number;
+  vp?: string; // notes folder (apps): the file this note was last written to
+  vm?: number; // and that file's modified time, to notice edits made outside
 }
 
 export interface Status {

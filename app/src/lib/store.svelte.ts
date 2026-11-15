@@ -9,6 +9,7 @@ import { translate, type Key, type Lang } from './i18n.ts';
 import { BUILT_IN, fill, TEMPLATES_FOLDER } from './templates.ts';
 import { Api, ApiError, cleanBase, type NoteMeta } from './server.ts';
 import { type Accent, applyTheme, type ThemeId } from './theme.ts';
+import { inShell, notePath, splitPath, vault } from './vault.ts';
 import { deleteStored, readStoredText, writeStoredText } from './session.ts';
 
 export type Mode = 'boot' | 'login' | 'local' | 'server';
@@ -187,6 +188,160 @@ class Store {
     this.notes = read<NoteMeta[]>(LOCAL_NOTES, []);
     this.folders = read<string[]>(LOCAL_FOLDERS, []);
     this.currentId = this.notes[0]?.id ?? null;
+    void this.vaultStart();
+  }
+
+  // ------------------------------------------------------------ notes folder (apps only)
+
+  /** Where the .md files are (apps only; empty in a browser). */
+  vaultPath = $state('');
+  vaultDefault = $state('');
+  vaultError = $state('');
+  /** Bumped when a file changed outside the app, so an open note reloads. */
+  epoch = $state(0);
+  private vaultBusy = false;
+  private vaultBound = false;
+
+  async vaultStart() {
+    if (!inShell()) return;
+    try {
+      const i = await vault.info();
+      this.vaultPath = i.path;
+      this.vaultDefault = i.default_path;
+      await this.vaultSync();
+      if (!this.vaultBound) {
+        this.vaultBound = true;
+        window.addEventListener('focus', () => void this.vaultSync());
+      }
+    } catch (e) {
+      this.vaultError = e instanceof Error ? e.message : String(e);
+    }
+  }
+
+  /** Bring the app and the folder together: new or edited files come in, new notes go out. */
+  async vaultSync() {
+    if (!this.vaultPath || this.mode !== 'local' || this.vaultBusy) return;
+    this.vaultBusy = true;
+    try {
+      const files = await vault.list();
+      const onDisk = new Map(files.map((f) => [f.path, f]));
+      let changed = false;
+      const keep: NoteMeta[] = [];
+      for (const n0 of [...this.notes]) {
+        let n = n0;
+        const want = notePath(n.folder ?? '', n.title);
+        const f = onDisk.get(n.vp ?? want);
+        if (n.vp && !f) {
+          // deleted outside the app
+          deleteStored(`local:${n.id}`);
+          if (this.currentId === n.id) this.currentId = null;
+          changed = true;
+          continue;
+        }
+        if (!f) {
+          const vm = await vault.write(want, await readStoredText(`local:${n.id}`));
+          n = { ...n, vp: want, vm };
+          changed = true;
+        } else if (!n.vp) {
+          // a file with this name is already there: never overwrite either side
+          const text = await readStoredText(`local:${n.id}`);
+          const theirs = await vault.read(want);
+          if (theirs.text === text) n = { ...n, vp: want, vm: theirs.mtime_ms };
+          else {
+            const title = this.uniqueLocalTitle(`${n.title} (${this.t('appCopy')})`, n.folder ?? '');
+            const path = notePath(n.folder ?? '', title);
+            const vm = await vault.write(path, text);
+            n = { ...n, title, vp: path, vm };
+          }
+          changed = true;
+        } else if (f.mtime_ms !== n.vm) {
+          const c = await vault.read(n.vp);
+          if (c.text !== (await readStoredText(`local:${n.id}`))) {
+            await writeStoredText(`local:${n.id}`, c.text);
+            if (this.currentId === n.id) this.epoch++;
+          }
+          n = { ...n, vm: c.mtime_ms };
+          changed = true;
+        }
+        keep.push(n);
+      }
+      const known = new Set(keep.map((n) => n.vp));
+      for (const f of files) {
+        if (known.has(f.path)) continue;
+        const { folder, title } = splitPath(f.path);
+        const c = await vault.read(f.path);
+        const id = crypto.randomUUID();
+        await writeStoredText(`local:${id}`, c.text);
+        keep.unshift({ id, title, folder, owner: '', role: 'owner', updated: Math.floor(f.mtime_ms / 1000), vp: f.path, vm: c.mtime_ms });
+        if (folder && !this.folders.includes(folder)) this.folders = [...this.folders, folder];
+        changed = true;
+      }
+      if (changed) {
+        this.notes = keep;
+        write(LOCAL_FOLDERS, this.folders);
+        write(LOCAL_NOTES, this.notes);
+        if (!this.notes.some((n) => n.id === this.currentId)) this.currentId = this.notes[0]?.id ?? null;
+      }
+      this.vaultError = '';
+    } catch (e) {
+      this.vaultError = e instanceof Error ? e.message : String(e);
+    } finally {
+      this.vaultBusy = false;
+    }
+  }
+
+  /** Save one note's text into its file. */
+  async vaultPush(id: string, text: string) {
+    if (!this.vaultPath || this.mode !== 'local') return;
+    const n = this.notes.find((x) => x.id === id);
+    if (!n) return;
+    try {
+      const path = n.vp ?? notePath(n.folder ?? '', n.title);
+      const vm = await vault.write(path, text);
+      this.notes = this.notes.map((x) => (x.id === id ? { ...x, vp: path, vm } : x));
+      write(LOCAL_NOTES, this.notes);
+    } catch (e) {
+      this.vaultError = e instanceof Error ? e.message : String(e);
+    }
+  }
+
+  /** Renames and moves in the app follow in the folder. */
+  private async vaultPaths() {
+    if (!this.vaultPath || this.mode !== 'local') return;
+    let changed = false;
+    const next: NoteMeta[] = [];
+    for (const n of this.notes) {
+      const want = notePath(n.folder ?? '', n.title);
+      if (n.vp && n.vp !== want) {
+        try {
+          const vm = await vault.rename(n.vp, want);
+          next.push({ ...n, vp: want, vm });
+          changed = true;
+          continue;
+        } catch (e) {
+          this.vaultError = e instanceof Error ? e.message : String(e);
+        }
+      }
+      next.push(n);
+    }
+    if (changed) {
+      this.notes = next;
+      write(LOCAL_NOTES, this.notes);
+    }
+    for (const f of this.folders) await vault.mkdir(f).catch(() => {});
+  }
+
+  /** Use another folder for the notes (empty = the default). */
+  async vaultChange(path: string) {
+    try {
+      const now = await vault.set(path);
+      this.vaultPath = now;
+      this.notes = this.notes.map((n) => ({ ...n, vp: undefined, vm: undefined }));
+      write(LOCAL_NOTES, this.notes);
+      await this.vaultSync();
+    } catch (e) {
+      this.vaultError = e instanceof Error ? e.message : String(e);
+    }
   }
 
   // ------------------------------------------------------------ accounts
@@ -263,6 +418,7 @@ class Store {
 
   private saveLocalList() {
     write(LOCAL_NOTES, this.notes);
+    void this.vaultPaths();
   }
 
   /** Name of the copy kept on this device. */
@@ -285,6 +441,7 @@ class Store {
     this.notes = [n, ...this.notes];
     this.saveLocalList();
     this.currentId = id;
+    void this.vaultPush(id, content);
     return id;
   }
 
@@ -441,6 +598,8 @@ class Store {
       else await this.api.deleteNote(id);
     }
     deleteStored(this.storeName(id));
+    const gone = this.notes.find((n) => n.id === id);
+    if (this.mode === 'local' && gone?.vp && this.vaultPath) void vault.trash(gone.vp).catch(() => {});
     this.notes = this.notes.filter((n) => n.id !== id);
     if (this.mode === 'server') write(this.cacheKey(), this.notes);
     else this.saveLocalList();

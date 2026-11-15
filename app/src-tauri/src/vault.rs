@@ -1,0 +1,184 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 mmBesar
+//
+// The notes folder: plain .md files on disk. Std only, so it can be tested on its own.
+
+use std::fs;
+use std::io;
+use std::path::{Component, Path, PathBuf};
+use std::time::UNIX_EPOCH;
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct FileInfo {
+    /// Path inside the vault, always with `/` separators.
+    pub path: String,
+    pub mtime_ms: u64,
+}
+
+/// Turns "Folder/Note.md" into a safe path under `root`; refuses anything that could escape it.
+pub fn resolve(root: &Path, rel: &str) -> io::Result<PathBuf> {
+    let bad = |m: &str| io::Error::new(io::ErrorKind::InvalidInput, m.to_string());
+    if rel.is_empty() || !rel.to_lowercase().ends_with(".md") {
+        return Err(bad("only .md files"));
+    }
+    let mut out = root.to_path_buf();
+    for c in Path::new(rel).components() {
+        match c {
+            Component::Normal(p) => {
+                let s = p.to_string_lossy();
+                if s.starts_with('.') {
+                    return Err(bad("hidden names are not allowed"));
+                }
+                out.push(p);
+            }
+            _ => return Err(bad("path must stay inside the notes folder")),
+        }
+    }
+    Ok(out)
+}
+
+fn mtime(p: &Path) -> u64 {
+    fs::metadata(p)
+        .and_then(|m| m.modified())
+        .ok()
+        .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
+}
+
+/// Every .md file under the vault (hidden folders such as .trash are skipped).
+pub fn list(root: &Path) -> io::Result<Vec<FileInfo>> {
+    fs::create_dir_all(root)?;
+    let mut out = Vec::new();
+    walk(root, root, &mut out)?;
+    out.sort_by(|a, b| a.path.cmp(&b.path));
+    Ok(out)
+}
+
+fn walk(root: &Path, dir: &Path, out: &mut Vec<FileInfo>) -> io::Result<()> {
+    for e in fs::read_dir(dir)? {
+        let e = e?;
+        let name = e.file_name().to_string_lossy().to_string();
+        if name.starts_with('.') {
+            continue;
+        }
+        let p = e.path();
+        let ft = e.file_type()?;
+        if ft.is_dir() {
+            walk(root, &p, out)?;
+        } else if ft.is_file() && name.to_lowercase().ends_with(".md") {
+            let rel = p.strip_prefix(root).unwrap_or(&p).components().map(|c| c.as_os_str().to_string_lossy().to_string()).collect::<Vec<_>>().join("/");
+            out.push(FileInfo { path: rel, mtime_ms: mtime(&p) });
+        }
+    }
+    Ok(())
+}
+
+pub fn read(root: &Path, rel: &str) -> io::Result<(String, u64)> {
+    let p = resolve(root, rel)?;
+    Ok((fs::read_to_string(&p)?, mtime(&p)))
+}
+
+/// Writes through a temporary file so a crash never leaves half a note. Returns the new mtime.
+pub fn write(root: &Path, rel: &str, text: &str) -> io::Result<u64> {
+    let p = resolve(root, rel)?;
+    if let Some(d) = p.parent() {
+        fs::create_dir_all(d)?;
+    }
+    let tmp = p.with_extension("md.qalamark-tmp");
+    fs::write(&tmp, text)?;
+    fs::rename(&tmp, &p)?;
+    Ok(mtime(&p))
+}
+
+/// Moves a note to `.trash` inside the vault instead of deleting it for good.
+pub fn trash(root: &Path, rel: &str) -> io::Result<()> {
+    let p = resolve(root, rel)?;
+    if !p.exists() {
+        return Ok(());
+    }
+    let dir = root.join(".trash");
+    fs::create_dir_all(&dir)?;
+    let stamp = std::time::SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis()).unwrap_or(0);
+    let name = p.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_else(|| "note.md".into());
+    fs::rename(&p, dir.join(format!("{stamp}-{name}")))
+}
+
+/// Renames or moves a note. Refuses to overwrite another file.
+pub fn rename(root: &Path, from: &str, to: &str) -> io::Result<u64> {
+    let a = resolve(root, from)?;
+    let b = resolve(root, to)?;
+    if !a.exists() || a == b {
+        return Ok(mtime(&a));
+    }
+    if b.exists() {
+        return Err(io::Error::new(io::ErrorKind::AlreadyExists, "a note with that name already exists"));
+    }
+    if let Some(d) = b.parent() {
+        fs::create_dir_all(d)?;
+    }
+    fs::rename(&a, &b)?;
+    Ok(mtime(&b))
+}
+
+pub fn mkdir(root: &Path, folder: &str) -> io::Result<()> {
+    let p = resolve(root, &format!("{}/x.md", folder.trim_matches('/')))?;
+    fs::create_dir_all(p.parent().unwrap_or(root))
+}
+
+/// Where notes live when nothing was chosen: Documents/Qalamark, or the app's own folder when
+/// the system has no Documents folder (some phones).
+pub fn default_dir(documents: Option<PathBuf>, fallback: PathBuf) -> PathBuf {
+    documents.map(|d| d.join("Qalamark")).unwrap_or_else(|| fallback.join("Qalamark"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn tmp(name: &str) -> PathBuf {
+        let d = std::env::temp_dir().join(format!("qalamark-vault-{}-{}", name, std::process::id()));
+        let _ = fs::remove_dir_all(&d);
+        fs::create_dir_all(&d).unwrap();
+        d
+    }
+
+    #[test]
+    fn paths_cannot_escape() {
+        let r = tmp("esc");
+        assert!(resolve(&r, "a/b.md").is_ok());
+        assert!(resolve(&r, "../x.md").is_err());
+        assert!(resolve(&r, "/etc/x.md").is_err());
+        assert!(resolve(&r, "a/../../x.md").is_err());
+        assert!(resolve(&r, ".trash/x.md").is_err());
+        assert!(resolve(&r, "a/b.txt").is_err());
+        assert!(resolve(&r, "").is_err());
+    }
+
+    #[test]
+    fn write_read_list_rename_trash() {
+        let r = tmp("rw");
+        write(&r, "Groceries.md", "milk").unwrap();
+        write(&r, "Work/Plan.md", "# Plan").unwrap();
+        fs::write(r.join("ignore.txt"), "x").unwrap();
+        let l = list(&r).unwrap();
+        assert_eq!(l.iter().map(|f| f.path.as_str()).collect::<Vec<_>>(), vec!["Groceries.md", "Work/Plan.md"]);
+        assert_eq!(read(&r, "Work/Plan.md").unwrap().0, "# Plan");
+        rename(&r, "Work/Plan.md", "Plans/Big plan.md").unwrap();
+        assert!(!r.join("Work/Plan.md").exists() && r.join("Plans/Big plan.md").exists());
+        write(&r, "Other.md", "o").unwrap();
+        assert!(rename(&r, "Other.md", "Groceries.md").is_err()); // never overwrites
+        trash(&r, "Groceries.md").unwrap();
+        assert!(!r.join("Groceries.md").exists());
+        assert_eq!(list(&r).unwrap().len(), 2); // .trash is not listed
+        assert_eq!(fs::read_dir(r.join(".trash")).unwrap().count(), 1);
+        mkdir(&r, "Empty folder").unwrap();
+        assert!(r.join("Empty folder").is_dir());
+    }
+
+    #[test]
+    fn default_location() {
+        assert_eq!(default_dir(Some(PathBuf::from("/home/u/Documents")), PathBuf::from("/data")), PathBuf::from("/home/u/Documents/Qalamark"));
+        assert_eq!(default_dir(None, PathBuf::from("/data")), PathBuf::from("/data/Qalamark"));
+    }
+}

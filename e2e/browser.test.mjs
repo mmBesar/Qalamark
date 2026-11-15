@@ -399,3 +399,58 @@ test('round 5: quick switcher, text search, today note, outline', async () => {
   await page.waitForFunction((x) => document.querySelector('.topbar .title')?.value === x, today);
   assert.deepEqual(errors, []);
 });
+
+test('round 6: notes folder in the apps: files out, outside edits in, renames follow', async () => {
+  const errors = [];
+  const page = await newPage(errors);
+  // a fake notes folder standing in for the Rust side of the Linux/Android app
+  await page.addInitScript(() => {
+    const fs = (window.__fs = new Map([['From outside/Hello.md', { text: '# Hello from disk', m: 1000 }]]));
+    let clock = 2000;
+    const bad = (p) => { if (/\.\.|^\//.test(p)) throw 'refused'; };
+    window.__TAURI_INTERNALS__ = {
+      transformCallback: () => 0,
+      invoke: async (cmd, a) => {
+        switch (cmd) {
+          case 'vault_info': return { path: '/home/me/Documents/Qalamark', default_path: '/home/me/Documents/Qalamark' };
+          case 'vault_list': return [...fs].map(([path, f]) => ({ path, mtime_ms: f.m }));
+          case 'vault_read': { const f = fs.get(a.path); if (!f) throw 'missing'; return { text: f.text, mtime_ms: f.m }; }
+          case 'vault_write': bad(a.path); fs.set(a.path, { text: a.text, m: ++clock }); return clock;
+          case 'vault_rename': { const f = fs.get(a.from); if (f) { fs.delete(a.from); fs.set(a.to, f); } return f?.m ?? 0; }
+          case 'vault_trash': fs.delete(a.path); return null;
+          case 'vault_mkdir': return null;
+          case 'vault_set': return a.path || '/home/me/Documents/Qalamark';
+        }
+        throw 'unknown ' + cmd;
+      },
+    };
+  });
+  await page.goto(URL_);
+  await page.waitForSelector('.login');
+  await page.click('button:has-text("this device only")');
+  await page.waitForSelector('aside');
+  // the file that was already in the folder became a note, inside its folder
+  await page.waitForSelector('aside li:has-text("Hello")');
+  // a new note is written out as a real .md file
+  await page.click('aside .actions .primary');
+  await page.waitForSelector('.cm-content');
+  await page.click('.cm-content');
+  await page.keyboard.insertText('# Fresh\n\nwritten in the app');
+  await page.waitForFunction(() => [...window.__fs].some(([p, f]) => /^Untitled.*\.md$/.test(p) && f.text.includes('written in the app')), null, { timeout: 5000 });
+  // renaming in the app renames the file
+  await page.fill('.topbar .title', 'Journal');
+  await page.keyboard.press('Enter');
+  await page.waitForFunction(() => window.__fs.has('Journal.md') && ![...window.__fs.keys()].some((p) => /^Untitled/.test(p)), null, { timeout: 5000 });
+  assert.match(await page.evaluate(() => window.__fs.get('Journal.md').text), /written in the app/);
+  // an edit made outside shows up when the window gets focus again
+  await page.evaluate(() => window.__fs.set('Journal.md', { text: 'edited elsewhere', m: 9999 }));
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+  await page.waitForFunction(() => /edited elsewhere/.test(document.querySelector('.cm-content')?.innerText ?? ''), null, { timeout: 5000 });
+  // deleting in the app moves the file to the trash
+  await page.click('.topbar .menu-wrap > button');
+  page.once('dialog', (d) => d.accept());
+  await page.click('button[role=menuitem].danger');
+  await page.click('dialog.askdialog button.primary');
+  await page.waitForFunction(() => !window.__fs.has('Journal.md'), null, { timeout: 5000 });
+  assert.deepEqual(errors, []);
+});

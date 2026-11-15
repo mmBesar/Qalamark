@@ -1,6 +1,7 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
 <!-- Copyright (C) 2026 mmBesar -->
 <script lang="ts">
+  import Select from './Select.svelte';
   import { onMount } from 'svelte';
   import type { NoteMeta, Share } from '../lib/server.ts';
   import { store } from '../lib/store.svelte.ts';
@@ -71,16 +72,11 @@
 
   <form class="row" onsubmit={add}>
     {#if people.length > 0}
-      <select bind:value={name} aria-label={t('username')} dir="ltr" required>
-        {#each choices as p (p)}<option value={p}>{p}</option>{:else}<option value="" disabled>—</option>{/each}
-      </select>
+      <Select bind:value={name} label={t('username')} dir="ltr" options={choices.map((p) => ({ value: p, label: p }))} />
     {:else}
       <input bind:value={name} placeholder={t('username')} required autocapitalize="off" spellcheck="false" dir="ltr" />
     {/if}
-    <select bind:value={role}>
-      <option value="edit">{t('canEdit')}</option>
-      <option value="view">{t('canView')}</option>
-    </select>
+    <Select bind:value={role} options={[{ value: 'edit', label: t('canEdit') }, { value: 'view', label: t('canView') }]} />
     <button class="primary">{t('addPerson')}</button>
   </form>
   {#if error}<p class="error" role="alert">{error}</p>{/if}

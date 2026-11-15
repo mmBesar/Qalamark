@@ -5,6 +5,7 @@
 // plain Markdown table: every change goes through @qalamark/tables, which
 // writes the new text (and recalculates the formulas).
 
+import { themed } from './dropdown.ts';
 import { describeTables, editCell, setFormulas, tableOp, type TableOp, type TableView } from '@qalamark/tables';
 import { type EditorState, type Range, StateField } from '@codemirror/state';
 import { Decoration, type DecorationSet, EditorView, WidgetType } from '@codemirror/view';
@@ -307,8 +308,8 @@ class TableWidget extends WidgetType {
       const refresh = () => {
         const k = kindSel.value as FxKind;
         const need = FX_NEEDS[k];
-        selA.hidden = need < 1;
-        selB.hidden = need < 2;
+        wA!.hidden = need < 1;
+        wB!.hidden = need < 2;
         usingLbl.hidden = need < 1;
         andLbl.hidden = need < 2;
         preview.textContent = fxLine(k, target.value, selA.value, selB.value);
@@ -316,13 +317,14 @@ class TableWidget extends WidgetType {
       const usingLbl = el('span', 'qt-lbl', fx.using);
       const andLbl = el('span', 'qt-lbl', fx.and);
       for (const s of [kindSel, target, selA, selB]) s.addEventListener('change', refresh);
+      const [wKind, wTarget, wA, wB] = [kindSel, target, selA, selB].map((s) => themed(s));
       const addBtn = button(fx.add, '＋ ' + fx.add, 'qt-btn qt-add', () => {
         const line = preview.textContent ?? '';
         const text = (v.formulaText.join('\n') + '\n' + line).trim();
         run(setFormulas(mdNow(), index, text));
       });
       const row1 = el('div', 'qt-builder-row');
-      row1.append(el('span', 'qt-lbl', fx.title), kindSel, el('span', 'qt-lbl', fx.fill), target, usingLbl, selA, andLbl, selB, addBtn);
+      row1.append(el('span', 'qt-lbl', fx.title), wKind!, el('span', 'qt-lbl', fx.fill), wTarget!, usingLbl, wA!, andLbl, wB!, addBtn);
       builder.append(row1, preview);
       refresh();
     }

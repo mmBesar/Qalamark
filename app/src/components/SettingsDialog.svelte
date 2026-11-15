@@ -1,6 +1,7 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
 <!-- Copyright (C) 2026 mmBesar -->
 <script lang="ts">
+  import Select from './Select.svelte';
   import { askBox, confirmBox } from '../lib/dialog.svelte.ts';
   import { addUserFont, removeUserFont } from '../lib/fonts';
   import { onMount } from 'svelte';
@@ -102,18 +103,11 @@
   <div class="grid2">
     <label>
       {t('language')}
-      <select value={store.lang} onchange={(e) => store.setLang(e.currentTarget.value as 'en' | 'ar')}>
-        <option value="en">English</option>
-        <option value="ar">العربية</option>
-      </select>
+      <Select value={store.lang} options={[{ value: 'en', label: 'English' }, { value: 'ar', label: 'العربية' }]} onchange={(v) => store.setLang(v as 'en' | 'ar')} />
     </label>
     <label>
       {t('theme')}
-      <select value={store.s.theme} onchange={(e) => store.setTheme(e.currentTarget.value as Theme)}>
-        {#each THEME_LIST as id (id)}
-          <option value={id}>{themeName(id, t)}</option>
-        {/each}
-      </select>
+      <Select value={store.s.theme} options={THEME_LIST.map((id) => ({ value: id, label: themeName(id, t) }))} onchange={(v) => store.setTheme(v as Theme)} />
     </label>
   </div>
 

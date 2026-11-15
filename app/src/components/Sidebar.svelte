@@ -185,7 +185,7 @@
   </header>
 
   <div class="actions">
-    <button class="primary" onclick={() => create()}><Icon name="plus" size={16} />{t('newNote')}</button>
+    <button class="primary" title={t('newNote')} aria-label={t('newNote')} onclick={() => create()}><Icon name="plus" size={18} /></button>
     <span class="relative">
       <button class="icon" title={t('newFromTemplate')} aria-label={t('newFromTemplate')} onclick={(e) => { e.stopPropagation(); tmpl = !tmpl; }}><Icon name="chevron" size={16} /></button>
       {#if tmpl}
@@ -224,7 +224,7 @@
       {#each found as n (n.id)}
         <li>
           <button class:active={n.id === store.currentId} onclick={() => pick(n.id)}>
-            <span class="title">{n.display || n.title}</span>
+            <span class="title">{n.title}</span>
             {#if n.folder}<small class="badge" dir="ltr">{n.folder}</small>{/if}
           </button>
         </li>
@@ -270,7 +270,7 @@
           {@const n = r.note}
           <li class="row" style:--depth={r.depth}>
             <button class="main" class:active={n.id === store.currentId} draggable="true" ondragstart={(e) => dragStart(e, n.id)} onclick={() => pick(n.id)}>
-              <span class="title">{n.display || n.title}</span>
+              <span class="title">{n.title}</span>
               {#if n.role !== 'owner' && store.mode === 'server'}
                 <small class="badge" title={t('sharedByOther', { name: n.owner })}>{n.owner}{n.role === 'view' ? ' · 👁' : ''}</small>
               {/if}

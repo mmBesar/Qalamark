@@ -1,6 +1,7 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
 <!-- Copyright (C) 2026 mmBesar -->
 <script lang="ts">
+  import Select from './Select.svelte';
   import { onMount } from 'svelte';
   import type { Text as YText } from 'yjs';
   import { COMMON_PROPS, readFrontMatter, type Prop, type PropType, withProps } from '../lib/frontmatter.ts';
@@ -95,12 +96,7 @@
             <form class="props-add" onsubmit={(e) => { e.preventDefault(); addProp(newKey, newType); }}>
               <input list="common-plist" bind:value={newKey} placeholder={t('propsName')} dir="ltr" />
               <datalist id="common-plist">{#each unused as c (c.key)}<option value={c.key}></option>{/each}</datalist>
-              <select bind:value={newType}>
-                <option value="text">{t('typeText')}</option>
-                <option value="list">{t('typeList')}</option>
-                <option value="number">{t('typeNumber')}</option>
-                <option value="checkbox">{t('typeCheckbox')}</option>
-              </select>
+              <Select bind:value={newType} options={[{ value: 'text', label: t('typeText') }, { value: 'list', label: t('typeList') }, { value: 'number', label: t('typeNumber') }, { value: 'checkbox', label: t('typeCheckbox') }]} />
               <button class="primary small" type="submit">{t('add')}</button>
               <button class="ghost small" type="button" onclick={() => (adding = false)}>✕</button>
             </form>

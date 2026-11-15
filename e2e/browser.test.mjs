@@ -76,7 +76,8 @@ test('write a note with a table, share it, edit it together', async () => {
   await fetch(URL_ + 'api/users', { method: 'POST', headers: { 'content-type': 'application/json', authorization: 'Bearer ' + token }, body: JSON.stringify({ username: 'bob', password: 'bob-password-1' }) });
   await alice.click('text=Share');
   await alice.waitForSelector('dialog[open]');
-  await alice.selectOption('dialog select[dir=ltr]', 'bob');
+  await alice.click('dialog .selbtn[dir=ltr]');
+  await alice.click('.sel-pop li:has-text("bob")');
   await alice.click('dialog button.primary');
   await alice.waitForSelector('dialog .plain li >> text=bob');
   await alice.keyboard.press('Escape');
@@ -243,7 +244,7 @@ test('round 2: folders, templates, properties, MkDocs blocks, pictures, builder,
 
   // The formula builder offers column letters.
   await page.click('.qt button[title*="ormula"], .qt .qt-fx');
-  await page.waitForSelector('.qt-builder .qt-select');
+  await page.waitForSelector('.qt-builder .dd-btn');
   assert.match(await page.locator('.qt-builder .qt-preview').innerText(), /^[A-Z] = /);
 
   // Properties: add tags from the panel; the note text gets the front matter.
@@ -332,5 +333,7 @@ test('round 3: code languages, tabbed code, properties by mode, centred page', a
   const box = await page.locator('.cm-content').boundingBox();
   const side = await page.locator('aside').boundingBox();
   assert.ok(box.x >= side.x + side.width, 'page stays right of the sidebar');
+  const mid = (box.x + box.width / 2 - (side.x + side.width)) / (1300 - (side.x + side.width));
+  assert.ok(Math.abs(mid - 0.5) < 0.03, 'page is centred in the writing area');
   assert.deepEqual(errors, []);
 });

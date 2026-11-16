@@ -10,8 +10,8 @@ import { codeStyle } from './codestyle.ts';
 import { findLanguage } from './langs.ts';
 import { bracketMatching, codeFolding, foldGutter, foldKeymap, HighlightStyle, indentOnInput, syntaxHighlighting } from '@codemirror/language';
 import { highlightSelectionMatches, searchKeymap, selectNextOccurrence, selectSelectionMatches } from '@codemirror/search';
-import { Compartment, EditorSelection, EditorState, type Extension } from '@codemirror/state';
-import { ViewPlugin, crosshairCursor, drawSelection, dropCursor, EditorView, highlightActiveLine, highlightActiveLineGutter, keymap, lineNumbers, placeholder, rectangularSelection, type Command } from '@codemirror/view';
+import { Compartment, EditorSelection, EditorState, type Extension, type Range } from '@codemirror/state';
+import { Decoration, type DecorationSet, ViewPlugin, type ViewUpdate, crosshairCursor, drawSelection, dropCursor, EditorView, highlightActiveLine, highlightActiveLineGutter, keymap, lineNumbers, placeholder, rectangularSelection, type Command } from '@codemirror/view';
 import { tags as t } from '@lezer/highlight';
 import { yCollab, yUndoManagerKeymap } from 'y-codemirror.next';
 import { UndoManager } from 'yjs';
@@ -131,6 +131,39 @@ export interface Editor {
 }
 
 /** Pressing in the empty space beside the page (or above/below the text) starts a selection like pressing on the nearest text. */
+const RTL = /[\u0590-\u08FF\uFB1D-\uFDFF\uFE70-\uFEFF]/;
+const rtlLine = Decoration.line({ attributes: { dir: 'rtl' } });
+const ltrLine = Decoration.line({ attributes: { dir: 'ltr' } });
+/** Every paragraph runs in the direction of its first letter, so Arabic lines are right-to-left and the
+ *  editor (which reads the direction from the line) places the cursor and selection correctly. */
+const lineDirections = ViewPlugin.fromClass(
+  class {
+    decorations: DecorationSet;
+    constructor(view: EditorView) {
+      this.decorations = this.build(view);
+    }
+    update(u: ViewUpdate) {
+      if (u.docChanged || u.viewportChanged) this.decorations = this.build(u.view);
+    }
+    build(view: EditorView) {
+      const out: Range<Decoration>[] = [];
+      let last = -1;
+      for (const { from, to } of view.visibleRanges) {
+        for (let pos = from; pos <= to; ) {
+          const line = view.state.doc.lineAt(pos);
+          pos = line.to + 1;
+          if (line.from === last) continue;
+          last = line.from;
+          const m = /\p{L}/u.exec(line.text);
+          if (m) out.push((RTL.test(m[0]) ? rtlLine : ltrLine).range(line.from));
+        }
+      }
+      return Decoration.set(out);
+    }
+  },
+  { decorations: (v) => v.decorations },
+);
+
 const edgeClicks = ViewPlugin.fromClass(
   class {
     off: () => void;
@@ -261,6 +294,9 @@ export function createEditor(o: EditorOptions): Editor {
     codeFolding({ placeholderText: '⋯' }),
     ...(o.extra ?? []),
     EditorView.lineWrapping,
+    // each paragraph takes its own direction (Arabic lines run right to left), and the editor measures them that way
+    EditorView.perLineTextDirection.of(true),
+    lineDirections,
     EditorView.perLineTextDirection.of(true), // Arabic and English lines each get their own direction
     placeholder(o.hint),
     keymap.of([
@@ -282,6 +318,7 @@ export function createEditor(o: EditorOptions): Editor {
     }),
   ];
   const view = new EditorView({ parent: o.parent, state: EditorState.create({ doc: o.ytext.toString(), extensions }) });
+  (view.dom as HTMLElement & { cmEditorView?: EditorView }).cmEditorView = view; // for tests
   return {
     view,
     setMode: (mode) => view.dispatch({ effects: modeSlot.reconfigure(forMode(mode)) }),

@@ -548,7 +548,6 @@ dialog label {
 }
 .cm-line {
   padding: 0;
-  unicode-bidi: plaintext;
 }
 .cm-editor .cm-cursor,
 .cm-editor .cm-dropCursor {
@@ -1727,7 +1726,6 @@ aside .results .snip { color: var(--muted); font-size: 0.78rem; white-space: nor
 .ctx.suggest .ctx-item.picked { background: var(--accent-soft); }
 
 /* Arabic lines with bold/italic runs: keep each run together so its ** marks stay beside it */
-.cm-strong, .cm-em, .cm-strike { unicode-bidi: isolate; }
 .askdialog p { white-space: pre-line; word-break: break-word; }
 
 .editor-row { flex: 1; min-height: 0; display: flex; position: relative; }

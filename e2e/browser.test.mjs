@@ -35,7 +35,7 @@ before(async () => {
 after(async () => { await browser?.close(); proc?.kill(); });
 
 async function newPage(errors) {
-  const page = await (await browser.newContext({ viewport: { width: 1100, height: 760 } })).newPage();
+  const page = await (await browser.newContext({ viewport: { width: 1100, height: 760 }, permissions: ['clipboard-read', 'clipboard-write'] })).newPage();
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => m.type() === 'error' && !/404|Failed to load resource/.test(m.text()) && errors.push(m.text()));
   return page;
@@ -707,5 +707,56 @@ test('round 10: selection is drawn on the text, and pressing beside the page sti
   await page.mouse.move(line.x + 150, line.y + 60, { steps: 8 });
   await page.mouse.up();
   assert.ok((await rects()).length >= 1, 'a drag that starts beside the page selects text');
+  assert.deepEqual(errors, []);
+});
+
+test('round 11: Arabic and mixed text select, double-click and triple-click properly in live and source', async () => {
+  const errors = [];
+  const page = await newPage(errors);
+  await signIn(page, 'alice', 'alice-password');
+  const TXT = 'الإصدار الجديد من **فيدورا 45 وأوبونتو 26.10** وصل، ومعاهم تحديث **KDE Plasma 6.8** اللي بيودّع جلسة X11 ويتجه بالكامل إلى Wayland، ونستعرض كمان أهم التغييرات في **Linux Kernel 7.3**، ومجموعة من الأخبار والتحديثات المهمة في عالم البرمجيات الحرة، والكثير من... **أخبار لينكس**!';
+  await page.click('aside .actions button:first-child');
+  await page.waitForSelector('.cm-content');
+  await page.click('.cm-content');
+  await page.keyboard.insertText(TXT + '\n\nEnglish line after.');
+  await page.click('body');
+  const view = (fn, arg) => page.evaluate(`(${fn})(document.querySelector('.cm-editor').cmEditorView, ${JSON.stringify(arg ?? null)})`);
+  const selText = () => view((v) => { const m = v.state.selection.main; return v.state.sliceDoc(m.from, m.to); });
+  for (const mode of ['Live preview', 'Source']) {
+    await page.click(`.topbar button:has-text("${mode}")`);
+    await page.waitForTimeout(400);
+    await page.click('body');
+    const dir = await view((v) => v.dom.querySelector('.cm-line').getAttribute('dir'));
+    assert.equal(dir, 'rtl', mode + ': the Arabic paragraph runs right to left');
+    // press at the right end of the first line (where an Arabic paragraph starts) and drag to the end of the paragraph
+    const r = await view((v) => { const l = v.dom.querySelector('.cm-line').getBoundingClientRect(); const e = v.coordsAtPos(v.state.doc.line(1).to); return { l: l.left, r: l.right, t: l.top, h: l.height, ex: e.left, ey: v.coordsAtPos(v.state.doc.line(2).from).top + 5 }; });
+    await page.mouse.move(r.r - 6, r.t + 10);
+    await page.mouse.down();
+    await page.mouse.move(r.l + 60, r.ey, { steps: 12 });
+    await page.mouse.up();
+    const s = await selText();
+    assert.ok(s.startsWith('الإ') || s.startsWith('لإ'), mode + ': selection starts at the beginning: ' + s.slice(0, 12));
+    assert.ok(s.length >= TXT.length - 4, mode + ': selection reaches the end ' + s.length + '/' + TXT.length + ' ' + JSON.stringify(r) + s.slice(-15));
+    // double-click Wayland selects that word only (first put the cursor elsewhere, so the layout is settled)
+    await view((v) => v.dispatch({ selection: { anchor: v.state.doc.length } }));
+    await page.waitForTimeout(150);
+    const w = await view((v, t) => { const i = v.state.doc.toString().indexOf('Wayland') + 3; const c = v.coordsAtPos(i); return { x: c.left, y: c.top + 6 }; });
+    await page.mouse.dblclick(w.x, w.y);
+    assert.equal(await selText(), 'Wayland', mode + ': double-click');
+    // triple-click selects the paragraph
+    await view((v) => v.dispatch({ selection: { anchor: v.state.doc.length } }));
+    await page.waitForTimeout(700);
+    await page.mouse.click(w.x, w.y, { clickCount: 3 });
+    const t = await selText();
+    assert.ok(t.length >= TXT.length - 1 && !t.includes('English'), mode + ': triple-click selects the whole paragraph');
+    // copy and paste gives the same text back
+    await page.keyboard.press('Control+C');
+    await view((v) => v.dispatch({ selection: { anchor: v.state.doc.length } }));
+    await page.keyboard.press('Control+V');
+    await page.waitForTimeout(200);
+    const copies = await view((v) => v.state.doc.toString().split('الإصدار الجديد').length - 1);
+    assert.ok(copies >= 2, mode + ': paste returns the copied paragraph');
+    await view((v) => v.dispatch({ changes: { from: v.state.doc.toString().lastIndexOf('الإصدار الجديد'), to: v.state.doc.length, insert: '' } }));
+  }
   assert.deepEqual(errors, []);
 });

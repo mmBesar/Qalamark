@@ -1,6 +1,7 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
 <!-- Copyright (C) 2026 mmBesar -->
 <script lang="ts">
+  import { findHeading, parseHeadings, splitTarget } from '../lib/headings.ts';
   import { onMount, untrack } from 'svelte';
   import { yUndoManagerKeymap } from 'y-codemirror.next';
   import { cycleHeading, insertLink, insertSnippet, insertTable, SNIPPETS, toggleLinePrefix, toggleWrap } from '../editor/commands.ts';
@@ -11,6 +12,7 @@
   import { store } from '../lib/store.svelte.ts';
   import Properties from './Properties.svelte';
   import Icon from './Icon.svelte';
+  import Toc from './Toc.svelte';
   import Board from './Board.svelte';
   import { EditorView } from '@codemirror/view';
   import { isBoard, makeBoard } from '../lib/kanban.ts';
@@ -49,28 +51,18 @@
       /* fine */
     }
   }
-  let outline = $state<Array<{ level: number; text: string; pos: number }>>([]);
-  let showOutline = $state(false);
-  function openOutline() {
-    const text = liveText?.toString() ?? '';
-    const out: typeof outline = [];
-    let pos = 0;
-    let fence = false;
-    let inFront = text.startsWith('---');
-    for (const [i, line] of text.split('\n').entries()) {
-      if (inFront) { if (i > 0 && line.trim() === '---') inFront = false; }
-      else {
-        if (/^\s*(```|~~~)/.test(line)) fence = !fence;
-        const m = !fence && /^(#{1,6})\s+(.*?)\s*#*\s*$/.exec(line);
-        if (m) out.push({ level: m[1]!.length, text: m[2]!, pos });
-      }
-      pos += line.length + 1;
-    }
-    outline = out;
-    showOutline = true;
-  }
+  // The contents panel (all modes): jump to, fold and rearrange sections.
+  let showToc = $state((() => { try { return localStorage.getItem('qm.toc') === '1'; } catch { return false; } })());
+  let tocTick = $state(0);
+  const setToc = (on: boolean) => {
+    showToc = on;
+    try { localStorage.setItem('qm.toc', on ? '1' : '0'); } catch { /* fine */ }
+  };
+  const tocExt = [
+    EditorView.updateListener.of((u) => { if (u.docChanged || u.selectionSet || u.transactions.some((tr) => tr.effects.length)) tocTick++; }),
+    EditorView.domEventHandlers({ scroll: () => { if (showToc) tocTick++; } }),
+  ];
   function jump(pos: number) {
-    showOutline = false;
     if (mode === 'board') setMode('live');
     queueMicrotask(() => {
       const v = editor.view;
@@ -85,6 +77,11 @@
   let session: NoteSession;
   let liveText = $state.raw<import('yjs').Text | null>(null);
   let editor: Editor;
+  let editorReady = $state(false);
+  let pendingTick: (() => boolean) | null = null;
+  $effect(() => {
+    if (store.pendingHeading) untrack(() => pendingTick?.());
+  });
 
   const readOnly = first.role === 'view';
   const canRename = first.role === 'owner';
@@ -113,7 +110,7 @@
   }
 
   onMount(() => {
-    const server = store.mode === 'server';
+    const server = store.mode === 'server' && !note.id.startsWith('tmp:');
     session = new NoteSession(
       store.storeName(note.id),
       store.s.username,
@@ -137,6 +134,19 @@
       readOnly,
       labels: () => labels,
       hint: '',
+      base: {
+        rows: () => store.baseRows(),
+        open: (id) => (store.currentId = id),
+        setProp: (id, key, type, text) => store.setNoteProp(id, key, type, text),
+        canEdit: (id) => !readOnly && store.canEditRow(id),
+        labels: () => ({
+          empty: '',
+          edit: t('baseEdit'),
+          none: t('baseNone'),
+          count: (n) => t('baseCount').replace('{n}', String(n)),
+          cols: { title: t('colTitle'), folder: t('colFolder'), updated: t('colUpdated') },
+        }),
+      },
       slash: () => [
         { label: t('heading') + ' 1', keywords: 'h1 title', run: (v) => toggleLinePrefix(v, '# ') },
         { label: t('heading') + ' 2', keywords: 'h2', run: (v) => toggleLinePrefix(v, '## ') },
@@ -150,24 +160,51 @@
         { label: t('insAdmonition'), keywords: 'mkdocs !!!', run: (v) => insertSnippet(v, SNIPPETS.admonition) },
         { label: t('insCollapsible'), keywords: 'details ???', run: (v) => insertSnippet(v, SNIPPETS.collapsible) },
         { label: t('insTabs'), keywords: '===', run: (v) => insertSnippet(v, SNIPPETS.tabs) },
+        { label: t('insBase'), keywords: 'base database table properties list overview', run: (v) => insertSnippet(v, '```base\nshow: tags\nsort: title\n```\n') },
         { label: t('link'), run: (v) => insertLink(v) },
         { label: t('dailyNote').replace(/.*/, new Date().toISOString().slice(0, 10)), keywords: 'date today', run: (v) => v.dispatch(v.state.replaceSelection(new Date().toISOString().slice(0, 10))) },
       ],
       mode: mode === 'board' ? 'live' : mode,
       titles: () => store.notes.map((n) => n.title).filter((x) => x !== first.title),
-      openLink: (title) => void store.openTitle(title).catch((e) => (err = e instanceof Error ? e.message : String(e))),
+      openLink: (target) => {
+        const { note, heading } = splitTarget(target);
+        if (!note || note.toLowerCase() === first.title.toLowerCase()) {
+          // a section of this very note: scroll to it
+          const h = findHeading(parseHeadings(liveText?.toString() ?? ''), heading);
+          if (h) jump(h.pos);
+          return;
+        }
+        void store.openLink(target, first.id).catch((e) => (err = e instanceof Error ? e.message : String(e)));
+      },
+      headings: (note) => store.headingsOf(note, first.id, liveText?.toString()),
       onChange: changed,
+      extra: tocExt,
       images: {
         resolve: resolveImage,
         upload: server && !readOnly ? uploadImage : undefined,
       },
     });
+    editorReady = true;
+    const applyPending = () => {
+      const p = store.pendingHeading;
+      if (!p || p.id !== note.id) return true;
+      const h = findHeading(parseHeadings(session.ytext.toString()), p.heading);
+      if (!h) return false;
+      store.pendingHeading = null;
+      jump(h.pos);
+      return true;
+    };
+    pendingTick = applyPending;
+    if (store.pendingHeading?.id === note.id) {
+      let tries = 0;
+      const poll = setInterval(() => { if (applyPending() || ++tries > 25) clearInterval(poll); }, 120);
+    }
     host.addEventListener('qalamark-help', () => (help = true));
     store.touchRecent(note.id);
     const onCmd = (e: Event) => {
       const c = (e as CustomEvent<string>).detail;
       if (c.startsWith('mode:')) setMode(c.slice(5) as ViewMode);
-      else if (c === 'outline') openOutline();
+      else if (c === 'outline') setToc(!showToc);
     };
     window.addEventListener('qalamark-cmd', onCmd);
     changed();
@@ -367,27 +404,19 @@
 
   {#if err}<p class="error banner" role="alert">{err} <button class="link" onclick={() => (err = '')}>×</button></p>{/if}
 
-  {#if liveText && mode === 'board'}<Board ytext={liveText} {readOnly} />{/if}
+  {#if liveText && mode === 'board'}<Board ytext={liveText} {readOnly} noteId={note.id} />{/if}
   {#if liveText && mode !== 'source' && mode !== 'board'}<Properties ytext={liveText} readOnly={readOnly || mode === 'read'} noteId={note.id} />{/if}
 
   <!-- svelte-ignore a11y_no_static_element_interactions -->
-  <div class="cm-host" hidden={mode === 'board'} bind:this={host} onmousedown={focusEnd}></div>
+  <div class="editor-row" hidden={mode === 'board'}>
+    <div class="cm-host" bind:this={host} onmousedown={focusEnd}></div>
+    {#if showToc && editorReady && mode !== 'board'}<Toc view={editor.view} ytext={liveText!} title={note.title} {readOnly} tick={tocTick} onClose={() => setToc(false)} />{/if}
+  </div>
 
   <footer class="statusbar">
     <span>{t('words', { n: words })}</span>
     <span class="grow"></span>
-    <div class="links-wrap">
-      <button class="link" onclick={() => (showOutline ? (showOutline = false) : openOutline())} aria-expanded={showOutline}><Icon name="outline" size={14} /> {t('outline')}</button>
-      {#if showOutline}
-        <div class="menu up outline">
-          {#each outline as h (h.pos)}
-            <button style="padding-inline-start: {0.75 + (h.level - 1) * 0.8}rem" onclick={() => jump(h.pos)}>{h.text}</button>
-          {:else}
-            <span class="muted pad">{t('noHeadings')}</span>
-          {/each}
-        </div>
-      {/if}
-    </div>
+    <button class="link" onclick={() => setToc(!showToc)} aria-pressed={showToc} title={t('toc')}><Icon name="outline" size={14} /> {t('toc')}</button>
     <div class="links-wrap">
       <button class="link" onclick={() => ((showLinks = !showLinks), loadLinks())} aria-expanded={showLinks}>↩ {t('backlinks')} ({links.length})</button>
       {#if showLinks}

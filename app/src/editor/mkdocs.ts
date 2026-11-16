@@ -77,6 +77,17 @@ export function scanBlocks(doc: Text): Map<number, BlockLine> {
 }
 
 
+/** A blank line at the very start or end of a tab/admonition body. */
+function isEdgeBlank(doc: Text, blocks: Map<number, BlockLine>, n: number, head: number): boolean {
+  const inBody = (m: number) => blocks.get(m)?.role === 'body' && blocks.get(m)?.head === head;
+  let up = n - 1;
+  while (up > head && inBody(up) && doc.line(up).text.trim() === '') up--;
+  if (up === head) return true;
+  let down = n + 1;
+  while (down <= doc.lines && inBody(down) && doc.line(down).text.trim() === '') down++;
+  return !(down <= doc.lines && inBody(down));
+}
+
 export interface Fence {
   first: number; // opening fence line
   last: number; // closing fence line (or the last line when never closed)
@@ -303,7 +314,10 @@ function build(view: EditorView, active: Map<number, number>, pick: (group: numb
       const g = info.type === 'tab' ? groups.get(info.head) : undefined;
       // real tabs in Reading and in live view; the plain source only while the cursor is on a tab label line
       const tabbed = !!g && (reading || !headTouched(g.group));
-      const shown = !tabbed || !g || (info.role === 'head' ? g.index === 0 : false) || (active.get(g.group.heads[0]!) ?? 0) === g.index;
+      // the strip lives on the first label line; the other labels, and the empty lines at the start
+      // and end of a tab, are not shown (they only made a gap between the tabs and the code)
+      const edgeBlank = tabbed && info.role === 'body' && line.text.trim() === '' && isEdgeBlank(state.doc, blocks, n, info.head);
+      const shown = !tabbed || !g || (info.role === 'head' ? g.index === 0 : !edgeBlank && (active.get(g.group.heads[0]!) ?? 0) === g.index);
       out.push(Decoration.line({ class: cls + (shown ? '' : ' cm-tab-off') }).range(line.from));
       const fence = fenceOf.get(n);
       if (fence && info.role === 'body') {

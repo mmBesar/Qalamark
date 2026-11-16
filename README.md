@@ -137,6 +137,13 @@ there becomes a note. More in **[docs/SELF-HOSTING.md](docs/SELF-HOSTING.md)**
 - **Quick switcher** (`Ctrl+P` / `Ctrl+K`): jump to a note, search inside note text, or run a command. Also: an **outline** of the headings, a **today's note** button, and a *recent notes* list.
 - **Rename keeps everything in step:** the file name, the `title:` property and every `[[link]]` to the note change together (server).
 - **Notes folder in the apps:** the Linux and Android apps keep your notes as real `.md` files in `Documents/Qalamark` (change it in Settings). Edits made outside show up when you return to the app.
+- **Tabs:** open several notes at once; close, close others, drag to reorder, middle-click to close, `Alt+W` closes, `Ctrl+Tab` switches.
+- **Contents panel** (any view): the headings of the note as a tree; click to jump, fold or unfold sections, and move, promote or demote a whole section from its menu.
+- **Links to sections:** `[[Note#Heading]]` and `[[#Heading]]`, with a list of notes (then headings) as you type `[[`; Kanban cards can hold links too.
+- **Lists of notes from their properties:** put a `base` block in a note (`/` → *List of notes*), e.g. `folder: Projects`, `where: status = open`, `show: status, due, done`, `sort: due`. It is drawn as a table: the first column links to the note, and you edit a value right there to change that note's property.
+- **Works offline in full:** create, rename, move and edit notes without a connection; changes queue ("waiting to sync") and are sent when the server is back. Notes you have not opened are fetched in the background for offline use.
+- **Self-signed certificates:** the apps can trust a server's certificate after you confirm its fingerprint.
+- **Touch:** press and hold in the editor for a menu with cut, copy, paste, select all and formatting.
 - **English and Arabic** interface, right-to-left.
 
 ## Try the pieces from source

@@ -1,8 +1,9 @@
 # Builds the Linux (AppImage, deb, rpm) and Android (APK) apps: the web app in a Tauri 2 shell.
 # Runs by hand or when a version tag (v*) is pushed; tagged builds are attached to a GitHub release.
 #
-# Optional secrets for a release-signed Android APK (without them the APK is signed with a debug key,
-# which installs fine but cannot update an APK signed with another key):
+# Android signing: with the four secrets below the APK is signed with YOUR key, so every new build
+# installs over the old one without uninstalling. If a secret is missing or the key does not work, the
+# build does NOT fail: it warns (see the run summary) and signs with a throw-away debug key instead.
 #   ANDROID_KEYSTORE_B64, ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS, ANDROID_KEY_PASSWORD
 
 name: Apps (Linux + Android)
@@ -11,6 +12,11 @@ on:
   push:
     tags: ['v*']
   workflow_dispatch:
+    inputs:
+      debug_apk:
+        description: 'Also build a debug APK (signed with the same key)'
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -36,6 +42,9 @@ jobs:
       - name: Notes-folder tests
         working-directory: app/src-tauri
         run: rustc --edition 2021 --test src/vault.rs -o /tmp/vault_test && /tmp/vault_test
+      - name: Self-signed certificate bridge tests
+        working-directory: app/src-tauri
+        run: cargo test --lib
       - name: Build
         working-directory: app
         run: |
@@ -87,11 +96,40 @@ jobs:
           else
             sed -i 's|<application|<application android:usesCleartextTraffic="true"|' "$M"
           fi
+          # network access (a normal permission: Android never asks the user for it)
+          grep -q 'android.permission.INTERNET' "$M" || sed -i 's|<application|<uses-permission android:name="android.permission.INTERNET" />\n    <application|' "$M"
           python3 -c "import xml.dom.minidom,sys; xml.dom.minidom.parse(sys.argv[1])" "$M"
+          # our launcher icon (the generated project starts with a placeholder one)
+          cp -r src-tauri/icons/android/. src-tauri/gen/android/app/src/main/res/
+          # Android 15+ draws apps under the status and navigation bars: keep the page clear of them
+          cat > src-tauri/gen/android/app/src/main/java/io/github/mmbesar/qalamark/MainActivity.kt <<'KOTLIN'
+          package io.github.mmbesar.qalamark
+
+          import android.os.Bundle
+          import android.view.View
+          import androidx.core.view.ViewCompat
+          import androidx.core.view.WindowInsetsCompat
+
+          class MainActivity : TauriActivity() {
+            override fun onCreate(savedInstanceState: Bundle?) {
+              super.onCreate(savedInstanceState)
+              val root = findViewById<View>(android.R.id.content)
+              ViewCompat.setOnApplyWindowInsetsListener(root) { v, insets ->
+                val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout())
+                v.setPadding(bars.left, bars.top, bars.right, bars.bottom)
+                WindowInsetsCompat.CONSUMED
+              }
+            }
+          }
+          KOTLIN
       - name: Build the APK
         working-directory: app
         run: npx tauri android build --apk --target aarch64 --target armv7 --target x86_64
-      - name: Sign the APK
+      - name: Build the debug APK
+        if: ${{ inputs.debug_apk }}
+        working-directory: app
+        run: npx tauri android build --apk --debug --target aarch64 --target armv7 --target x86_64
+      - name: Sign the APKs
         working-directory: app
         env:
           KS_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
@@ -99,23 +137,50 @@ jobs:
           KS_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           KEY_PASS: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
-          APK=$(find src-tauri/gen/android -name '*universal*release*.apk' | head -1)
-          [ -n "$APK" ] || { echo "no APK found"; find src-tauri/gen/android -name '*.apk'; exit 1; }
           BT="$ANDROID_HOME/build-tools/35.0.0"
-          if [ -n "$KS_B64" ]; then
-            echo "$KS_B64" | base64 -d > "$RUNNER_TEMP/release.jks"
-            KS="$RUNNER_TEMP/release.jks"; ALIAS="$KS_ALIAS"; SPASS="$KS_PASS"; KPASS="$KEY_PASS"
+          WHY=""
+          KS=""
+          # --- find out whether we can sign with the real key, and say why not if we cannot
+          if [ -z "$KS_B64" ]; then WHY="the ANDROID_KEYSTORE_B64 secret is not set"
+          elif [ -z "$KS_PASS" ]; then WHY="the ANDROID_KEYSTORE_PASSWORD secret is not set"
+          elif [ -z "$KS_ALIAS" ]; then WHY="the ANDROID_KEY_ALIAS secret is not set"
+          elif ! echo "$KS_B64" | base64 -d > "$RUNNER_TEMP/release.jks" 2>/dev/null || [ ! -s "$RUNNER_TEMP/release.jks" ]; then WHY="ANDROID_KEYSTORE_B64 is not valid base64 (encode the file with: base64 -w0 your.jks)"
+          elif ! keytool -list -keystore "$RUNNER_TEMP/release.jks" -storepass "$KS_PASS" -alias "$KS_ALIAS" > "$RUNNER_TEMP/kt.log" 2>&1; then WHY="the keystore did not open with that password/alias: $(tail -1 "$RUNNER_TEMP/kt.log")"
+          else KS="$RUNNER_TEMP/release.jks"; fi
+          if [ -n "$KS" ]; then
+            ALIAS="$KS_ALIAS"; SPASS="$KS_PASS"; KPASS="${KEY_PASS:-$KS_PASS}"
+            # a wrong key password is only found out when signing: test it on a tiny file first
+            echo "signing with your key"
           else
-            keytool -genkeypair -keystore "$RUNNER_TEMP/debug.jks" -alias debug -keyalg RSA -keysize 2048 -validity 10000 -storepass android -keypass android -dname "CN=Qalamark debug"
+            echo "::warning title=Android APK signed with a debug key::Not using your signing key because $WHY. The APK is signed with a temporary key: it installs, but cannot update an app signed with another key."
+            { echo "### ⚠️ Android APK signed with a temporary debug key"; echo "Reason: $WHY"; echo; echo "Fix the secrets and run again; until then each build must be installed after uninstalling the previous one."; } >> "$GITHUB_STEP_SUMMARY"
+            keytool -genkeypair -keystore "$RUNNER_TEMP/debug.jks" -alias debug -keyalg RSA -keysize 2048 -validity 10000 -storepass android -keypass android -dname "CN=Qalamark debug" > /dev/null
             KS="$RUNNER_TEMP/debug.jks"; ALIAS=debug; SPASS=android; KPASS=android
           fi
-          "$BT/zipalign" -f -p 4 "$APK" aligned.apk
-          "$BT/apksigner" sign --ks "$KS" --ks-key-alias "$ALIAS" --ks-pass "pass:$SPASS" --key-pass "pass:$KPASS" --out Qalamark.apk aligned.apk
-          "$BT/apksigner" verify Qalamark.apk
+          sign() { # sign <in.apk> <out.apk>
+            "$BT/zipalign" -f -p 4 "$1" "$RUNNER_TEMP/aligned.apk"
+            "$BT/apksigner" sign --ks "$KS" --ks-key-alias "$ALIAS" --ks-pass "pass:$SPASS" --key-pass "pass:$KPASS" --out "$2" "$RUNNER_TEMP/aligned.apk"
+          }
+          APK=$(find src-tauri/gen/android -name '*universal*release*.apk' | head -1)
+          [ -n "$APK" ] || { echo "no release APK found"; find src-tauri/gen/android -name '*.apk'; exit 1; }
+          if ! sign "$APK" Qalamark.apk 2> "$RUNNER_TEMP/sign.log"; then
+            WHY="the key password (ANDROID_KEY_PASSWORD) is wrong or the key cannot be used: $(tail -1 "$RUNNER_TEMP/sign.log")"
+            echo "::warning title=Android APK signed with a debug key::$WHY"
+            echo "### ⚠️ Signing with your key failed: $WHY" >> "$GITHUB_STEP_SUMMARY"
+            keytool -genkeypair -keystore "$RUNNER_TEMP/debug.jks" -alias debug -keyalg RSA -keysize 2048 -validity 10000 -storepass android -keypass android -dname "CN=Qalamark debug" > /dev/null
+            KS="$RUNNER_TEMP/debug.jks"; ALIAS=debug; SPASS=android; KPASS=android
+            sign "$APK" Qalamark.apk
+          fi
+          "$BT/apksigner" verify --print-certs Qalamark.apk | head -3
+          DBG=$(find src-tauri/gen/android -name '*universal*debug*.apk' | head -1)
+          if [ -n "$DBG" ]; then sign "$DBG" Qalamark-debug.apk && "$BT/apksigner" verify Qalamark-debug.apk; fi
       - uses: actions/upload-artifact@v5
         with:
           name: qalamark-android
-          path: app/Qalamark.apk
+          path: |
+            app/Qalamark.apk
+            app/Qalamark-debug.apk
+          if-no-files-found: warn
 
   release:
     if: startsWith(github.ref, 'refs/tags/v')

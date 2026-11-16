@@ -18,7 +18,8 @@ const hide = Decoration.replace({});
 /** What the editor needs to know about other notes, to draw and follow [[links]]. */
 export interface WikiConfig {
   titles: () => string[];
-  open: (title: string) => void;
+  /** Follow a link: "Note", "Note#Heading" or "#Heading". */
+  open: (target: string) => void;
 }
 export const wikiConfig = Facet.define<WikiConfig, WikiConfig | null>({ combine: (v) => v[0] ?? null });
 
@@ -344,8 +345,8 @@ function inlineExtras(view: EditorView, out: Range<Decoration>[]): void {
         const start = l.from + m.index!;
         const end = start + m[0].length;
         if (inCode(state, start)) continue;
-        const target = m[1]!.trim();
-        const cls = 'cm-wikilink' + (known.has(target.toLowerCase()) || target === '' ? '' : ' cm-wikilink-missing');
+        const target = m[1]!.trim() + (m[2] ?? '').trim();
+        const cls = 'cm-wikilink' + (known.has(m[1]!.trim().toLowerCase()) || m[1]!.trim() === '' ? '' : ' cm-wikilink-missing');
         if (touched(state, start, end)) {
           out.push(Decoration.mark({ class: 'cm-wikilink-src', attributes: { 'data-wiki': target } }).range(start, end));
           continue;

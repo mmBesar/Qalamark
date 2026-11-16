@@ -51,3 +51,9 @@ export function splitPath(path: string): { folder: string; title: string } {
   const i = path.lastIndexOf('/');
   return { folder: i < 0 ? '' : path.slice(0, i), title: path.slice(i + 1).replace(/\.md$/i, '') };
 }
+
+/** Self-signed servers (apps only): look at a certificate, and reach a server through the trusted-certificate bridge. */
+export const tls = {
+  probe: (url: string) => call<string>('tls_probe', { url }),
+  bridge: (url: string, pin: string) => call<string>('tls_bridge', { url, pin }),
+};

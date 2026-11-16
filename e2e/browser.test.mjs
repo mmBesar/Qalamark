@@ -388,8 +388,8 @@ test('round 5: quick switcher, text search, today note, outline', async () => {
   await page.keyboard.press('Escape');
   assert.equal(await page.locator('.pal').count(), 0);
   // outline jumps
-  await page.click('button:has-text("Outline")');
-  await page.click('.menu.outline button:has-text("Second part")');
+  await page.click('button:has-text("Contents")');
+  await page.click('aside.toc button.item:has-text("Second part")');
   await page.keyboard.type('Z');
   assert.match(await page.locator('.cm-line:has-text("Second part")').innerText(), /Z/);
   // today note
@@ -560,4 +560,121 @@ test('round 7b: touch — long-press menu and swipe the side panel', async () =>
   assert.ok(await page.locator('.ctx >> text=Rename').count() >= 1);
   assert.deepEqual(errors, []);
   await ctx.close();
+});
+
+test('round 8: offline work queues and syncs when the server returns; section links; card links', async () => {
+  const errors = [];
+  const page = await newPage(errors);
+  await signIn(page, 'alice', 'alice-password');
+  await page.click('aside .actions button:first-child');
+  await page.waitForSelector('.cm-content');
+  await page.click('.cm-content');
+  await page.keyboard.insertText('# Target note\n\n## Second part\n\ntext\n');
+  await page.click('.topbar .title');
+  await page.fill('.topbar .title', 'Target');
+  await page.keyboard.press('Enter');
+  await page.waitForTimeout(800);
+
+  // --- offline: create, rename; nothing may throw, the list shows the new note
+  await page.context().setOffline(true);
+  await page.click('aside .actions button:first-child');
+  await page.waitForSelector('.cm-content');
+  await page.click('.cm-content');
+  await page.keyboard.insertText('written while offline');
+  await page.waitForTimeout(800);
+  await page.waitForFunction(() => document.body.innerText.includes('waiting to sync'), null, { timeout: 8000 });
+  assert.ok((await page.locator('aside li.row').count()) >= 2, 'new note is listed while offline');
+
+  // --- back online: the queue is sent
+  await page.context().setOffline(false);
+  await page.evaluate(() => window.dispatchEvent(new Event('online')));
+  await page.waitForFunction(() => !document.body.innerText.includes('waiting to sync'), null, { timeout: 20000 });
+  const onServer = await page.evaluate(async () => {
+    const tok = JSON.parse(localStorage.getItem('qm.settings') ?? '{}').token;
+    const r = await fetch('/api/notes', { headers: { authorization: 'Bearer ' + tok } });
+    return (await r.json()).map((n) => n.title);
+  });
+  assert.ok(onServer.length >= 2 && onServer.every((t) => !t.startsWith('tmp:')), 'the note made offline reached the server: ' + onServer);
+  assert.ok(await page.locator('aside li.row').count() >= 2);
+
+  // --- links with sections: [[Target#Second part]] jumps to the heading
+  await page.click('aside .actions button:first-child');
+  await page.waitForSelector('.cm-content');
+  await page.click('.cm-content');
+  await page.keyboard.insertText('see [[Target#Sec');
+  await page.waitForSelector('.cm-tooltip-autocomplete', { timeout: 6000 });
+  assert.ok(/Second part/.test(await page.locator('.cm-tooltip-autocomplete').innerText()), 'headings are suggested after #');
+  await page.keyboard.press('Enter');
+  await page.waitForTimeout(300);
+  await page.click('.topbar button:has-text("Source")');
+  await page.waitForTimeout(300);
+  const shown = await page.locator('.cm-content').innerText();
+  assert.ok(/\[\[Target#Second part\]\]/.test(shown), 'heading inserted into the link: ' + JSON.stringify(shown));
+  assert.deepEqual(errors, []);
+});
+
+test('round 9: tabs hold several notes; closing picks a neighbour', async () => {
+  const errors = [];
+  const page = await newPage(errors);
+  await signIn(page, 'alice', 'alice-password');
+  for (const name of ['TabA', 'TabB']) {
+    await page.click('aside .actions button:first-child');
+    await page.waitForSelector('.cm-content');
+    await page.click('.cm-content');
+    await page.keyboard.insertText('body of ' + name);
+    await page.click('.topbar .title');
+    await page.fill('.topbar .title', name);
+    await page.keyboard.press('Enter');
+    await page.waitForTimeout(500);
+  }
+  const names = async () => page.locator('.tabbar .tab .name').allInnerTexts();
+  let n = await names();
+  assert.ok(n.includes('TabA') && n.includes('TabB'), 'both notes have tabs: ' + n);
+  await page.click('.tabbar .tab:has-text("TabA")');
+  await page.waitForTimeout(400);
+  assert.ok((await page.locator('.cm-content').innerText()).includes('body of TabA'));
+  await page.click('.tabbar .tab.on .x');
+  await page.waitForTimeout(400);
+  n = await names();
+  assert.ok(!n.includes('TabA'), 'tab closed');
+  assert.ok((await page.locator('.cm-content').innerText()).includes('body of TabB'), 'neighbour opened');
+  assert.deepEqual(errors, []);
+});
+
+test('round 9b: a base block lists notes by their properties and edits them', async () => {
+  const errors = [];
+  const page = await newPage(errors);
+  await signIn(page, 'alice', 'alice-password');
+  const make = async (title, body) => {
+    await page.click('aside .actions button:first-child');
+    await page.waitForSelector('.cm-content');
+    await page.click('.cm-content');
+    await page.keyboard.insertText(body);
+    await page.click('.topbar .title');
+    await page.fill('.topbar .title', title);
+    await page.keyboard.press('Enter');
+    await page.waitForTimeout(500);
+  };
+  await make('Task one', '---\nstatus: open\ndone: false\n---\nhello');
+  await make('Task two', '---\nstatus: closed\ndone: true\n---\nhello');
+  await make('Overview', 'x');
+  await page.click('.cm-content');
+  await page.keyboard.press('Control+End');
+  await page.keyboard.insertText('\n\n```base\nshow: status, done\nsort: title\n```\n\nafter');
+  await page.waitForSelector('.cm-base table', { timeout: 8000 });
+  const heads = await page.locator('.cm-base th').allInnerTexts();
+  assert.ok(heads.length === 3, 'columns: ' + heads);
+  await page.waitForSelector('.cm-base a.base-link:has-text("Task one")');
+  assert.equal(await page.locator('.cm-base a.base-link:has-text("Task two")').count(), 1);
+  // edit a property from the list
+  await page.fill('.cm-base tr:has-text("Task one") input.base-cell', 'in progress');
+  await page.keyboard.press('Enter');
+  await page.waitForTimeout(1200);
+  // click the link: the note opens and its properties changed
+  await page.click('.cm-base a.base-link:has-text("Task one")');
+  await page.waitForFunction(() => document.querySelector('.topbar .title')?.value === 'Task one');
+  await page.click('.topbar button:has-text("Source")');
+  await page.waitForTimeout(400);
+  assert.match(await page.locator('.cm-content').innerText(), /status: in progress/);
+  assert.deepEqual(errors, []);
 });

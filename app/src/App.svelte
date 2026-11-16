@@ -1,13 +1,14 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
 <!-- Copyright (C) 2026 mmBesar -->
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, untrack } from 'svelte';
   import Editor from './components/Editor.svelte';
   import Login from './components/Login.svelte';
   import SettingsDialog from './components/SettingsDialog.svelte';
   import Sidebar from './components/Sidebar.svelte';
   import DialogHost from './components/DialogHost.svelte';
   import Palette from './components/Palette.svelte';
+  import TabBar from './components/TabBar.svelte';
   import ContextMenu from './components/ContextMenu.svelte';
   import { ctxmenu } from './lib/ctxmenu.svelte.ts';
   import { inShell } from './lib/vault.ts';
@@ -22,6 +23,17 @@
   });
 
   const t = store.t;
+
+  // every open note has a tab
+  $effect(() => {
+    const id = store.currentId;
+    untrack(() => store.tabsSeen(id));
+  });
+  $effect(() => {
+    store.notes.length;
+    store.notes;
+    untrack(() => store.pruneTabs());
+  });
 
   /** Right-click: the app's own themed menu in the editor and in text boxes; no stray browser menu in the apps. */
   function onContext(e: MouseEvent) {
@@ -109,6 +121,7 @@
     ></button>
     <button class="scrim" aria-label={t('close')} onclick={() => (drawer = false)}></button>
     <main>
+      <TabBar />
       {#if store.current}
         {#key store.current.id + store.mode + store.epoch}
           <Editor note={store.current} onMenu={() => (drawer = true)} />
@@ -128,6 +141,6 @@
   {/if}
 {/if}
 {#if store.palette}<Palette onSettings={() => (settings = true)} />{/if}
-<svelte:window ontouchstart={swStart} ontouchmove={swMove} ontouchend={swEnd} ontouchcancel={swEnd} oncontextmenu={onContext} onkeydown={(e) => { if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && (e.key === 'p' || e.key === 'k') && store.mode !== 'login' && store.mode !== 'boot') { e.preventDefault(); store.palette = !store.palette; } }} />
+<svelte:window ontouchstart={swStart} ontouchmove={swMove} ontouchend={swEnd} ontouchcancel={swEnd} oncontextmenu={onContext} onkeydown={(e) => { if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && (e.key === 'p' || e.key === 'k') && store.mode !== 'login' && store.mode !== 'boot') { e.preventDefault(); store.palette = !store.palette; } else if (e.altKey && !e.ctrlKey && !e.metaKey && e.key === 'w' && store.currentId) { e.preventDefault(); store.closeTabs([store.currentId]); } else if (e.ctrlKey && e.key === 'Tab') { e.preventDefault(); store.nextTab(e.shiftKey ? -1 : 1); } }} />
 <DialogHost />
 <ContextMenu />

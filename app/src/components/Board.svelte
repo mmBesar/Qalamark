@@ -8,10 +8,12 @@
   import Icon from './Icon.svelte';
   import { store } from '../lib/store.svelte.ts';
   import { applyText } from '../lib/ytext.ts';
+  import { linkSuggest } from '../lib/linksuggest.ts';
+  import { pieces } from '../lib/headings.ts';
   import { confirmBox } from '../lib/dialog.svelte.ts';
   import { addCard, addColumn, deleteCard, deleteColumn, editCard, moveCard, parseBoard, renameColumn, toggleCard } from '../lib/kanban.ts';
 
-  let { ytext, readOnly }: { ytext: YText; readOnly: boolean } = $props();
+  let { ytext, readOnly, noteId }: { ytext: YText; readOnly: boolean; noteId?: string } = $props();
   const t = store.t;
 
   let text = $state(ytext.toString());
@@ -83,7 +85,7 @@
             ondrop={(e) => { e.preventDefault(); e.stopPropagation(); drop(c, over?.c === c ? over.i : i); }}>
             {#if editing?.c === c && editing.i === i}
               <!-- svelte-ignore a11y_autofocus -->
-              <textarea rows="2" value={card.text} use:focus
+              <textarea rows="2" value={card.text} use:focus use:linkSuggest={{ here: noteId }}
                 onblur={(e) => { apply(editCard(text, c, i, e.currentTarget.value)); editing = null; }}
                 onkeydown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); e.currentTarget.blur(); } if (e.key === 'Escape') editing = null; }}></textarea>
             {:else}
@@ -93,7 +95,16 @@
                     {#if card.done}<Icon name="check-small" size={12} />{/if}
                   </button>
                 {/if}
-                <button class="label" disabled={readOnly} onclick={() => (editing = { c, i })}>{plain(card.text) || card.text}</button>
+                <!-- svelte-ignore a11y_click_events_have_key_events -->
+                <div class="label" role="button" tabindex="0" class:ro={readOnly}
+                  onclick={(e) => {
+                    const a = (e.target as HTMLElement).closest('[data-target]') as HTMLElement | null;
+                    if (a) { e.preventDefault(); a.dataset.kind === 'url' ? window.open(a.dataset.target, '_blank', 'noopener') : void store.openLink(a.dataset.target!, noteId); return; }
+                    if (!readOnly) editing = { c, i };
+                  }}
+                  onkeydown={(e) => { if (e.key === 'Enter' && !readOnly) editing = { c, i }; }}>
+                  {#each pieces(plain(card.text) || card.text) as p}{#if p.kind === 'text'}{p.text}{:else}<a href={p.kind === 'url' ? p.target : '#'} class="clink" data-kind={p.kind} data-target={p.target}>{p.text}</a>{/if}{/each}
+                </div>
               </div>
               {#if card.extra.length}<p class="extra">{card.extra.join(' · ')}</p>{/if}
               {#if tags(card.text).length}<div class="ctags">{#each tags(card.text) as tg}<span>#{tg}</span>{/each}</div>{/if}
@@ -113,7 +124,7 @@
         {#if adding === c}
           <form class="addform" onsubmit={(e) => { e.preventDefault(); submitCard(c); }}>
             <!-- svelte-ignore a11y_autofocus -->
-            <input bind:value={draft} placeholder={t('cardText')} use:focus onkeydown={(e) => e.key === 'Escape' && ((adding = null), (draft = ''))} onblur={() => { if (!draft.trim()) adding = null; }} />
+            <input bind:value={draft} placeholder={t('cardText')} use:focus use:linkSuggest={{ here: noteId }} onkeydown={(e) => e.key === 'Escape' && ((adding = null), (draft = ''))} onblur={() => { if (!draft.trim()) adding = null; }} />
             <button class="primary small" type="submit">{t('add')}</button>
           </form>
         {:else}
@@ -154,6 +165,8 @@
   .card.before::before { content: ''; position: absolute; inset-inline: 0; top: -0.3rem; height: 3px; border-radius: 3px; background: var(--accent); }
   .card.done .label { color: var(--muted); text-decoration: line-through; }
   .ctext { display: flex; gap: 0.5rem; align-items: flex-start; }
+  .clink { color: var(--accent); text-decoration: none; }
+  .clink:hover { text-decoration: underline; text-underline-offset: 3px; }
   .label { background: none; border: 0; padding: 0; text-align: start; flex: 1; min-width: 0; line-height: 1.4; cursor: text; overflow-wrap: anywhere; }
   .tick { flex: none; width: 1.1rem; height: 1.1rem; padding: 0; margin-top: 0.1rem; border-radius: 6px; display: grid; place-items: center; }
   .tick.on { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }

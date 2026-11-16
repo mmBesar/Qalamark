@@ -8,7 +8,7 @@ import { copyLineDown, copyLineUp, defaultKeymap, deleteLine, indentLess, indent
 import { markdown, markdownKeymap, markdownLanguage } from '@codemirror/lang-markdown';
 import { codeStyle } from './codestyle.ts';
 import { findLanguage } from './langs.ts';
-import { bracketMatching, foldGutter, foldKeymap, HighlightStyle, indentOnInput, syntaxHighlighting } from '@codemirror/language';
+import { bracketMatching, codeFolding, foldGutter, foldKeymap, HighlightStyle, indentOnInput, syntaxHighlighting } from '@codemirror/language';
 import { highlightSelectionMatches, searchKeymap, selectNextOccurrence, selectSelectionMatches } from '@codemirror/search';
 import { Compartment, EditorSelection, EditorState, type Extension } from '@codemirror/state';
 import { crosshairCursor, drawSelection, dropCursor, EditorView, highlightActiveLine, highlightActiveLineGutter, keymap, lineNumbers, placeholder, rectangularSelection, type Command } from '@codemirror/view';
@@ -22,6 +22,7 @@ import { autoCalc } from './autocalc.ts';
 import { codeTitles, mkdocsBlocks } from './mkdocs.ts';
 import { pictures, type ImageHooks } from './images.ts';
 import { livePreview, plainFrontMatter, readingMode, wikiConfig } from './livepreview.ts';
+import { type BaseHooks, baseExtension } from './base.ts';
 import { type TableLabels, tablesExtension } from './tables.ts';
 
 // Colours for Source mode (plain Markdown text, nicely coloured).
@@ -47,9 +48,15 @@ export interface EditorOptions {
   mode: ViewMode;
   /** Titles of the other notes (for [[links]]). */
   titles: () => string[];
-  openLink: (title: string) => void;
+  openLink: (target: string) => void;
+  /** Headings of the note called `note` (empty = this note), for [[Note#Heading]]. */
+  headings?: (note: string) => Promise<string[]>;
   onChange?: () => void;
   images?: ImageHooks;
+  /** More CodeMirror extensions (the page uses this to follow the cursor and scrolling). */
+  extra?: Extension[];
+  /** Lets a ```base block list your notes by their properties. */
+  base?: BaseHooks;
   /** The “/” insert menu: what to offer (typed at the start of a line). */
   slash?: () => Array<{ label: string; keywords?: string; run: (view: EditorView) => void }>;
 }
@@ -126,10 +133,30 @@ export interface Editor {
 export function createEditor(o: EditorOptions): Editor {
   const undo = new UndoManager(o.ytext);
   // Typing [[ offers the titles of your notes.
-  const wikiSource = (ctx: CompletionContext) => {
-    const m = ctx.matchBefore(/\[\[[^\]\n]*/);
+  const wikiSource = async (ctx: CompletionContext) => {
+    const m = ctx.matchBefore(/\[\[[^\]\n|]*/);
     if (!m) return null;
-    const q = m.text.slice(2).toLowerCase();
+    const body = m.text.slice(2);
+    const hash = body.indexOf('#');
+    if (hash >= 0 && o.headings) {
+      // [[Note#  ->  the headings of that note
+      const note = body.slice(0, hash).trim();
+      const q = body.slice(hash + 1).toLowerCase();
+      const hs = await o.headings(note).catch(() => [] as string[]);
+      const options = hs
+        .filter((h) => h.toLowerCase().includes(q))
+        .slice(0, 40)
+        .map((label) => ({
+          label,
+          detail: '#',
+          apply: (view: EditorView, _c: unknown, from: number, to: number) => {
+            const closed = view.state.sliceDoc(to, to + 2) === ']]';
+            view.dispatch({ changes: { from, to, insert: label + (closed ? '' : ']]') }, selection: { anchor: from + label.length + (closed ? 2 : 2) } });
+          },
+        }));
+      return options.length ? { from: m.from + 2 + hash + 1, options, filter: false, validFor: /^[^\]\n|]*$/ } : null;
+    }
+    const q = body.toLowerCase();
     const options = o
       .titles()
       .filter((t) => t.toLowerCase().includes(q))
@@ -141,7 +168,7 @@ export function createEditor(o: EditorOptions): Editor {
           view.dispatch({ changes: { from, to, insert: label + (closed ? '' : ']]') }, selection: { anchor: from + label.length + 2 } });
         },
       }));
-    return { from: m.from + 2, options, filter: false, validFor: /^[^\]\n]*$/ };
+    return { from: m.from + 2, options, filter: false, validFor: /^[^\]\n|#]*$/ };
   };
   // Typing / at the start of a line offers headings, lists, tables, boxes, code…
   const slashSource = (ctx: CompletionContext) => {
@@ -166,13 +193,14 @@ export function createEditor(o: EditorOptions): Editor {
     return options.length ? { from, options, filter: false, validFor: /^\/[^\s/]*$/ } : null;
   };
   const tables = tablesExtension(o.labels);
+  const bases = o.base ? [baseExtension(o.base)] : [];
   const modeSlot = new Compartment();
   // What changes between the three ways of looking at a note.
   const forMode = (mode: ViewMode): Extension => {
     const locked = o.readOnly || mode === 'read';
     const common = [EditorState.readOnly.of(locked), EditorView.editable.of(!o.readOnly && mode !== 'read')];
     if (mode === 'source') return [common, syntaxHighlighting(sourceStyle), plainFrontMatter, vscodeEditing, EditorView.editorAttributes.of({ class: 'cm-source' })];
-    return [common, livePreview, mkdocsBlocks, codeTitles, tables, readingMode.of(mode === 'read'), ...(o.images ? [pictures(o.images)] : [])];
+    return [common, livePreview, mkdocsBlocks, codeTitles, tables, ...bases, readingMode.of(mode === 'read'), ...(o.images ? [pictures(o.images)] : [])];
   };
   const extensions = [
     modeSlot.of(forMode(o.mode)),
@@ -201,6 +229,8 @@ export function createEditor(o: EditorOptions): Editor {
         return true;
       },
     }),
+    codeFolding({ placeholderText: '⋯' }),
+    ...(o.extra ?? []),
     EditorView.lineWrapping,
     EditorView.perLineTextDirection.of(true), // Arabic and English lines each get their own direction
     placeholder(o.hint),

@@ -49,19 +49,23 @@ export function cleanBase(input: string): string {
 }
 
 export class Api {
+  /** The server's address as the user knows it (also the name of its on-device cache). */
   base: string;
   token: string;
+  /** Where requests really go: the server itself, or the local bridge for a trusted self-signed certificate. */
+  transport: string;
 
-  constructor(base = '', token = '') {
+  constructor(base = '', token = '', transport = '') {
     this.base = base;
     this.token = token;
+    this.transport = transport || base;
   }
 
   async call<T>(method: string, path: string, body?: unknown, timeoutMs = 15000): Promise<T> {
     const ctl = new AbortController();
     const timer = setTimeout(() => ctl.abort(), timeoutMs);
     try {
-      const res = await fetch(this.base + path, {
+      const res = await fetch(this.transport + path, {
         method,
         signal: ctl.signal,
         headers: {
@@ -116,7 +120,7 @@ export class Api {
   }
   /** Upload a picture; returns the markdown to put in the note. */
   async uploadImage(blob: Blob): Promise<{ name: string; markdown: string }> {
-    const r = await fetch(this.base + '/api/images', {
+    const r = await fetch(this.transport + '/api/images', {
       method: 'POST',
       headers: { authorization: `Bearer ${this.token}`, 'content-type': blob.type || 'image/png' },
       body: blob,
@@ -126,7 +130,7 @@ export class Api {
   }
   /** A picture as a blob: the page cannot send the sign-in header from a plain <img>. */
   async imageBlob(owner: string, file: string): Promise<Blob> {
-    const r = await fetch(`${this.base}/api/images/${encodeURIComponent(owner)}/${encodeURIComponent(file)}`, {
+    const r = await fetch(`${this.transport}/api/images/${encodeURIComponent(owner)}/${encodeURIComponent(file)}`, {
       headers: { authorization: `Bearer ${this.token}` },
     });
     if (!r.ok) throw new ApiError(r.status, 'No such picture');
@@ -183,7 +187,7 @@ export class Api {
   }
   /** Address for the live-editing connection. */
   wsBase(): string {
-    const origin = this.base || location.origin;
+    const origin = this.transport || location.origin;
     return origin.replace(/^http/i, 'ws') + '/ws';
   }
 }

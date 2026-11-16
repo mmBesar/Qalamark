@@ -5,12 +5,17 @@
 // Two modes share one list: notes on this device only ("local"), and notes
 // on a Qalamark server ("server").
 
+import { type NoteRow, setPropText } from './base.ts';
+import { type PropType, readFrontMatter } from './frontmatter.ts';
+import { parseHeadings, splitTarget } from './headings.ts';
 import { translate, type Key, type Lang } from './i18n.ts';
 import { BUILT_IN, fill, TEMPLATES_FOLDER } from './templates.ts';
 import { Api, ApiError, cleanBase, type NoteMeta } from './server.ts';
 import { type Accent, applyTheme, type ThemeId } from './theme.ts';
-import { inShell, notePath, splitPath, vault } from './vault.ts';
-import { deleteStored, readStoredText, writeStoredText } from './session.ts';
+import { inShell, notePath, splitPath, tls, vault } from './vault.ts';
+import { applyText } from './ytext.ts';
+import { confirmBox } from './dialog.svelte.ts';
+import { deleteStored, readStoredText, syncNoteNow, writeStoredText } from './session.ts';
 
 export type Mode = 'boot' | 'login' | 'local' | 'server';
 export type Theme = ThemeId;
@@ -53,6 +58,8 @@ interface Settings {
   sourceSize: number; // px, source mode
   fontSource: string;
   centerPage: boolean;
+  /** Self-signed servers the user chose to trust (apps): address -> certificate fingerprint. */
+  trust: Record<string, string>;
 }
 
 function defaultLang(): Lang {
@@ -60,7 +67,7 @@ function defaultLang(): Lang {
 }
 
 class Store {
-  s = $state<Settings>({ lang: 'en', theme: 'auto', accent: 'default', serverUrl: '', token: '', username: '', admin: false, wantsLocal: false, fontSize: 17, editorWidth: 50, fontEn: '', fontAr: '', fontCode: '', sideWidth: 304, sourceSize: 15, fontSource: '', centerPage: false, ...read<Partial<Settings>>(SETTINGS, { lang: defaultLang() }) });
+  s = $state<Settings>({ lang: 'en', theme: 'auto', accent: 'default', serverUrl: '', token: '', username: '', admin: false, wantsLocal: false, fontSize: 17, editorWidth: 50, fontEn: '', fontAr: '', fontCode: '', sideWidth: 304, sourceSize: 15, fontSource: '', centerPage: false, trust: {}, ...read<Partial<Settings>>(SETTINGS, { lang: defaultLang() }) });
   mode = $state<Mode>('boot');
   serverReachable = $state(false);
   setupNeeded = $state(false);
@@ -158,7 +165,7 @@ class Store {
 
   async boot() {
     this.applyLook();
-    this.api = new Api(cleanBase(this.s.serverUrl), this.s.token);
+    this.api = await this.makeApi(cleanBase(this.s.serverUrl), this.s.token);
     await this.detectServer();
     if (this.s.token && this.s.username) {
       this.mode = 'server';
@@ -218,9 +225,37 @@ class Store {
     }
   }
 
+  private get vaultOn() {
+    return !!this.vaultPath && (this.mode === 'local' || this.mode === 'server');
+  }
+  /** Notes the folder mirrors: all of them on this device, or (with a server) the user's own. */
+  private mirrored(n: NoteMeta) {
+    return this.mode === 'local' || (n.role === 'owner' && !n.id.startsWith('tmp:'));
+  }
+  private saveNotes() {
+    if (this.mode === 'server') write(this.cacheKey(), this.notes);
+    else write(LOCAL_NOTES, this.notes);
+  }
+  /** A file was changed outside the app: bring its text into the note (and to the server). */
+  private async importText(n: NoteMeta, text: string) {
+    if (this.mode === 'server') {
+      if (this.currentId === n.id) {
+        await writeStoredText(this.storeName(n.id), text);
+        this.epoch++; // the open note reloads; it syncs the change itself
+      } else if (this.serverReachable) {
+        await syncNoteNow(this.storeName(n.id), this.api, n.id, (t) => applyText(t, text));
+      } else {
+        await writeStoredText(this.storeName(n.id), text); // sent when this note is opened next time online
+      }
+    } else {
+      await writeStoredText(`local:${n.id}`, text);
+      if (this.currentId === n.id) this.epoch++;
+    }
+  }
+
   /** Bring the app and the folder together: new or edited files come in, new notes go out. */
   async vaultSync() {
-    if (!this.vaultPath || this.mode !== 'local' || this.vaultBusy) return;
+    if (!this.vaultOn || this.vaultBusy) return;
     this.vaultBusy = true;
     try {
       const files = await vault.list();
@@ -229,9 +264,13 @@ class Store {
       const keep: NoteMeta[] = [];
       for (const n0 of [...this.notes]) {
         let n = n0;
+        if (!this.mirrored(n)) {
+          keep.push(n);
+          continue;
+        }
         const want = notePath(n.folder ?? '', n.title);
         const f = onDisk.get(n.vp ?? want);
-        if (n.vp && !f) {
+        if (n.vp && !f && this.mode === 'local') {
           // deleted outside the app
           deleteStored(`local:${n.id}`);
           if (this.currentId === n.id) this.currentId = null;
@@ -239,27 +278,27 @@ class Store {
           continue;
         }
         if (!f) {
-          const vm = await vault.write(want, await readStoredText(`local:${n.id}`));
+          // (with a server the server is the truth: a file deleted outside is simply written again)
+          const vm = await vault.write(want, await readStoredText(this.storeName(n.id)));
           n = { ...n, vp: want, vm };
           changed = true;
         } else if (!n.vp) {
           // a file with this name is already there: never overwrite either side
-          const text = await readStoredText(`local:${n.id}`);
+          const text = await readStoredText(this.storeName(n.id));
           const theirs = await vault.read(want);
           if (theirs.text === text) n = { ...n, vp: want, vm: theirs.mtime_ms };
           else {
+            // a different file already has this name: keep both, never overwrite either side
             const title = this.uniqueLocalTitle(`${n.title} (${this.t('appCopy')})`, n.folder ?? '');
             const path = notePath(n.folder ?? '', title);
             const vm = await vault.write(path, text);
-            n = { ...n, title, vp: path, vm };
+            n = { ...n, vp: path, vm };
+            if (this.mode === 'local') n.title = title;
           }
           changed = true;
         } else if (f.mtime_ms !== n.vm) {
           const c = await vault.read(n.vp);
-          if (c.text !== (await readStoredText(`local:${n.id}`))) {
-            await writeStoredText(`local:${n.id}`, c.text);
-            if (this.currentId === n.id) this.epoch++;
-          }
+          if (c.text !== (await readStoredText(this.storeName(n.id)))) await this.importText(n, c.text);
           n = { ...n, vm: c.mtime_ms };
           changed = true;
         }
@@ -270,16 +309,29 @@ class Store {
         if (known.has(f.path)) continue;
         const { folder, title } = splitPath(f.path);
         const c = await vault.read(f.path);
-        const id = crypto.randomUUID();
+        let id: string = crypto.randomUUID();
+        let owner = '';
+        if (this.mode === 'server') {
+          // a new file in the folder becomes a note on the server (or waits in the queue while offline)
+          const before = this.notes.length;
+          id = await this.createNote(title, c.text, folder);
+          const made = this.notes.find((x) => x.id === id);
+          if (!made || this.notes.length < before) continue;
+          keep.unshift({ ...made, vp: f.path, vm: c.mtime_ms });
+          this.notes = this.notes.filter((x) => x.id !== id);
+          if (folder && !this.folders.includes(folder)) this.folders = [...this.folders, folder];
+          changed = true;
+          continue;
+        }
         await writeStoredText(`local:${id}`, c.text);
-        keep.unshift({ id, title, folder, owner: '', role: 'owner', updated: Math.floor(f.mtime_ms / 1000), vp: f.path, vm: c.mtime_ms });
+        keep.unshift({ id, title, folder, owner, role: 'owner', updated: Math.floor(f.mtime_ms / 1000), vp: f.path, vm: c.mtime_ms });
         if (folder && !this.folders.includes(folder)) this.folders = [...this.folders, folder];
         changed = true;
       }
       if (changed) {
         this.notes = keep;
-        write(LOCAL_FOLDERS, this.folders);
-        write(LOCAL_NOTES, this.notes);
+        if (this.mode === 'local') write(LOCAL_FOLDERS, this.folders);
+        this.saveNotes();
         if (!this.notes.some((n) => n.id === this.currentId)) this.currentId = this.notes[0]?.id ?? null;
       }
       this.vaultError = '';
@@ -292,14 +344,14 @@ class Store {
 
   /** Save one note's text into its file. */
   async vaultPush(id: string, text: string) {
-    if (!this.vaultPath || this.mode !== 'local') return;
+    if (!this.vaultOn) return;
     const n = this.notes.find((x) => x.id === id);
-    if (!n) return;
+    if (!n || !this.mirrored(n)) return;
     try {
       const path = n.vp ?? notePath(n.folder ?? '', n.title);
       const vm = await vault.write(path, text);
       this.notes = this.notes.map((x) => (x.id === id ? { ...x, vp: path, vm } : x));
-      write(LOCAL_NOTES, this.notes);
+      this.saveNotes();
     } catch (e) {
       this.vaultError = e instanceof Error ? e.message : String(e);
     }
@@ -307,10 +359,14 @@ class Store {
 
   /** Renames and moves in the app follow in the folder. */
   private async vaultPaths() {
-    if (!this.vaultPath || this.mode !== 'local') return;
+    if (!this.vaultOn) return;
     let changed = false;
     const next: NoteMeta[] = [];
     for (const n of this.notes) {
+      if (!this.mirrored(n)) {
+        next.push(n);
+        continue;
+      }
       const want = notePath(n.folder ?? '', n.title);
       if (n.vp && n.vp !== want) {
         try {
@@ -326,7 +382,7 @@ class Store {
     }
     if (changed) {
       this.notes = next;
-      write(LOCAL_NOTES, this.notes);
+      this.saveNotes();
     }
     for (const f of this.folders) await vault.mkdir(f).catch(() => {});
   }
@@ -337,21 +393,186 @@ class Store {
       const now = await vault.set(path);
       this.vaultPath = now;
       this.notes = this.notes.map((n) => ({ ...n, vp: undefined, vm: undefined }));
-      write(LOCAL_NOTES, this.notes);
+      this.saveNotes();
       await this.vaultSync();
     } catch (e) {
       this.vaultError = e instanceof Error ? e.message : String(e);
     }
   }
 
+  // ------------------------------------------------------------ offline work
+
+  /** Changes made while the server was away, replayed in order when it is back. */
+  pending = $state(0);
+  private flushing = false;
+  private outboxKey = () => `qm.outbox.${this.api.base}|${this.s.username}`;
+  private readOutbox = (): Op[] => read<Op[]>(this.outboxKey(), []);
+  private queueOp(op: Op) {
+    let ops = this.readOutbox();
+    const tmpId = 'id' in op ? op.id : '';
+    if (tmpId.startsWith('tmp:')) {
+      // a note made offline and not on the server yet: fold the change into its "create"
+      const c = ops.find((o): o is Extract<Op, { t: 'create' }> => o.t === 'create' && o.tmp === tmpId);
+      if (c) {
+        if (op.t === 'rename') c.title = op.title;
+        else if (op.t === 'move') c.folder = op.folder;
+        else if (op.t === 'delete') ops = ops.filter((o) => o !== c && !('id' in o && o.id === tmpId));
+        write(this.outboxKey(), ops);
+        this.pending = ops.length;
+        return;
+      }
+    }
+    ops.push(op);
+    write(this.outboxKey(), ops);
+    this.pending = ops.length;
+  }
+  /** True when a call failed because the server could not be reached (not because it said no). */
+  private away(e: unknown): boolean {
+    if (e instanceof ApiError) return false;
+    this.serverReachable = false;
+    return true;
+  }
+
+  /** Send the queued changes to the server. */
+  async flushOutbox() {
+    if (this.mode !== 'server' || this.flushing || !this.serverReachable) return;
+    this.flushing = true;
+    try {
+      let ops = this.readOutbox();
+      const ids = new Map<string, string>(); // temporary id -> real id
+      const fix = (id: string) => ids.get(id) ?? id;
+      while (ops.length) {
+        const op = ops[0]!;
+        try {
+          if (op.t === 'create') {
+            const text = await readStoredText(this.storeName(op.tmp)).catch(() => '');
+            const n = await this.api.createNote(op.title, text, op.folder);
+            ids.set(op.tmp, n.id);
+            deleteStored(this.storeName(op.tmp));
+            this.notes = this.notes.map((x) => (x.id === op.tmp ? { ...n, vp: x.vp, vm: x.vm } : x));
+            if (this.currentId === op.tmp) this.currentId = n.id;
+            this.recent = this.recent.map((r) => (r === op.tmp ? n.id : r));
+          } else if (op.t === 'rename') {
+            const n = await this.api.renameNote(fix(op.id), op.title);
+            this.notes = this.notes.map((x) => (x.id === fix(op.id) ? { ...x, title: n.title } : x));
+          } else if (op.t === 'move') {
+            const n = await this.api.moveNote(fix(op.id), op.folder);
+            this.notes = this.notes.map((x) => (x.id === fix(op.id) ? { ...x, folder: n.folder, title: n.title } : x));
+          } else if (op.t === 'delete') {
+            if (op.shared) await this.api.removeShare(fix(op.id), this.s.username);
+            else await this.api.deleteNote(fix(op.id));
+          } else if (op.t === 'folder') await this.api.createFolder(op.path);
+          else if (op.t === 'mvfolder') await this.api.moveFolder(op.from, op.to);
+          else if (op.t === 'rmfolder') await this.api.deleteFolder(op.path);
+        } catch (e) {
+          if (this.away(e)) break; // still offline: keep everything, try again later
+          // the server said no (the note is gone, the name is taken…): drop this one change and go on
+        }
+        ops = ops.slice(1);
+        write(this.outboxKey(), ops);
+        this.pending = ops.length;
+      }
+      write(this.cacheKey(), this.notes);
+    } finally {
+      this.flushing = false;
+    }
+  }
+
+  /** Download every note to this device so all of them can be read and edited offline. */
+  private prefetching = false;
+  async prefetchAll() {
+    if (this.mode !== 'server' || this.prefetching || !this.serverReachable) return;
+    this.prefetching = true;
+    try {
+      const key = `qm.fetched.${this.api.base}|${this.s.username}`;
+      const done = read<Record<string, number>>(key, {});
+      const todo = this.notes.filter((n) => !n.id.startsWith('tmp:') && done[n.id] !== n.updated);
+      let next = 0;
+      const worker = async () => {
+        while (next < todo.length && this.serverReachable && this.mode === 'server') {
+          const n = todo[next++]!;
+          try {
+            const text = await syncNoteNow(this.storeName(n.id), this.api, n.id);
+            done[n.id] = n.updated;
+            write(key, done);
+            if (this.vaultPath) void this.vaultPush(n.id, text);
+          } catch {
+            /* try again next time */
+          }
+        }
+      };
+      await Promise.all([worker(), worker(), worker()]);
+    } finally {
+      this.prefetching = false;
+    }
+  }
+
+  private linkWatch = false;
+  /** Notice when the server comes back (or goes away) and catch up. */
+  watchLink() {
+    if (this.linkWatch || typeof window === 'undefined') return;
+    this.linkWatch = true;
+    const back = async () => {
+      if (this.mode !== 'server') return;
+      const was = this.serverReachable;
+      await this.detectServer();
+      if (this.serverReachable && (!was || this.pending)) {
+        await this.flushOutbox();
+        await this.loadServerNotes(true);
+      }
+    };
+    window.addEventListener('online', () => void back());
+    window.addEventListener('offline', () => { if (this.mode === 'server') this.serverReachable = false; });
+    window.addEventListener('focus', () => { if (!this.serverReachable || this.pending) void back(); });
+    setInterval(() => { if (this.mode === 'server' && (!this.serverReachable || this.pending)) void back(); }, 15000);
+  }
+
   // ------------------------------------------------------------ accounts
 
+  /** An Api for this server; a trusted self-signed certificate goes through the local bridge (apps). */
+  private async makeApi(base: string, token: string): Promise<Api> {
+    const pin = this.s.trust?.[base];
+    if (pin && inShell() && base.startsWith('https://')) {
+      try {
+        return new Api(base, token, await tls.bridge(base, pin));
+      } catch {
+        /* fall through: try the server directly */
+      }
+    }
+    return new Api(base, token);
+  }
+
   async connect(serverUrl: string) {
-    this.s.serverUrl = cleanBase(serverUrl);
-    this.api = new Api(this.s.serverUrl, '');
+    const base = cleanBase(serverUrl);
+    this.s.serverUrl = base;
+    this.api = await this.makeApi(base, '');
     this.save();
     await this.detectServer();
+    if (!this.serverReachable && inShell() && base.startsWith('https://')) {
+      // Probably a self-signed (or changed) certificate: show it and let the user decide.
+      let fp = '';
+      try {
+        fp = await tls.probe(base);
+      } catch {
+        /* the server is really away */
+      }
+      if (fp && fp !== this.s.trust?.[base]) {
+        const known = !!this.s.trust?.[base];
+        if (await confirmBox(this.t(known ? 'certChangedAsk' : 'trustCertAsk', { fp }))) {
+          this.s.trust = { ...this.s.trust, [base]: fp };
+          this.save();
+          this.api = await this.makeApi(base, '');
+          await this.detectServer();
+        }
+      }
+    }
     if (!this.serverReachable) throw new ApiError(0, this.t('cantReach'));
+  }
+
+  forgetCertificate() {
+    const { [this.s.serverUrl]: _gone, ...rest } = this.s.trust ?? {};
+    this.s.trust = rest;
+    this.save();
   }
 
   async signIn(username: string, password: string, create: boolean) {
@@ -397,15 +618,31 @@ class Store {
     return `qm.cache.${this.api.base}|${this.s.username}`;
   }
 
-  async loadServerNotes() {
-    this.notes = read<NoteMeta[]>(this.cacheKey(), []);
+  async loadServerNotes(quiet = false) {
+    const cached = read<NoteMeta[]>(this.cacheKey(), []);
+    if (!quiet) this.notes = cached;
+    this.pending = this.readOutbox().length;
     this.folders = read<string[]>(this.cacheKey() + '.f', []);
+    this.watchLink();
     try {
-      this.notes = await this.api.notes();
+      await this.flushOutbox();
+      const fresh = await this.api.notes();
+      const mine = new Map(cached.map((n) => [n.id, n]));
+      const gone = new Set(this.readOutbox().filter((o): o is Extract<Op, { t: 'delete' }> => o.t === 'delete').map((o) => o.id));
+      this.notes = [
+        // notes made offline that have not reached the server yet stay in the list
+        ...cached.filter((n) => n.id.startsWith('tmp:')),
+        ...fresh.filter((n) => !gone.has(n.id)).map((n) => ({ ...n, vp: mine.get(n.id)?.vp, vm: mine.get(n.id)?.vm })),
+      ];
       this.folders = await this.api.folders().catch(() => read<string[]>(this.cacheKey() + '.f', []));
       this.serverReachable = true;
       write(this.cacheKey(), this.notes);
       write(this.cacheKey() + '.f', this.folders);
+      void (async () => {
+        await this.vaultStart();
+        await this.prefetchAll();
+        await this.vaultSync();
+      })();
     } catch (e) {
       if (e instanceof ApiError && e.status === 401) {
         await this.signOut();
@@ -429,11 +666,27 @@ class Store {
   async createNote(title = '', content = '', folder = ''): Promise<string> {
     const name = title.trim() || this.t('untitled');
     if (this.mode === 'server') {
-      const n = await this.api.createNote(name, content, folder);
+      if (this.serverReachable) {
+        try {
+          const n = await this.api.createNote(name, content, folder);
+          this.notes = [n, ...this.notes];
+          write(this.cacheKey(), this.notes);
+          this.currentId = n.id;
+          void this.vaultSync();
+          return n.id;
+        } catch (e) {
+          if (!this.away(e)) throw e;
+        }
+      }
+      // offline: make it here now, send it when the server is back
+      const id = 'tmp:' + crypto.randomUUID();
+      const n: NoteMeta = { id, title: this.uniqueLocalTitle(name, folder), folder, owner: this.s.username, role: 'owner', updated: Math.floor(Date.now() / 1000) };
+      if (content) await writeStoredText(this.storeName(id), content);
+      this.queueOp({ t: 'create', tmp: id, title: n.title, folder });
       this.notes = [n, ...this.notes];
       write(this.cacheKey(), this.notes);
-      this.currentId = n.id;
-      return n.id;
+      this.currentId = id;
+      return id;
     }
     const id = crypto.randomUUID();
     const n: NoteMeta = { id, title: this.uniqueLocalTitle(name, folder), folder, owner: '', role: 'owner', updated: Math.floor(Date.now() / 1000) };
@@ -461,9 +714,18 @@ class Store {
     const note = this.notes.find((n) => n.id === id);
     if (!note || !name || name === note.title) return;
     if (this.mode === 'server') {
-      const n = await this.api.renameNote(id, name);
-      this.notes = this.notes.map((x) => (x.id === id ? { ...x, title: n.title } : x));
+      let title = name;
+      if (this.serverReachable && !id.startsWith('tmp:')) {
+        try {
+          title = (await this.api.renameNote(id, name)).title;
+        } catch (e) {
+          if (!this.away(e)) throw e;
+          this.queueOp({ t: 'rename', id, title: name });
+        }
+      } else this.queueOp({ t: 'rename', id, title: name });
+      this.notes = this.notes.map((x) => (x.id === id ? { ...x, title } : x));
       write(this.cacheKey(), this.notes);
+      void this.vaultPaths();
     } else {
       this.notes = this.notes.map((x) => (x.id === id ? { ...x, title: name } : x));
       this.saveLocalList();
@@ -510,6 +772,54 @@ class Store {
   }
 
   /** Recently opened notes, newest first. */
+  /** Notes open in tabs, in order; the active one is `currentId`. */
+  tabs = $state<string[]>(read<string[]>('qm.tabs', []));
+  private lastTab: string | null = null;
+  private saveTabs() {
+    write('qm.tabs', this.tabs);
+  }
+  /** Called when the active note changes: make sure it has a tab (next to the one we came from). */
+  tabsSeen(id: string | null) {
+    if (!id) return;
+    if (!this.tabs.includes(id)) {
+      const at = this.lastTab ? this.tabs.indexOf(this.lastTab) : -1;
+      this.tabs = at >= 0 ? [...this.tabs.slice(0, at + 1), id, ...this.tabs.slice(at + 1)] : [...this.tabs, id];
+      this.saveTabs();
+    }
+    this.lastTab = id;
+  }
+  /** Forget tabs of notes that are gone (deleted, or unshared). */
+  pruneTabs() {
+    if (!this.notes.length && this.mode === 'server') return; // the list is still loading
+    const ok = this.tabs.filter((id) => this.notes.some((n) => n.id === id));
+    if (ok.length !== this.tabs.length) {
+      this.tabs = ok;
+      this.saveTabs();
+    }
+  }
+  closeTabs(ids: string[]) {
+    const at = this.currentId ? this.tabs.indexOf(this.currentId) : -1;
+    const left = this.tabs.filter((t) => !ids.includes(t));
+    const closingCurrent = !!this.currentId && ids.includes(this.currentId);
+    this.tabs = left;
+    this.saveTabs();
+    if (closingCurrent) {
+      this.currentId = left[Math.min(Math.max(at, 0), left.length - 1)] ?? null;
+      this.lastTab = this.currentId;
+    }
+  }
+  moveTab(id: string, before: string | null) {
+    const rest = this.tabs.filter((t) => t !== id);
+    const i = before ? rest.indexOf(before) : rest.length;
+    this.tabs = [...rest.slice(0, i < 0 ? rest.length : i), id, ...rest.slice(i < 0 ? rest.length : i)];
+    this.saveTabs();
+  }
+  nextTab(step: 1 | -1) {
+    if (this.tabs.length < 2 || !this.currentId) return;
+    const i = this.tabs.indexOf(this.currentId);
+    this.currentId = this.tabs[(i + step + this.tabs.length) % this.tabs.length] ?? this.currentId;
+  }
+
   recent = $state<string[]>(read<string[]>('qm.recent', []));
   touchRecent(id: string) {
     this.recent = [id, ...this.recent.filter((x) => x !== id)].slice(0, 12);
@@ -544,7 +854,15 @@ class Store {
     const clean = path.split('/').map((p) => p.trim()).filter(Boolean).join('/');
     if (!clean) return;
     let made = clean;
-    if (this.mode === 'server') made = (await this.api.createFolder(clean)).path;
+    if (this.mode === 'server') {
+      try {
+        if (!this.serverReachable) throw new TypeError('offline');
+        made = (await this.api.createFolder(clean)).path;
+      } catch (e) {
+        if (!this.away(e)) throw e;
+        this.queueOp({ t: 'folder', path: clean });
+      }
+    }
     const set = new Set([...this.folders, ...this.withParents(made)]);
     this.folders = [...set].sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
     this.saveFolders();
@@ -553,7 +871,15 @@ class Store {
   async renameFolder(from: string, to: string) {
     const dest = to.split('/').map((p) => p.trim()).filter(Boolean).join('/');
     if (!dest || dest === from) return;
-    if (this.mode === 'server') await this.api.moveFolder(from, dest);
+    if (this.mode === 'server') {
+      try {
+        if (!this.serverReachable) throw new TypeError('offline');
+        await this.api.moveFolder(from, dest);
+      } catch (e) {
+        if (!this.away(e)) throw e;
+        this.queueOp({ t: 'mvfolder', from, to: dest });
+      }
+    }
     const re = (p: string) => (p === from ? dest : p.startsWith(from + '/') ? dest + p.slice(from.length) : p);
     this.folders = [...new Set([...this.folders.map(re), ...this.withParents(dest)])].sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
     this.notes = this.notes.map((n) => (n.role === 'owner' ? { ...n, folder: re(n.folder ?? '') } : n));
@@ -565,7 +891,15 @@ class Store {
     if (this.notes.some((n) => n.role === 'owner' && ((n.folder ?? '') === path || (n.folder ?? '').startsWith(path + '/')))) {
       throw new Error(this.t('folderNotEmpty'));
     }
-    if (this.mode === 'server') await this.api.deleteFolder(path);
+    if (this.mode === 'server') {
+      try {
+        if (!this.serverReachable) throw new TypeError('offline');
+        await this.api.deleteFolder(path);
+      } catch (e) {
+        if (!this.away(e)) throw e;
+        this.queueOp({ t: 'rmfolder', path });
+      }
+    }
     this.folders = this.folders.filter((f) => f !== path && !f.startsWith(path + '/'));
     this.saveFolders();
   }
@@ -574,9 +908,19 @@ class Store {
     const note = this.notes.find((n) => n.id === id);
     if (!note || (note.folder ?? '') === folder) return;
     if (this.mode === 'server') {
-      const n = await this.api.moveNote(id, folder);
-      this.notes = this.notes.map((x) => (x.id === id ? { ...x, folder: n.folder, title: n.title } : x));
+      let moved = { folder, title: note.title };
+      if (this.serverReachable && !id.startsWith('tmp:')) {
+        try {
+          const n = await this.api.moveNote(id, folder);
+          moved = { folder: n.folder ?? folder, title: n.title };
+        } catch (e) {
+          if (!this.away(e)) throw e;
+          this.queueOp({ t: 'move', id, folder });
+        }
+      } else this.queueOp({ t: 'move', id, folder });
+      this.notes = this.notes.map((x) => (x.id === id ? { ...x, ...moved } : x));
       write(this.cacheKey(), this.notes);
+      void this.vaultPaths();
     } else {
       this.notes = this.notes.map((x) => (x.id === id ? { ...x, folder, title: this.uniqueLocalTitle(x.title, folder) } : x));
       this.saveLocalList();
@@ -592,14 +936,21 @@ class Store {
   }
 
   async deleteNote(id: string) {
+    const gone = this.notes.find((n) => n.id === id);
     if (this.mode === 'server') {
-      const n = this.notes.find((x) => x.id === id);
-      if (n && n.role !== 'owner') await this.api.removeShare(id, this.s.username);
-      else await this.api.deleteNote(id);
+      const shared = !!gone && gone.role !== 'owner';
+      if (this.serverReachable && !id.startsWith('tmp:')) {
+        try {
+          if (shared) await this.api.removeShare(id, this.s.username);
+          else await this.api.deleteNote(id);
+        } catch (e) {
+          if (!this.away(e)) throw e;
+          this.queueOp({ t: 'delete', id, shared });
+        }
+      } else this.queueOp({ t: 'delete', id, shared });
     }
     deleteStored(this.storeName(id));
-    const gone = this.notes.find((n) => n.id === id);
-    if (this.mode === 'local' && gone?.vp && this.vaultPath) void vault.trash(gone.vp).catch(() => {});
+    if ((this.mode === 'local' || this.mode === 'server') && gone?.vp && this.vaultPath) void vault.trash(gone.vp).catch(() => {});
     this.notes = this.notes.filter((n) => n.id !== id);
     if (this.mode === 'server') write(this.cacheKey(), this.notes);
     else this.saveLocalList();
@@ -612,6 +963,49 @@ class Store {
     const found = this.notes.find((n) => n.title.toLowerCase() === want);
     if (found) this.currentId = found.id;
     else await this.createNote(title.trim());
+  }
+
+  /** A section to scroll to once the note it belongs to is open ([[Note#Heading]]). */
+  pendingHeading = $state<{ id: string; heading: string } | null>(null);
+
+  /** Follow a link: "Note", "Note#Heading" (the note may be missing for "#Heading": this note). */
+  async openLink(target: string, here?: string) {
+    const { note, heading } = splitTarget(target);
+    if (note) await this.openTitle(note);
+    else if (here) this.currentId = here;
+    if (heading && this.currentId) this.pendingHeading = { id: this.currentId, heading };
+  }
+
+  /** The headings of a note by title (empty title: the note given as `here`), for link suggestions. */
+  async headingsOf(title: string, here?: string, live?: string): Promise<string[]> {
+    const id = title ? this.notes.find((n) => n.title.toLowerCase() === title.toLowerCase())?.id : here;
+    if (!id) return [];
+    const text = id === here && live !== undefined ? live : await this.exportText(id).catch(() => '');
+    return parseHeadings(text).map((h) => h.text);
+  }
+
+  /** What a ```base block lists: every note you can read, with its properties. */
+  async baseRows(): Promise<NoteRow[]> {
+    const out: NoteRow[] = [];
+    for (const n of this.notes) {
+      const text = await this.exportText(n.id).catch(() => '');
+      out.push({ id: n.id, title: n.title, folder: n.folder ?? '', updated: n.updated, props: readFrontMatter(text)?.props ?? [] });
+    }
+    return out;
+  }
+
+  canEditRow(id: string): boolean {
+    const n = this.notes.find((x) => x.id === id);
+    return !!n && id !== this.currentId && (this.mode !== 'server' || n.role !== 'view');
+  }
+
+  /** Change one property of another note (from a base table). */
+  async setNoteProp(id: string, key: string, type: PropType, value: string): Promise<void> {
+    const n = this.notes.find((x) => x.id === id);
+    if (!n || !this.canEditRow(id)) return;
+    const text = await this.exportText(id);
+    const next = setPropText(text, key, type, value);
+    if (next !== text) await this.importText(n, next);
   }
 
   /** Notes that link to this one with [[its title]]. */
@@ -674,5 +1068,14 @@ class Store {
     if (this.mode === 'local') this.saveLocalList();
   }
 }
+
+type Op =
+  | { t: 'create'; tmp: string; title: string; folder: string }
+  | { t: 'rename'; id: string; title: string }
+  | { t: 'move'; id: string; folder: string }
+  | { t: 'delete'; id: string; shared: boolean }
+  | { t: 'folder'; path: string }
+  | { t: 'mvfolder'; from: string; to: string }
+  | { t: 'rmfolder'; path: string };
 
 export const store = new Store();

@@ -5,6 +5,7 @@
 // Your notes are real .md files in a folder you choose (default: Documents/Qalamark), so any
 // other editor, backup tool or sync program can use them too.
 
+mod tlsbridge;
 mod vault;
 
 use serde::Serialize;
@@ -136,11 +137,35 @@ fn vault_reveal(app: AppHandle, path: String) -> Result<(), String> {
     Ok(())
 }
 
+fn host_port(u: &str) -> Result<(String, u16), String> {
+    let url = url::Url::parse(u).map_err(err)?;
+    if url.scheme() != "https" {
+        return Err("only https:// servers have a certificate".into());
+    }
+    let host = url.host_str().ok_or("no host in the address")?.to_string();
+    Ok((host, url.port_or_known_default().unwrap_or(443)))
+}
+
+/// The SHA-256 fingerprint of the certificate a server shows (so the user can decide to trust it).
+#[tauri::command]
+async fn tls_probe(url: String) -> Result<String, String> {
+    let (h, p) = host_port(&url)?;
+    tlsbridge::probe(&h, p).await
+}
+
+/// Start the local bridge to a server whose certificate the user trusts; returns its http:// address.
+#[tauri::command]
+async fn tls_bridge(url: String, pin: String) -> Result<String, String> {
+    let (h, p) = host_port(&url)?;
+    let local = tlsbridge::start(h, p, pin).await?;
+    Ok(format!("http://127.0.0.1:{local}"))
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
-        .invoke_handler(tauri::generate_handler![vault_info, vault_set, vault_list, vault_read, vault_write, vault_trash, vault_rename, vault_mkdir, vault_reveal])
+        .invoke_handler(tauri::generate_handler![vault_info, vault_set, vault_list, vault_read, vault_write, vault_trash, vault_rename, vault_mkdir, vault_reveal, tls_probe, tls_bridge])
         .run(tauri::generate_context!())
         .expect("error while running Qalamark");
 }

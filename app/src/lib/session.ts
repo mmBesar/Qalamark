@@ -101,3 +101,42 @@ export function deleteStored(storeName: string): void {
     /* nothing to remove */
   }
 }
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * Connect to the server for one note without opening it: bring its text to this device (so it can be
+ * read and edited offline) and, if `apply` is given, change it and make sure the change reached the server.
+ * Returns the note's text.
+ */
+export async function syncNoteNow(storeName: string, api: Api, noteId: string, apply?: (t: Y.Text) => void, timeoutMs = 12000): Promise<string> {
+  const doc = new Y.Doc();
+  const idb = new IndexeddbPersistence(storeName, doc);
+  await idb.whenSynced;
+  const provider = new WebsocketProvider(api.wsBase(), noteId, doc, { params: { token: api.token }, disableBc: true });
+  try {
+    await new Promise<void>((resolve, reject) => {
+      if (provider.synced) return resolve();
+      const timer = setTimeout(() => reject(new Error('sync timed out')), timeoutMs);
+      provider.on('sync', (ok: boolean) => {
+        if (ok) {
+          clearTimeout(timer);
+          resolve();
+        }
+      });
+    });
+    const text = doc.getText('content');
+    if (apply) {
+      apply(text);
+      await sleep(150);
+      const ws = (provider as unknown as { ws?: WebSocket }).ws;
+      for (let i = 0; i < 60 && ws && ws.bufferedAmount > 0; i++) await sleep(50);
+      await sleep(350);
+    }
+    return text.toString();
+  } finally {
+    provider.destroy();
+    await idb.destroy();
+    doc.destroy();
+  }
+}

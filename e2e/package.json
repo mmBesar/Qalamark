@@ -6,7 +6,7 @@
   "license": "AGPL-3.0-or-later",
   "description": "End-to-end test: a real server, real Yjs clients",
   "scripts": {
-    "test": "node --test --test-force-exit --test-timeout=30000 server.test.mjs frontmatter.test.ts kanban.test.ts",
+    "test": "node --test --test-force-exit --test-timeout=30000 server.test.mjs frontmatter.test.ts kanban.test.ts sections.test.ts base.test.ts",
     "test:browser": "node --test --test-force-exit --test-timeout=90000 browser.test.mjs"
   },
   "dependencies": {

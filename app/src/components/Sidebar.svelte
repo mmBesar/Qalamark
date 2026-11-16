@@ -421,6 +421,7 @@
       <span class="dot" class:off={!store.serverReachable}></span>
       <span>{store.s.username}</span>
       {#if !store.serverReachable}<small class="muted">· {t('offline')}</small>{/if}
+      {#if store.pending}<small class="muted pendingbadge" title={t('waitingSync', { n: store.pending })}>· {t('waitingSync', { n: store.pending })}</small>{/if}
     {:else}
       <span class="dot local"></span><span>{t('localMode')}</span>
       <span class="grow"></span>

@@ -12,11 +12,6 @@ on:
   push:
     tags: ['v*']
   workflow_dispatch:
-    inputs:
-      debug_apk:
-        description: 'Also build a debug APK (signed with the same key)'
-        type: boolean
-        default: false
 
 permissions:
   contents: write
@@ -125,10 +120,6 @@ jobs:
       - name: Build the APK
         working-directory: app
         run: npx tauri android build --apk --target aarch64 --target armv7 --target x86_64
-      - name: Build the debug APK
-        if: ${{ inputs.debug_apk }}
-        working-directory: app
-        run: npx tauri android build --apk --debug --target aarch64 --target armv7 --target x86_64
       - name: Sign the APKs
         working-directory: app
         env:
@@ -172,14 +163,11 @@ jobs:
             sign "$APK" Qalamark.apk
           fi
           "$BT/apksigner" verify --print-certs Qalamark.apk | head -3
-          DBG=$(find src-tauri/gen/android -name '*universal*debug*.apk' | head -1)
-          if [ -n "$DBG" ]; then sign "$DBG" Qalamark-debug.apk && "$BT/apksigner" verify Qalamark-debug.apk; fi
       - uses: actions/upload-artifact@v5
         with:
           name: qalamark-android
           path: |
             app/Qalamark.apk
-            app/Qalamark-debug.apk
           if-no-files-found: warn
 
   release:

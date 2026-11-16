@@ -60,6 +60,10 @@ interface Settings {
   centerPage: boolean;
   /** Self-signed servers the user chose to trust (apps): address -> certificate fingerprint. */
   trust: Record<string, string>;
+  /** Apps: accept a server's self-signed certificate (the first one seen is remembered). */
+  allowSelfSigned: boolean;
+  /** Apps: accept plain http:// servers (no encryption). */
+  allowHttp: boolean;
 }
 
 function defaultLang(): Lang {
@@ -67,7 +71,7 @@ function defaultLang(): Lang {
 }
 
 class Store {
-  s = $state<Settings>({ lang: 'en', theme: 'auto', accent: 'default', serverUrl: '', token: '', username: '', admin: false, wantsLocal: false, fontSize: 17, editorWidth: 50, fontEn: '', fontAr: '', fontCode: '', sideWidth: 304, sourceSize: 15, fontSource: '', centerPage: false, trust: {}, ...read<Partial<Settings>>(SETTINGS, { lang: defaultLang() }) });
+  s = $state<Settings>({ lang: 'en', theme: 'auto', accent: 'default', serverUrl: '', token: '', username: '', admin: false, wantsLocal: false, fontSize: 17, editorWidth: 50, fontEn: '', fontAr: '', fontCode: '', sideWidth: 304, sourceSize: 15, fontSource: '', centerPage: false, trust: {}, allowSelfSigned: false, allowHttp: false, ...read<Partial<Settings>>(SETTINGS, { lang: defaultLang() }) });
   mode = $state<Mode>('boot');
   serverReachable = $state(false);
   setupNeeded = $state(false);
@@ -529,10 +533,11 @@ class Store {
 
   // ------------------------------------------------------------ accounts
 
-  /** An Api for this server; a trusted self-signed certificate goes through the local bridge (apps). */
+  /** An Api for this server. In the apps every request goes through a small bridge on this device, so
+   *  the system web view never has to judge the address or the certificate itself. */
   private async makeApi(base: string, token: string): Promise<Api> {
-    const pin = this.s.trust?.[base];
-    if (pin && inShell() && base.startsWith('https://')) {
+    if (inShell() && base) {
+      const pin = base.startsWith('https://') && this.s.allowSelfSigned ? (this.s.trust?.[base] ?? '') : '';
       try {
         return new Api(base, token, await tls.bridge(base, pin));
       } catch {
@@ -542,31 +547,49 @@ class Store {
     return new Api(base, token);
   }
 
+  /** The apps' two switches for unusual servers. Turning one on turns the other off. */
+  async setNet(opt: 'selfSigned' | 'http', on: boolean) {
+    if (opt === 'selfSigned') this.s.allowSelfSigned = on;
+    else this.s.allowHttp = on;
+    if (on) {
+      if (opt === 'selfSigned') this.s.allowHttp = false;
+      else this.s.allowSelfSigned = false;
+    }
+    this.save();
+    if (this.s.serverUrl) {
+      this.api = await this.makeApi(this.s.serverUrl, this.s.token);
+      await this.detectServer();
+    }
+  }
+
   async connect(serverUrl: string) {
     const base = cleanBase(serverUrl);
+    const app = inShell();
+    if (app && base.startsWith('http://') && !this.s.allowHttp) throw new ApiError(0, this.t('httpOff'));
+    if (app && base.startsWith('https://') && this.s.allowSelfSigned) {
+      // The first certificate seen is remembered (ticking the box is the consent); a different one later is asked about.
+      let fp = '';
+      try {
+        fp = await tls.probe(base);
+      } catch (e) {
+        throw new ApiError(0, (e instanceof Error ? e.message : String(e)) || this.t('cantReach'));
+      }
+      const have = this.s.trust?.[base];
+      if (have !== fp) {
+        if (have && !(await confirmBox(this.t('certChangedAsk', { fp })))) throw new ApiError(0, this.t('cantReach'));
+        this.s.trust = { ...this.s.trust, [base]: fp };
+      }
+    }
     this.s.serverUrl = base;
     this.api = await this.makeApi(base, '');
     this.save();
     await this.detectServer();
-    if (!this.serverReachable && inShell() && base.startsWith('https://')) {
-      // Probably a self-signed (or changed) certificate: show it and let the user decide.
-      let fp = '';
-      try {
-        fp = await tls.probe(base);
-      } catch {
-        /* the server is really away */
-      }
-      if (fp && fp !== this.s.trust?.[base]) {
-        const known = !!this.s.trust?.[base];
-        if (await confirmBox(this.t(known ? 'certChangedAsk' : 'trustCertAsk', { fp }))) {
-          this.s.trust = { ...this.s.trust, [base]: fp };
-          this.save();
-          this.api = await this.makeApi(base, '');
-          await this.detectServer();
-        }
-      }
+    if (!this.serverReachable) {
+      let why = '';
+      if (app && base) why = await tls.check(base, base.startsWith('https://') && this.s.allowSelfSigned ? (this.s.trust?.[base] ?? '') : '');
+      if (/certificate|secure connection/i.test(why) && !this.s.allowSelfSigned) why += '\n' + this.t('certHint');
+      throw new ApiError(0, why ? `${this.t('cantReach')}: ${why}` : this.t('cantReach'));
     }
-    if (!this.serverReachable) throw new ApiError(0, this.t('cantReach'));
   }
 
   forgetCertificate() {

@@ -2,7 +2,8 @@
 <!-- Copyright (C) 2026 mmBesar -->
 <script lang="ts">
   import Icon from './Icon.svelte';
-  import { onAndroid, vault } from '../lib/vault.ts';
+  import NetOptions from './NetOptions.svelte';
+  import { inShell, onAndroid, vault } from '../lib/vault.ts';
   import Select from './Select.svelte';
   import { askBox, confirmBox } from '../lib/dialog.svelte.ts';
   import { addUserFont, removeUserFont } from '../lib/fonts';
@@ -187,6 +188,7 @@
   {#if store.mode === 'server'}
     <h3>{store.s.username}{store.s.admin ? ' · ' + t('admin') : ''}</h3>
     <p class="muted" dir="ltr">{store.api.base || location.origin}</p>
+    {#if inShell()}<NetOptions />{/if}
     {#if store.s.trust?.[store.s.serverUrl]}
       <p class="muted"><Icon name="check-small" size={14} /> {t('trustedCert')} <code dir="ltr" style="font-size:0.72rem;word-break:break-all">{store.s.trust[store.s.serverUrl]}</code></p>
       <div class="row"><button onclick={() => store.forgetCertificate()}>{t('forgetCert')}</button></div>

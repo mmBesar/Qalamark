@@ -531,12 +531,15 @@ dialog label {
   overflow: visible !important;
 }
 .cm-content {
-  width: min(100%, var(--editor-w, 50rem));
+  --pad: 1.2rem;
+  /* the side space is margin, not padding: the editor measures the text area from the content box,
+     and with padding inside it the selection was drawn from the wrong edge on wrapped lines */
+  width: min(100% - 2 * var(--pad), var(--editor-w, 50rem) - 2 * var(--pad));
   max-width: none;
   flex: 0 1 auto !important;
-  margin-inline: auto;
+  margin-inline: var(--pad) auto;
   font-size: var(--font-size, 17px);
-  padding: 0 1.2rem;
+  padding: 0;
   caret-color: var(--accent);
 }
 .cm-content,
@@ -897,7 +900,7 @@ dialog label {
     display: none;
   }
   .cm-content {
-    padding: 0 0.9rem;
+    --pad: 0.9rem;
   }
   .grid2 {
     grid-template-columns: 1fr;
@@ -1107,8 +1110,8 @@ dialog.wide {
   color: var(--accent);
 }
 .cm-source .cm-content {
-  width: 100%;
-  margin-inline: 0;
+  width: calc(100% - 2 * var(--pad));
+  margin-inline: var(--pad);
 }
 
 .userlist {
@@ -1420,7 +1423,7 @@ dialog::backdrop { background: rgba(10, 8, 20, 0.42); backdrop-filter: blur(3px)
 
 /* ───────── Reading comfort ───────── */
 @media (min-width: 761px) {
-  .cm-content { padding-inline: 2.6rem !important; }
+  .cm-content { --pad: 2.6rem; }
   .props { padding-inline: 2.6rem; }
   .board { padding-inline: 2.2rem; }
 }
@@ -1500,7 +1503,7 @@ aside li button.main, aside li .main { text-align: start; justify-content: flex-
     width: 100%;
   }
   .cm-editor .cm-content {
-    padding-inline: 0.9rem;
+    --pad: 0.9rem;
   }
   .props {
     padding: 0 0.9rem;
@@ -1560,6 +1563,9 @@ aside li button.main, aside li .main { text-align: start; justify-content: flex-
 .dd-pop li.on { color: var(--accent); font-weight: 600; }
 
 /* page position: left by default; centred inside the writing area (never under the sidebar) */
+/* (the editor's own theme sets a margin with higher weight than a plain .cm-content rule) */
+.cm-editor .cm-content { margin-inline: var(--pad) auto !important; width: min(100% - 2 * var(--pad), var(--editor-w, 50rem) - 2 * var(--pad)); padding-inline: 0 !important; }
+.cm-editor.cm-source .cm-content { margin-inline: var(--pad) !important; width: calc(100% - 2 * var(--pad)); }
 html[data-page='center'] .cm-editor:not(.cm-source) .cm-content { margin-inline: auto !important; }
 html:not([data-page='center']) .props { margin-inline: 0; }
 .cm-host[hidden]{display:none}

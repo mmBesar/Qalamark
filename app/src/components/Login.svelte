@@ -1,6 +1,8 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
 <!-- Copyright (C) 2026 mmBesar -->
 <script lang="ts">
+  import NetOptions from './NetOptions.svelte';
+  import { inShell } from '../lib/vault.ts';
   import { store } from '../lib/store.svelte.ts';
 
   const t = store.t;
@@ -43,6 +45,7 @@
         <input bind:value={server} placeholder="https://notes.example.com" autocapitalize="off" spellcheck="false" dir="ltr" />
         <small class="muted">{t('serverHint')}</small>
       </label>
+      {#if inShell()}<NetOptions />{/if}
     {/if}
     <label>
       {t('username')}

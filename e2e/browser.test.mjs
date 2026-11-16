@@ -678,3 +678,34 @@ test('round 9b: a base block lists notes by their properties and edits them', as
   assert.match(await page.locator('.cm-content').innerText(), /status: in progress/);
   assert.deepEqual(errors, []);
 });
+
+test('round 10: selection is drawn on the text, and pressing beside the page still selects', async () => {
+  const errors = [];
+  const page = await newPage(errors);
+  await page.setViewportSize({ width: 1600, height: 800 });
+  await signIn(page, 'alice', 'alice-password');
+  await page.click('aside .actions button:first-child');
+  await page.waitForSelector('.cm-content');
+  await page.click('.cm-content');
+  await page.keyboard.insertText('The quick brown fox jumps over the lazy dog and keeps running through the long green field until evening, then rests.\n\nSecond paragraph.');
+  await page.click('body');
+  const line = await page.locator('.cm-line').first().boundingBox();
+  const rects = () => page.evaluate(() => [...document.querySelectorAll('.cm-selectionBackground')].map((e) => e.getBoundingClientRect()).map((r) => [r.left, r.right]));
+  const textLeft = await page.evaluate(() => { const l = document.querySelector('.cm-line'); return l.getBoundingClientRect().left + parseFloat(getComputedStyle(l).paddingLeft); });
+  // drag across a wrapped line
+  await page.mouse.move(line.x + 80, line.y + 12);
+  await page.mouse.down();
+  await page.mouse.move(line.x + 300, line.y + 80, { steps: 8 });
+  await page.mouse.up();
+  const r1 = await rects();
+  assert.ok(r1.length >= 2, 'a wrapped selection has several bands');
+  for (const [l] of r1.slice(1)) assert.ok(l >= textLeft - 2, `band starts at the text (${l} vs ${textLeft})`);
+  // press in the empty space to the right of the page and drag back over the text
+  await page.mouse.click(line.x + 20, line.y + 160);
+  await page.mouse.move(1550, line.y + 12);
+  await page.mouse.down();
+  await page.mouse.move(line.x + 150, line.y + 60, { steps: 8 });
+  await page.mouse.up();
+  assert.ok((await rects()).length >= 1, 'a drag that starts beside the page selects text');
+  assert.deepEqual(errors, []);
+});

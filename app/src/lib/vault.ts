@@ -55,5 +55,8 @@ export function splitPath(path: string): { folder: string; title: string } {
 /** Self-signed servers (apps only): look at a certificate, and reach a server through the trusted-certificate bridge. */
 export const tls = {
   probe: (url: string) => call<string>('tls_probe', { url }),
-  bridge: (url: string, pin: string) => call<string>('tls_bridge', { url, pin }),
+  /** Why this server cannot be reached (an empty string when it can). */
+  check: (url: string, pin: string) => call<void>('net_check', { url, pin }).then(() => '', (e) => (e instanceof Error ? e.message : String(e))),
+  /** The address on this device that reaches the server (the web view never talks to it directly). */
+  bridge: (url: string, pin: string) => call<string>('net_bridge', { url, pin }),
 };

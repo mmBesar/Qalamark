@@ -137,27 +137,48 @@ fn vault_reveal(app: AppHandle, path: String) -> Result<(), String> {
     Ok(())
 }
 
-fn host_port(u: &str) -> Result<(String, u16), String> {
+fn host_port(u: &str) -> Result<(String, u16, bool), String> {
     let url = url::Url::parse(u).map_err(err)?;
-    if url.scheme() != "https" {
-        return Err("only https:// servers have a certificate".into());
-    }
+    let tls = match url.scheme() {
+        "https" => true,
+        "http" => false,
+        _ => return Err("the address must start with http:// or https://".into()),
+    };
     let host = url.host_str().ok_or("no host in the address")?.to_string();
-    Ok((host, url.port_or_known_default().unwrap_or(443)))
+    Ok((host, url.port_or_known_default().unwrap_or(if tls { 443 } else { 80 }), tls))
 }
 
-/// The SHA-256 fingerprint of the certificate a server shows (so the user can decide to trust it).
+fn mode_of(tls: bool, pin: &str) -> tlsbridge::Mode {
+    match (tls, pin.is_empty()) {
+        (false, _) => tlsbridge::Mode::Plain,
+        (true, true) => tlsbridge::Mode::Roots,
+        (true, false) => tlsbridge::Mode::Pin(pin.to_string()),
+    }
+}
+
+/// The SHA-256 fingerprint of the certificate a server shows (so it can be remembered).
 #[tauri::command]
 async fn tls_probe(url: String) -> Result<String, String> {
-    let (h, p) = host_port(&url)?;
+    let (h, p, tls) = host_port(&url)?;
+    if !tls {
+        return Err("a plain http:// server has no certificate".into());
+    }
     tlsbridge::probe(&h, p).await
 }
 
-/// Start the local bridge to a server whose certificate the user trusts; returns its http:// address.
+/// Can this server be reached the way the app will reach it? The answer says why not, in words.
 #[tauri::command]
-async fn tls_bridge(url: String, pin: String) -> Result<String, String> {
-    let (h, p) = host_port(&url)?;
-    let local = tlsbridge::start(h, p, pin).await?;
+async fn net_check(url: String, pin: String) -> Result<(), String> {
+    let (h, p, tls) = host_port(&url)?;
+    tlsbridge::check(&h, p, &mode_of(tls, &pin)).await
+}
+
+/// Start the local bridge to the server; returns the http:// address on this device to use instead.
+/// (The web view then never has to judge the server's address or certificate itself.)
+#[tauri::command]
+async fn net_bridge(url: String, pin: String) -> Result<String, String> {
+    let (h, p, tls) = host_port(&url)?;
+    let local = tlsbridge::start(h, p, mode_of(tls, &pin)).await?;
     Ok(format!("http://127.0.0.1:{local}"))
 }
 
@@ -165,7 +186,7 @@ async fn tls_bridge(url: String, pin: String) -> Result<String, String> {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
-        .invoke_handler(tauri::generate_handler![vault_info, vault_set, vault_list, vault_read, vault_write, vault_trash, vault_rename, vault_mkdir, vault_reveal, tls_probe, tls_bridge])
+        .invoke_handler(tauri::generate_handler![vault_info, vault_set, vault_list, vault_read, vault_write, vault_trash, vault_rename, vault_mkdir, vault_reveal, tls_probe, net_check, net_bridge])
         .run(tauri::generate_context!())
         .expect("error while running Qalamark");
 }

@@ -142,7 +142,7 @@ there becomes a note. More in **[docs/SELF-HOSTING.md](docs/SELF-HOSTING.md)**
 - **Links to sections:** `[[Note#Heading]]` and `[[#Heading]]`, with a list of notes (then headings) as you type `[[`; Kanban cards can hold links too.
 - **Lists of notes from their properties:** put a `base` block in a note (`/` → *List of notes*), e.g. `folder: Projects`, `where: status = open`, `show: status, due, done`, `sort: due`. It is drawn as a table: the first column links to the note, and you edit a value right there to change that note's property.
 - **Works offline in full:** create, rename, move and edit notes without a connection; changes queue ("waiting to sync") and are sent when the server is back. Notes you have not opened are fetched in the background for offline use.
-- **Self-signed certificates:** the apps can trust a server's certificate after you confirm its fingerprint.
+- **Servers on your own network (apps):** two switches on the sign-in screen, never both: *Allow a self-signed certificate* (the first certificate is remembered and you are warned if it changes) and *Allow plain http* (unencrypted, for a trusted home network). All connections go through a small bridge inside the app, which also tells you why a server cannot be reached.
 - **Touch:** press and hold in the editor for a menu with cut, copy, paste, select all and formatting.
 - **English and Arabic** interface, right-to-left.
 

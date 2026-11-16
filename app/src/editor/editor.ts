@@ -11,7 +11,7 @@ import { findLanguage } from './langs.ts';
 import { bracketMatching, codeFolding, foldGutter, foldKeymap, HighlightStyle, indentOnInput, syntaxHighlighting } from '@codemirror/language';
 import { highlightSelectionMatches, searchKeymap, selectNextOccurrence, selectSelectionMatches } from '@codemirror/search';
 import { Compartment, EditorSelection, EditorState, type Extension } from '@codemirror/state';
-import { crosshairCursor, drawSelection, dropCursor, EditorView, highlightActiveLine, highlightActiveLineGutter, keymap, lineNumbers, placeholder, rectangularSelection, type Command } from '@codemirror/view';
+import { ViewPlugin, crosshairCursor, drawSelection, dropCursor, EditorView, highlightActiveLine, highlightActiveLineGutter, keymap, lineNumbers, placeholder, rectangularSelection, type Command } from '@codemirror/view';
 import { tags as t } from '@lezer/highlight';
 import { yCollab, yUndoManagerKeymap } from 'y-codemirror.next';
 import { UndoManager } from 'yjs';
@@ -130,6 +130,34 @@ export interface Editor {
   destroy(): void;
 }
 
+/** Pressing in the empty space beside the page (or above/below the text) starts a selection like pressing on the nearest text. */
+const edgeClicks = ViewPlugin.fromClass(
+  class {
+    off: () => void;
+    constructor(view: EditorView) {
+      const down = (e: MouseEvent) => {
+        if (e.button !== 0 || (e.target !== view.scrollDOM && e.target !== view.dom)) return;
+        const r = view.contentDOM.getBoundingClientRect();
+        if (!r.width) return;
+        const x = Math.min(Math.max(e.clientX, r.left + 2), r.right - 2);
+        const y = Math.min(Math.max(e.clientY, r.top + 2), r.bottom - 2);
+        e.preventDefault();
+        view.contentDOM.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window, button: 0, buttons: 1, detail: e.detail, clientX: x, clientY: y, shiftKey: e.shiftKey, ctrlKey: e.ctrlKey, altKey: e.altKey, metaKey: e.metaKey }));
+        view.focus();
+      };
+      view.scrollDOM.addEventListener('mousedown', down);
+      view.dom.addEventListener('mousedown', down);
+      this.off = () => {
+        view.scrollDOM.removeEventListener('mousedown', down);
+        view.dom.removeEventListener('mousedown', down);
+      };
+    }
+    destroy() {
+      this.off();
+    }
+  },
+);
+
 export function createEditor(o: EditorOptions): Editor {
   const undo = new UndoManager(o.ytext);
   // Typing [[ offers the titles of your notes.
@@ -210,6 +238,7 @@ export function createEditor(o: EditorOptions): Editor {
     autoCalc(o.awareness),
     EditorState.allowMultipleSelections.of(true),
     drawSelection(),
+    edgeClicks,
     dropCursor(),
     indentOnInput(),
     bracketMatching(),

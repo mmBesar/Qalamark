@@ -807,3 +807,49 @@ test('round 12: on a touch screen a long press selects a word and the handles st
   assert.deepEqual(errors, []);
   await ctx.close();
 });
+
+test('round 13: the app asks at the first start: a server, or this device only (with the notes folder shown)', async () => {
+  const errors = [];
+  // pretend to be the desktop/Android shell: a few commands answered by a fake notes folder
+  const shell = () => {
+    window.__TAURI_INTERNALS__ = {
+      invoke: async (cmd) => {
+        if (cmd === 'vault_info') return { path: '/storage/emulated/0/Android/data/x/files/Documents/Qalamark', default_path: '/storage/emulated/0/Android/data/x/files/Documents/Qalamark' };
+        if (cmd === 'vault_list') return [{ path: 'Old.md', mtime_ms: 1 }];
+        if (cmd === 'vault_read') return { text: '# Old\n', mtime_ms: 1 };
+        if (cmd === 'vault_set') return '/x';
+        return null;
+      },
+      transformCallback: () => 0,
+    };
+  };
+  const mk = async () => {
+    const ctx = await browser.newContext({ viewport: { width: 420, height: 800 }, userAgent: 'Mozilla/5.0 (Linux; Android 17) Chrome/120 Mobile' });
+    await ctx.addInitScript(shell);
+    const page = await ctx.newPage();
+    page.on('pageerror', (e) => errors.push(e.message));
+    return { ctx, page };
+  };
+  const a = await mk();
+  await a.page.addInitScript(() => { if (!localStorage.getItem('qm.settings')) localStorage.setItem('qm.settings', JSON.stringify({ serverUrl: location.origin })); });
+  await a.page.goto(URL_);
+  await a.page.waitForSelector('.welcome');
+  assert.match(await a.page.locator('.welcome .folder').innerText(), /Qalamark/, 'shows the notes folder');
+  assert.ok(await a.page.locator('.welcome .folder .warn').count(), 'Android is told how to get Documents/Qalamark');
+  assert.equal(await a.page.locator('.welcome .choice').count(), 2);
+  await a.page.click('.welcome .choice:nth-of-type(2)');
+  await a.page.waitForSelector('aside', { state: 'attached' });
+  await a.page.reload();
+  await a.page.waitForSelector('aside', { state: 'attached' });
+  assert.equal(await a.page.locator('.welcome').count(), 0, 'asked only once');
+  await a.ctx.close();
+
+  const b = await mk();
+  await b.page.addInitScript(() => { if (!localStorage.getItem('qm.settings')) localStorage.setItem('qm.settings', JSON.stringify({ serverUrl: location.origin })); });
+  await b.page.goto(URL_);
+  await b.page.waitForSelector('.welcome');
+  await b.page.click('.welcome .choice.primary');
+  await b.page.waitForSelector('.login input[autocomplete=username]');
+  await b.ctx.close();
+  assert.deepEqual(errors, []);
+});

@@ -136,6 +136,8 @@ there becomes a note. More in **[docs/SELF-HOSTING.md](docs/SELF-HOSTING.md)**
 - **Type `/`** at the start of a line to insert a heading, list, table, code block, callout, MkDocs box or tabs. Tabbed code shows as real tabs in live view and reading; code blocks are clean (language badge + copy button instead of the ``` lines).
 - **Quick switcher** (`Ctrl+P` / `Ctrl+K`): jump to a note, search inside note text, or run a command. Also: an **outline** of the headings, a **today's note** button, and a *recent notes* list.
 - **Rename keeps everything in step:** the file name, the `title:` property and every `[[link]]` to the note change together (server).
+- **First start (apps):** a server, or this device only, with the notes folder shown. On Android, allow "All files access" once so the notes can live in `Documents/Qalamark` (the app asks; notes made earlier are carried over).
+- **Colourful text:** each heading level, bold and italic have their own colour in every theme.
 - **Notes folder in the apps:** the Linux and Android apps keep your notes as real `.md` files in `Documents/Qalamark` (change it in Settings). Edits made outside show up when you return to the app.
 - **Tabs:** open several notes at once; close, close others, drag to reorder, middle-click to close, `Alt+W` closes, `Ctrl+Tab` switches.
 - **Contents panel** (any view): the headings of the note as a tree; click to jump, fold or unfold sections, and move, promote or demote a whole section from its menu.

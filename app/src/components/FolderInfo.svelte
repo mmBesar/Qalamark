@@ -30,7 +30,13 @@
     }
     await look();
   }
-  onMount(look);
+  onMount(() => {
+    void look();
+    // back from the Android permission screen: look again
+    const again = () => void look();
+    window.addEventListener('focus', again);
+    return () => window.removeEventListener('focus', again);
+  });
 </script>
 
 {#if path}
@@ -41,6 +47,7 @@
       <small>{count === null ? '' : count === 0 ? t('folderEmpty') : t('folderFound', { n: count })}</small>
     </div>
     {#if !onAndroid()}<button type="button" class="ghost" onclick={change}>{t('folderChange')}</button>{/if}
+    {#if onAndroid() && path.includes('/Android/data/')}<small class="warn">{t('folderAndroidHint')}</small>{/if}
     {#if err}<small class="warn">{err}</small>{/if}
   </div>
 {/if}

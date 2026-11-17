@@ -18,7 +18,17 @@ fn config_file(app: &AppHandle) -> Result<PathBuf, String> {
 
 fn default_path(app: &AppHandle) -> PathBuf {
     let fallback = app.path().app_data_dir().unwrap_or_else(|_| PathBuf::from("."));
-    vault::default_dir(app.path().document_dir().ok(), fallback)
+    let private = vault::default_dir(app.path().document_dir().ok(), fallback);
+    // Android: the real Documents/Qalamark, as soon as the "all files" permission lets us use it
+    #[cfg(target_os = "android")]
+    {
+        let shared = PathBuf::from("/storage/emulated/0/Documents/Qalamark");
+        if vault::usable(&shared) {
+            vault::adopt(&private, &shared);
+            return shared;
+        }
+    }
+    private
 }
 
 fn root(app: &AppHandle) -> PathBuf {

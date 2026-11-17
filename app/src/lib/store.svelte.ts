@@ -17,7 +17,7 @@ import { applyText } from './ytext.ts';
 import { chooseBox, confirmBox } from './dialog.svelte.ts';
 import { deleteStored, readStoredText, syncNoteNow, writeStoredText } from './session.ts';
 
-export type Mode = 'boot' | 'login' | 'local' | 'server';
+export type Mode = 'boot' | 'welcome' | 'login' | 'local' | 'server';
 export type Theme = ThemeId;
 
 const SETTINGS = 'qm.settings';
@@ -49,6 +49,8 @@ interface Settings {
   username: string;
   admin: boolean;
   wantsLocal: boolean;
+  /** The apps ask once, at the first start: a server or this device only. */
+  welcomed: boolean;
   fontSize: number; // px
   editorWidth: number; // rem, 0 = the whole window
   fontEn: string;
@@ -71,7 +73,7 @@ function defaultLang(): Lang {
 }
 
 class Store {
-  s = $state<Settings>({ lang: 'en', theme: 'auto', accent: 'default', serverUrl: '', token: '', username: '', admin: false, wantsLocal: false, fontSize: 17, editorWidth: 50, fontEn: '', fontAr: '', fontCode: '', sideWidth: 304, sourceSize: 15, fontSource: '', centerPage: false, trust: {}, allowSelfSigned: false, allowHttp: false, ...read<Partial<Settings>>(SETTINGS, { lang: defaultLang() }) });
+  s = $state<Settings>({ lang: 'en', theme: 'auto', accent: 'default', serverUrl: '', token: '', username: '', admin: false, wantsLocal: false, welcomed: false, fontSize: 17, editorWidth: 50, fontEn: '', fontAr: '', fontCode: '', sideWidth: 304, sourceSize: 15, fontSource: '', centerPage: false, trust: {}, allowSelfSigned: false, allowHttp: false, ...read<Partial<Settings>>(SETTINGS, { lang: defaultLang() }) });
   mode = $state<Mode>('boot');
   serverReachable = $state(false);
   setupNeeded = $state(false);
@@ -181,7 +183,11 @@ class Store {
     if (this.s.token && this.s.username) {
       this.mode = 'server';
       await this.loadServerNotes();
-    } else if (this.s.wantsLocal || !this.serverReachable) {
+    } else if (this.s.wantsLocal) {
+      this.startLocal();
+    } else if (inShell() && !this.s.welcomed) {
+      this.mode = 'welcome';
+    } else if (!this.serverReachable) {
       this.startLocal();
     } else {
       this.mode = 'login';
@@ -214,6 +220,14 @@ class Store {
     }
   }
 
+  /** The first-start question. */
+  chooseStart(what: 'server' | 'local') {
+    this.s.welcomed = true;
+    this.save();
+    if (what === 'local') this.startLocal();
+    else this.showLogin();
+  }
+
   startLocal() {
     this.s.wantsLocal = true;
     this.save();
@@ -241,7 +255,9 @@ class Store {
     const acct = this.mode === 'server' ? `${this.api.base}|${this.s.username}` : 'local';
     const map = read<Record<string, string>>('qm.vaultFor', {});
     const info = await vault.info();
-    let want = map[acct];
+    let want = map[acct] === '@default' ? info.default_path : map[acct];
+    // Android: the app's private folder gives way to Documents/Qalamark once the system allows it (the files are carried over)
+    if (want && want.includes('/Android/data/') && info.default_path.startsWith('/storage/emulated/0/Documents')) want = info.default_path;
     // the folder was only reserved by "this device only" mode, which holds no notes: the first account takes it over
     if (!want && acct !== 'local' && map.local && !read<NoteMeta[]>(LOCAL_NOTES, []).length) {
       want = map[acct] = map.local;
@@ -249,14 +265,29 @@ class Store {
       write('qm.vaultFor', map);
     }
     if (!want) {
-      want = Object.keys(map).length ? `${info.default_path}-${acct.replace(/^https?:\/\//, '').replace(/[^\w.@-]+/g, '-').slice(0, 60)}` : info.path;
-      map[acct] = want;
+      want = Object.keys(map).length ? `${info.default_path}-${acct.replace(/^https?:\/\//, '').replace(/[^\w.@-]+/g, '-').slice(0, 60)}` : info.default_path;
+      map[acct] = want === info.default_path ? '@default' : want;
       write('qm.vaultFor', map);
     }
-    if (want !== info.path) await vault.set(want);
+    if (want === info.default_path) {
+      if (info.path !== want) await vault.set('');
+    } else if (want !== info.path) await vault.set(want);
     this.vaultAccount = acct;
   }
   private vaultAccount = '';
+
+  /** Coming back to the app (from the Android permission screen, say): the folder in use may have changed. */
+  private async vaultRecheck() {
+    if (!inShell() || !this.vaultOn) return;
+    try {
+      await this.vaultForAccount();
+      const i = await vault.info();
+      this.vaultPath = i.path;
+      this.vaultDefault = i.default_path;
+    } catch (e) {
+      this.vaultError = e instanceof Error ? e.message : String(e);
+    }
+  }
 
   async vaultStart() {
     if (!inShell()) return;
@@ -268,7 +299,7 @@ class Store {
       await this.vaultSync();
       if (!this.vaultBound) {
         this.vaultBound = true;
-        window.addEventListener('focus', () => void this.vaultSync());
+        window.addEventListener('focus', () => void this.vaultRecheck().then(() => this.vaultSync()));
       }
     } catch (e) {
       this.vaultError = e instanceof Error ? e.message : String(e);
@@ -457,7 +488,7 @@ class Store {
     try {
       const now = await vault.set(path);
       this.vaultPath = now;
-      if (this.vaultAccount) write('qm.vaultFor', { ...read<Record<string, string>>('qm.vaultFor', {}), [this.vaultAccount]: now });
+      if (this.vaultAccount) write('qm.vaultFor', { ...read<Record<string, string>>('qm.vaultFor', {}), [this.vaultAccount]: now === this.vaultDefault ? '@default' : now });
       this.notes = this.notes.map((n) => ({ ...n, vp: undefined, vm: undefined }));
       this.saveNotes();
       await this.vaultSync();

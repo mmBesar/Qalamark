@@ -132,6 +132,50 @@ pub fn default_dir(documents: Option<PathBuf>, fallback: PathBuf) -> PathBuf {
     documents.map(|d| d.join("Qalamark")).unwrap_or_else(|| fallback.join("Qalamark"))
 }
 
+/// Can files be created in this folder? (Android only lets the app into Documents once "all files" access is granted.)
+#[allow(dead_code)]
+pub fn usable(dir: &Path) -> bool {
+    if fs::create_dir_all(dir).is_err() {
+        return false;
+    }
+    let probe = dir.join(".qalamark-probe");
+    let ok = fs::write(&probe, b"ok").is_ok();
+    let _ = fs::remove_file(&probe);
+    ok
+}
+
+#[allow(dead_code)]
+fn has_notes(dir: &Path) -> bool {
+    fs::read_dir(dir).map(|d| d.flatten().any(|e| {
+        let p = e.path();
+        (p.is_file() && p.extension().is_some_and(|x| x == "md")) || (p.is_dir() && !e.file_name().to_string_lossy().starts_with('.') && has_notes(&p))
+    })).unwrap_or(false)
+}
+
+/// Copy everything from `from` into `to` (never overwriting). Used once, when the notes folder moves
+/// from the app's private place to Documents/Qalamark.
+#[allow(dead_code)]
+pub fn copy_tree(from: &Path, to: &Path) -> std::io::Result<()> {
+    fs::create_dir_all(to)?;
+    for e in fs::read_dir(from)?.flatten() {
+        let (a, b) = (e.path(), to.join(e.file_name()));
+        if a.is_dir() {
+            copy_tree(&a, &b)?;
+        } else if !b.exists() {
+            fs::copy(&a, &b)?;
+        }
+    }
+    Ok(())
+}
+
+/// Bring notes made in the old private folder along when the shared one becomes usable and has none yet.
+#[allow(dead_code)]
+pub fn adopt(old: &Path, new: &Path) {
+    if old != new && has_notes(old) && !has_notes(new) {
+        let _ = copy_tree(old, new);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -174,6 +218,20 @@ mod tests {
         assert_eq!(fs::read_dir(r.join(".trash")).unwrap().count(), 1);
         mkdir(&r, "Empty folder").unwrap();
         assert!(r.join("Empty folder").is_dir());
+    }
+
+    #[test]
+    fn adopting_copies_old_notes_once() {
+        let (a, b) = (tmp("adopt-a"), tmp("adopt-b"));
+        fs::create_dir_all(a.join("F")).unwrap();
+        fs::write(a.join("F/x.md"), "hi").unwrap();
+        assert!(usable(&b));
+        adopt(&a, &b);
+        assert_eq!(fs::read_to_string(b.join("F/x.md")).unwrap(), "hi");
+        fs::write(b.join("F/x.md"), "edited").unwrap();
+        adopt(&a, &b); // the new folder has notes now: leave it alone
+        assert_eq!(fs::read_to_string(b.join("F/x.md")).unwrap(), "edited");
+        assert!(!usable(Path::new("/proc/qalamark-no")));
     }
 
     #[test]

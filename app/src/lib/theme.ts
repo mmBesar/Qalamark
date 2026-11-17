@@ -98,8 +98,23 @@ function paletteVars(p: Palette, accent: Accent): Record<string, string> {
     '--c-function': p.accents.blue,
     '--c-type': p.accents.yellow,
     '--c-property': p.accents.teal,
+    // headings and text styles in colour (a little darker on light themes so they stay readable)
+    '--h1': tone(p, p.accents.red),
+    '--h2': tone(p, p.accents.peach),
+    '--h3': tone(p, p.accents.yellow),
+    '--h4': tone(p, p.accents.green),
+    '--h5': tone(p, p.accents.sapphire),
+    '--h6': tone(p, p.accents.mauve),
+    '--c-strong': tone(p, p.accents.maroon),
+    '--c-em': tone(p, p.accents.pink),
+    '--c-mark': `color-mix(in srgb, ${p.accents.yellow} 35%, transparent)`,
     'color-scheme': p.dark ? 'dark' : 'light',
   };
+}
+
+/** An accent as a text colour: as is on dark themes, a little toward the text colour on light ones. */
+function tone(p: Palette, c: string): string {
+  return p.dark ? c : `color-mix(in srgb, ${c} 78%, ${p.text})`;
 }
 
 /** The colours of the operating system itself (CSS system colours). */
@@ -128,6 +143,8 @@ function systemVars(accent: Accent): Record<string, string> {
     '--c-function': '#2f6fd0',
     '--c-type': '#a0701a',
     '--c-property': '#0b7a8f',
+    '--h1': '#c0392b', '--h2': '#c0620a', '--h3': '#9a7400', '--h4': '#2b8a4b', '--h5': '#0b7a8f', '--h6': '#8e44ad',
+    '--c-strong': '#b0394b', '--c-em': '#b8368f', '--c-mark': 'color-mix(in srgb, #e8b04a 40%, transparent)',
     'color-scheme': 'light dark',
   };
 }

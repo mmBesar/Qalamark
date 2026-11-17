@@ -97,6 +97,8 @@ jobs:
           grep -q 'android.permission.INTERNET' "$M" || sed -i 's|<application|<uses-permission android:name="android.permission.INTERNET" />\n    <application|' "$M"
           # Android 17 blocks apps from reaching the home network (192.168.x.x, *.lan...) until this is granted
           grep -q 'ACCESS_LOCAL_NETWORK' "$M" || sed -i 's|<application|<uses-permission android:name="android.permission.ACCESS_LOCAL_NETWORK" />\n    <application|' "$M"
+          # Documents/Qalamark is outside the app's own space: Android asks for "all files" access (Settings, once)
+          grep -q 'MANAGE_EXTERNAL_STORAGE' "$M" || sed -i 's|<application|<uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />\n    <application|' "$M"
           python3 -c "import xml.dom.minidom,sys; xml.dom.minidom.parse(sys.argv[1])" "$M"
           # our launcher icon (the generated project starts with a placeholder one)
           cp -r src-tauri/icons/android/. src-tauri/gen/android/app/src/main/res/
@@ -104,8 +106,12 @@ jobs:
           cat > src-tauri/gen/android/app/src/main/java/io/github/mmbesar/qalamark/MainActivity.kt <<'KOTLIN'
           package io.github.mmbesar.qalamark
 
+          import android.content.Intent
           import android.content.pm.PackageManager
+          import android.net.Uri
           import android.os.Build
+          import android.os.Environment
+          import android.provider.Settings
           import android.os.Bundle
           import android.view.View
           import androidx.core.view.ViewCompat
@@ -117,12 +123,34 @@ jobs:
               // asks once ("Allow Qalamark to access devices on your local network?"); without it a home server times out
               if (Build.VERSION.SDK_INT >= 37 && checkSelfPermission("android.permission.ACCESS_LOCAL_NETWORK") != PackageManager.PERMISSION_GRANTED) {
                 requestPermissions(arrayOf("android.permission.ACCESS_LOCAL_NETWORK"), 7)
+              } else {
+                askForFiles()
               }
               val root = findViewById<View>(android.R.id.content)
               ViewCompat.setOnApplyWindowInsetsListener(root) { v, insets ->
                 val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout() or WindowInsetsCompat.Type.ime())
                 v.setPadding(bars.left, bars.top, bars.right, bars.bottom)
                 WindowInsetsCompat.CONSUMED
+              }
+            }
+
+            override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+              super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+              askForFiles()
+            }
+
+            // The notes live in Documents/Qalamark: that needs "all files" access, granted on a system screen.
+            // Asked on the first launches only, so a person who says no is not nagged.
+            private fun askForFiles() {
+              if (Build.VERSION.SDK_INT < 30 || Environment.isExternalStorageManager()) return
+              val prefs = getSharedPreferences("qalamark", MODE_PRIVATE)
+              val n = prefs.getInt("filesAsked", 0)
+              if (n >= 3) return
+              prefs.edit().putInt("filesAsked", n + 1).apply()
+              try {
+                startActivity(Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION, Uri.parse("package:" + packageName)))
+              } catch (e: Exception) {
+                startActivity(Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION))
               }
             }
           }

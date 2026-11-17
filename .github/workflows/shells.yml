@@ -95,6 +95,8 @@ jobs:
           if grep -q windowSoftInputMode "$M"; then sed -i -E 's|android:windowSoftInputMode="[^"]*"|android:windowSoftInputMode="adjustResize"|' "$M"; else sed -i -E '0,/<activity/ s|<activity|<activity android:windowSoftInputMode="adjustResize"|' "$M"; fi
           # network access (a normal permission: Android never asks the user for it)
           grep -q 'android.permission.INTERNET' "$M" || sed -i 's|<application|<uses-permission android:name="android.permission.INTERNET" />\n    <application|' "$M"
+          # Android 17 blocks apps from reaching the home network (192.168.x.x, *.lan...) until this is granted
+          grep -q 'ACCESS_LOCAL_NETWORK' "$M" || sed -i 's|<application|<uses-permission android:name="android.permission.ACCESS_LOCAL_NETWORK" />\n    <application|' "$M"
           python3 -c "import xml.dom.minidom,sys; xml.dom.minidom.parse(sys.argv[1])" "$M"
           # our launcher icon (the generated project starts with a placeholder one)
           cp -r src-tauri/icons/android/. src-tauri/gen/android/app/src/main/res/
@@ -102,6 +104,8 @@ jobs:
           cat > src-tauri/gen/android/app/src/main/java/io/github/mmbesar/qalamark/MainActivity.kt <<'KOTLIN'
           package io.github.mmbesar.qalamark
 
+          import android.content.pm.PackageManager
+          import android.os.Build
           import android.os.Bundle
           import android.view.View
           import androidx.core.view.ViewCompat
@@ -110,6 +114,10 @@ jobs:
           class MainActivity : TauriActivity() {
             override fun onCreate(savedInstanceState: Bundle?) {
               super.onCreate(savedInstanceState)
+              // asks once ("Allow Qalamark to access devices on your local network?"); without it a home server times out
+              if (Build.VERSION.SDK_INT >= 37 && checkSelfPermission("android.permission.ACCESS_LOCAL_NETWORK") != PackageManager.PERMISSION_GRANTED) {
+                requestPermissions(arrayOf("android.permission.ACCESS_LOCAL_NETWORK"), 7)
+              }
               val root = findViewById<View>(android.R.id.content)
               ViewCompat.setOnApplyWindowInsetsListener(root) { v, insets ->
                 val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout() or WindowInsetsCompat.Type.ime())

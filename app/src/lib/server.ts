@@ -83,7 +83,7 @@ export class Api {
   }
 
   status() {
-    return this.call<Status>('GET', '/api/status', undefined, 4000);
+    return this.call<Status>('GET', '/api/status', undefined, 10000);
   }
   register(username: string, password: string, label = '') {
     return this.call<Session>('POST', '/api/register', { username, password, label });

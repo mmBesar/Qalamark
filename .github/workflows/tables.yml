@@ -72,7 +72,7 @@ jobs:
 
       - name: Keep the build
         if: matrix.node == 24
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: tables-dist
           path: packages/tables/dist

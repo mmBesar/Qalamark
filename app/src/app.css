@@ -1342,7 +1342,7 @@ aside .pad {
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.06), 0 12px 32px -8px rgba(20, 16, 40, 0.28);
   --hairline: color-mix(in srgb, var(--line) 70%, transparent);
 }
-html { -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; }
+html { -webkit-font-smoothing: antialiased; text-rendering: auto; font-kerning: normal; }
 * { scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--muted) 40%, transparent) transparent; }
 .ico { flex: none; display: block; }
 
@@ -1384,7 +1384,7 @@ aside footer { border-top: 1px solid var(--hairline); padding-top: 0.7rem; }
 
 /* top bar */
 .topbar { padding: 0.55rem 1rem; gap: 0.6rem; border-bottom: 1px solid var(--hairline); background: color-mix(in srgb, var(--bg) 88%, transparent); backdrop-filter: blur(10px); position: sticky; top: 0; z-index: 5; }
-.topbar .title { font-size: 1.2rem; font-weight: 700; letter-spacing: -0.005em; border-radius: 10px; padding: 0.35rem 0.6rem; transition: background var(--ease); }
+.topbar .title { font-size: 1.2rem; font-weight: 700; border-radius: 10px; padding: 0.35rem 0.6rem; transition: background var(--ease); }
 .topbar .title:hover:not(:focus) { background: color-mix(in srgb, var(--ink) 5%, transparent); }
 .topbar .title:focus { background: var(--surface); outline: none; box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent); }
 .status { font-size: 0.78rem; gap: 0.4rem; }
@@ -1415,7 +1415,7 @@ dialog::backdrop { background: rgba(10, 8, 20, 0.42); backdrop-filter: blur(3px)
 .statusbar { font-size: 0.78rem; border-top: 1px solid var(--hairline); }
 .props-head { border-radius: 10px; }
 .cm-codeblock { background: color-mix(in srgb, var(--ink) 6%, var(--surface)); }
-.cm-heading { letter-spacing: -0.01em; }
+.cm-heading { letter-spacing: 0; }
 
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
 
@@ -1767,3 +1767,10 @@ aside .results .snip { color: var(--muted); font-size: 0.78rem; white-space: nor
 .qm-handle { position: absolute; left: -10px; top: 0; z-index: 6; width: 20px; height: 20px; touch-action: none; }
 .qm-handle::before { content: ''; position: absolute; inset: 0; background: var(--accent); border-radius: 0 50% 50% 50%; transform: rotate(45deg) translate(2px, 2px); transform-origin: 50% 50%; box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3); }
 .qm-handle::after { content: ''; position: absolute; inset: -14px; } /* a bigger area to grab */
+
+/* sign-in: the server details stay folded away unless needed */
+.adv { border: 1px solid var(--line); border-radius: 10px; padding: 0.15rem 0.75rem 0.5rem; text-align: start; }
+.adv summary { cursor: pointer; padding: 0.5rem 0; color: var(--muted); font-size: 0.9rem; overflow-wrap: anywhere; }
+.adv[open] summary { color: var(--ink); }
+.adv label { display: grid; gap: 0.3rem; margin: 0.3rem 0 0.6rem; }
+.diag { white-space: pre-wrap; font-size: 0.8rem; margin: 0.4rem 0 0; padding: 0.5rem; border-radius: 8px; background: var(--surface0, rgba(128,128,128,.15)); user-select: text; }

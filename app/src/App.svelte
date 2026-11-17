@@ -24,6 +24,26 @@
 
   const t = store.t;
 
+  // Android back button: close the top layer (settings, menu, palette, sign-in) before leaving the app
+  let pushed = 0;
+  $effect(() => {
+    const layers = (settings ? 1 : 0) + (drawer ? 1 : 0) + (store.palette ? 1 : 0) + (store.mode === 'login' ? 1 : 0);
+    while (pushed < layers) {
+      history.pushState({ qm: ++pushed }, '');
+    }
+  });
+  onMount(() => {
+    const onPop = () => {
+      if (pushed > 0) pushed--;
+      if (store.palette) store.palette = false;
+      else if (settings) settings = false;
+      else if (drawer) drawer = false;
+      else if (store.mode === 'login') store.startLocal();
+    };
+    window.addEventListener('popstate', onPop);
+    return () => window.removeEventListener('popstate', onPop);
+  });
+
   // on a phone the keyboard appears over the page: keep the field being typed in on screen
   onMount(() => {
     const onFocus = (e: FocusEvent) => {

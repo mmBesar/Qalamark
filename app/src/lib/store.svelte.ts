@@ -242,6 +242,12 @@ class Store {
     const map = read<Record<string, string>>('qm.vaultFor', {});
     const info = await vault.info();
     let want = map[acct];
+    // the folder was only reserved by "this device only" mode, which holds no notes: the first account takes it over
+    if (!want && acct !== 'local' && map.local && !read<NoteMeta[]>(LOCAL_NOTES, []).length) {
+      want = map[acct] = map.local;
+      delete map.local;
+      write('qm.vaultFor', map);
+    }
     if (!want) {
       want = Object.keys(map).length ? `${info.default_path}-${acct.replace(/^https?:\/\//, '').replace(/[^\w.@-]+/g, '-').slice(0, 60)}` : info.path;
       map[acct] = want;
@@ -644,6 +650,36 @@ class Store {
     }
   }
 
+  /** Step-by-step connection test for the sign-in page: says which hop fails (app core, web view, bridge). */
+  async diagnose(serverUrl: string): Promise<string> {
+    const base = cleanBase(serverUrl);
+    if (!base) return this.t('cantReach');
+    const out: string[] = [];
+    const pin = this.s.trust?.[base] ?? '';
+    const msg = (e: unknown) => (e instanceof Error ? e.message : String(e));
+    const timed = <T,>(p: Promise<T>, ms = 12000) => Promise.race([p, new Promise<T>((_, rej) => setTimeout(() => rej(new Error('timeout')), ms))]);
+    try {
+      const r = await timed(tls.check(base, pin));
+      out.push('app core → server: ' + (r ? 'FAIL ' + r : 'ok'));
+    } catch (e) {
+      out.push('app core → server: FAIL ' + msg(e));
+    }
+    try {
+      const r = await timed(fetch(base + '/api/status'));
+      out.push('web view → server: ' + (r.ok ? 'ok' : 'HTTP ' + r.status));
+    } catch (e) {
+      out.push('web view → server: FAIL ' + msg(e));
+    }
+    try {
+      const via = await timed(tls.bridge(base, pin));
+      const r = await timed(fetch(via + '/api/status'));
+      out.push('web view → local bridge: ' + (r.ok ? 'ok' : 'HTTP ' + r.status));
+    } catch (e) {
+      out.push('web view → local bridge: FAIL ' + msg(e));
+    }
+    return out.join('\n');
+  }
+
   async connect(serverUrl: string) {
     const base = cleanBase(serverUrl);
     const app = inShell();
@@ -730,6 +766,8 @@ class Store {
     }
     const acct = `${this.api.base}|${this.s.username}`;
     if (wipe) {
+      // the files in this account's notes folder go to the trash too
+      for (const n of this.notes) if (n.vp && this.vaultOn) await vault.trash(n.vp).catch(() => {});
       for (const n of this.notes) {
         try {
           indexedDB.deleteDatabase(this.storeName(n.id));

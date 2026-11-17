@@ -174,6 +174,15 @@
 
   // ---- the context menu of a note or folder (right-click, or press and hold on touch) ----
   const coarse = typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches;
+  function accountMenu(e: MouseEvent) {
+    const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    ctxmenu.show(r.left, r.top - 4, [
+      { label: t('accountSettings'), icon: 'settings', run: () => onSettings() },
+      { label: t('reconnect'), icon: 'globe', run: () => void store.reconnect() },
+      { sep: true },
+      { label: t('signOut'), icon: 'close', run: () => void store.signOut() },
+    ]);
+  }
   const canReveal = () => inShell() && !onAndroid() && !!store.vaultPath;
 
   const run = async (fn: () => Promise<unknown>) => {
@@ -419,7 +428,7 @@
   <footer>
     {#if store.mode === 'server'}
       <span class="dot" class:off={!store.serverReachable}></span>
-      <span>{store.s.username}</span>
+      <button class="link who" onclick={accountMenu} aria-haspopup="menu"><Icon name="user" size={14} /> {store.s.username}</button>
       {#if !store.serverReachable}<small class="muted">· {t('offline')}</small><button class="link retry" onclick={() => store.reconnect()}>{t('reconnect')}</button>{/if}
       {#if store.pending}<small class="muted pendingbadge" title={t('waitingSync', { n: store.pending })}>· {t('waitingSync', { n: store.pending })}</small>{/if}
     {:else}

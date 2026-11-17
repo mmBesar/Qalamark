@@ -16,6 +16,21 @@
   let error = $state('');
   let busy = $state(false);
   let editServer = $state(false);
+  let adv = $state(!store.serverReachable);
+  let report = $state('');
+  let testing = $state(false);
+  async function test() {
+    testing = true;
+    report = '';
+    try {
+      report = await store.diagnose(server);
+    } finally {
+      testing = false;
+    }
+  }
+  $effect(() => {
+    if (error) adv = true;
+  });
 
   async function submit(e: Event) {
     e.preventDefault();
@@ -42,15 +57,19 @@
       <p class="note">{t('firstRun')}</p>
     {/if}
 
-    {#if editServer || !store.serverReachable}
+    <details class="adv" bind:open={adv}>
+      <summary>{t('server')}{server ? ' · ' + server.replace(/^https?:\/\//, '') : ''}</summary>
       <label>
         {t('server')}
-        <input bind:value={server} placeholder="https://notes.example.com" autocapitalize="off" spellcheck="false" dir="ltr" />
-        <small class="muted">{t('serverHint')}</small>
+        <input bind:value={server} oninput={() => (editServer = true)} placeholder="https://notes.example.com" autocapitalize="off" spellcheck="false" dir="ltr" />
       </label>
       {#if inShell()}<NetOptions />{/if}
       {#if inShell()}<FolderInfo />{/if}
-    {/if}
+      {#if inShell()}
+        <button type="button" class="ghost" disabled={testing} onclick={test}>{testing ? '…' : t('testConn')}</button>
+        {#if report}<pre class="diag" dir="ltr">{report}</pre>{/if}
+      {/if}
+    </details>
     <label>
       {t('username')}
       <input bind:value={username} autocomplete="username" autocapitalize="off" spellcheck="false" required dir="ltr" />
@@ -71,7 +90,6 @@
       {#if store.signupOpen && !store.setupNeeded}
         <button type="button" class="link" onclick={() => (create = !create)}>{create ? t('signIn') : t('register')}</button>
       {/if}
-      <button type="button" class="link" onclick={() => (editServer = !editServer)}>{t('server')}</button>
       <button type="button" class="link" onclick={() => store.setLang(store.lang === 'ar' ? 'en' : 'ar')}>{store.lang === 'ar' ? 'English' : 'العربية'}</button>
     </div>
     <button type="button" class="ghost" onclick={() => store.startLocal()}>{t('useLocal')}</button>

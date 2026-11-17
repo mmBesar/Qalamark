@@ -69,7 +69,7 @@
         <button type="button" class="ghost" disabled={testing} onclick={test}>{testing ? '…' : t('testConn')}</button>
         {#if report}
           <pre class="diag" dir="ltr">{report}</pre>
-          <button type="button" class="ghost" onclick={() => void navigator.clipboard?.writeText(report)}>{t('copy')}</button>
+          <button type="button" class="ghost" onclick={() => void navigator.clipboard?.writeText(report)}>{t('copyText')}</button>
         {/if}
       {/if}
     </details>

@@ -322,7 +322,7 @@ mod tests {
         assert_eq!(&got, b"pong");
         // nothing listens on port 1: a readable reason, not a hang
         let e = check("127.0.0.1", 1, &Mode::Plain).await.unwrap_err();
-        assert!(e.contains("could not connect"), "{e}");
+        assert!(e.contains("unreachable"), "{e}");
     }
 
     #[tokio::test]

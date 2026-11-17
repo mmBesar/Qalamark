@@ -606,7 +606,7 @@ test('round 8: offline work queues and syncs when the server returns; section li
   assert.ok(/Second part/.test(await page.locator('.cm-tooltip-autocomplete').innerText()), 'headings are suggested after #');
   await page.keyboard.press('Enter');
   await page.waitForTimeout(300);
-  await page.click('.topbar button:has-text("Source")');
+  await page.click('.topbar .seg button:has-text("Source")');
   await page.waitForTimeout(300);
   const shown = await page.locator('.cm-content').innerText();
   assert.ok(/\[\[Target#Second part\]\]/.test(shown), 'heading inserted into the link: ' + JSON.stringify(shown));
@@ -673,7 +673,7 @@ test('round 9b: a base block lists notes by their properties and edits them', as
   // click the link: the note opens and its properties changed
   await page.click('.cm-base a.base-link:has-text("Task one")');
   await page.waitForFunction(() => document.querySelector('.topbar .title')?.value === 'Task one');
-  await page.click('.topbar button:has-text("Source")');
+  await page.click('.topbar .seg button:has-text("Source")');
   await page.waitForTimeout(400);
   assert.match(await page.locator('.cm-content').innerText(), /status: in progress/);
   assert.deepEqual(errors, []);
@@ -723,7 +723,7 @@ test('round 11: Arabic and mixed text select, double-click and triple-click prop
   const view = (fn, arg) => page.evaluate(`(${fn})(document.querySelector('.cm-editor').cmEditorView, ${JSON.stringify(arg ?? null)})`);
   const selText = () => view((v) => { const m = v.state.selection.main; return v.state.sliceDoc(m.from, m.to); });
   for (const mode of ['Live preview', 'Source']) {
-    await page.click(`.topbar button:has-text("${mode}")`);
+    await page.click(`.topbar .seg button:has-text("${mode}")`);
     await page.waitForTimeout(400);
     await page.click('body');
     const dir = await view((v) => v.dom.querySelector('.cm-line').getAttribute('dir'));
@@ -852,4 +852,40 @@ test('round 13: the app asks at the first start: a server, or this device only (
   await b.page.waitForSelector('.login input[autocomplete=username]');
   await b.ctx.close();
   assert.deepEqual(errors, []);
+});
+
+test('round 14: on a phone the bars float and hide while reading, and the text has the screen', async () => {
+  const errors = [];
+  const ctx = await browser.newContext({ viewport: { width: 400, height: 780 }, hasTouch: true, isMobile: true, deviceScaleFactor: 2 });
+  const page = await ctx.newPage();
+  page.on('pageerror', (e) => errors.push(e.message));
+  await signIn(page, 'alice', 'alice-password');
+  await page.waitForSelector('.shell');
+  await page.locator('aside .actions button:first-child').dispatchEvent('click');
+  await page.waitForSelector('.cm-content');
+  await page.waitForTimeout(400);
+  await page.click('.cm-content');
+  const long = Array.from({ length: 90 }, (_, i) => `## Part ${i}\n\nSome **bold** and *italic* words in line ${i}.\n`).join('\n');
+  await page.keyboard.insertText(long);
+  await page.waitForSelector('.editor-pane.typing .toolbar', { state: 'visible' });
+  await page.evaluate(() => document.activeElement.blur());
+  await page.waitForSelector('.editor-pane:not(.typing)');
+  assert.ok(await page.locator('.float-bar').isVisible(), 'floating bar shows after typing');
+  assert.equal(await page.locator('.tabbar').isVisible(), false, 'no tab strip on a phone');
+  const scroll = (y) => page.evaluate((y) => { const s = document.querySelector('.cm-host'); s.scrollTop = y; }, y);
+  await scroll(400); await page.waitForTimeout(150);
+  await scroll(900); await page.waitForTimeout(400);
+  assert.ok(await page.locator('.editor-pane.mobile').count(), 'phone mode on');
+  assert.ok(await page.locator('.editor-pane.hide-bars').count(), 'scrolling down hides the bars');
+  const box = await page.locator('.topbar').boundingBox();
+  assert.ok(box.y + box.height <= 1, 'top bar is out of the way: ' + JSON.stringify(box));
+  await scroll(600); await page.waitForTimeout(400);
+  assert.equal(await page.locator('.editor-pane.hide-bars').count(), 0, 'scrolling up brings them back');
+  await scroll(1200); await page.waitForTimeout(300);
+  await page.touchscreen.tap(200, 400);
+  await page.waitForTimeout(300);
+  assert.equal(await page.locator('.editor-pane.hide-bars').count(), 0, 'a tap brings them back');
+  await page.screenshot({ path: process.env.SHOT ?? '/tmp/claude-0/phone.png' });
+  assert.deepEqual(errors, []);
+  await ctx.close();
 });

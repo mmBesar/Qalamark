@@ -1784,3 +1784,31 @@ aside .results .snip { color: var(--muted); font-size: 0.78rem; white-space: nor
 .adv[open] summary { color: var(--ink); }
 .adv label { display: grid; gap: 0.3rem; margin: 0.3rem 0 0.6rem; }
 .diag { white-space: pre-wrap; font-size: 0.8rem; margin: 0.4rem 0 0; padding: 0.5rem; border-radius: 8px; background: var(--surface0, rgba(128,128,128,.15)); user-select: text; -webkit-user-select: text; }
+
+/* ---------- phones: the text gets the whole screen ---------- */
+.float-bar, .modebtn { display: none; }
+@media (pointer: coarse) and (max-width: 760px) {
+  .tabbar { display: none !important; }
+  .editor-pane { position: relative; }
+  .editor-pane .topbar { position: absolute; inset-inline: 0; top: 0; flex-wrap: nowrap; gap: 0.25rem; padding: 0.3rem 0.45rem; border-bottom: 0; box-shadow: 0 1px 0 var(--line); transition: transform 0.22s ease; z-index: 30; }
+  .editor-pane .topbar .title { flex: 1 1 auto; min-width: 0; font-size: 1.05rem; border: 0; padding: 0.3rem 0.4rem; text-overflow: ellipsis; }
+  .editor-pane .topbar .seg, .editor-pane .topbar .status .label, .editor-pane .topbar .lbl { display: none; }
+  .editor-pane .topbar .modebtn { display: inline-flex; }
+  .editor-pane.hide-bars .topbar { transform: translateY(-115%); }
+  /* the editing tools sit above the keyboard, only while typing */
+  .editor-pane .toolbar { display: none; position: fixed; inset-inline: 0; bottom: 0; margin: 0; width: auto; max-width: none; border-radius: 0; border-width: 1px 0 0; overflow-x: auto; z-index: 40; justify-content: flex-start; }
+  .editor-pane.typing .toolbar { display: flex; }
+  .editor-pane .float-bar { display: flex; position: fixed; bottom: calc(2.1rem + 0.5rem); inset-inline: 0; margin-inline: auto; width: fit-content; gap: 0.15rem; padding: 0.25rem 0.4rem; border: 1px solid var(--line); border-radius: 999px; background: color-mix(in srgb, var(--surface) 92%, transparent); backdrop-filter: blur(12px); box-shadow: var(--shadow); z-index: 35; transition: transform 0.22s ease, opacity 0.22s; }
+  .editor-pane .float-bar .icon { width: 2.8rem; height: 2.8rem; border-radius: 999px; display: inline-grid; place-items: center; }
+  .editor-pane .statusbar { position: fixed; inset-inline: 0; bottom: 0; z-index: 34; background: color-mix(in srgb, var(--surface) 94%, transparent); backdrop-filter: blur(10px); transition: transform 0.22s ease; padding-bottom: 0.3rem; }
+  .editor-pane.hide-bars .float-bar { transform: translateY(220%); opacity: 0; pointer-events: none; }
+  .editor-pane.hide-bars .statusbar { transform: translateY(120%); }
+  .editor-pane.typing .float-bar, .editor-pane.typing .statusbar { display: none; }
+  /* the text starts under the bar and ends above the bottom ones, so nothing hides it at the top or bottom of a note */
+  .editor-pane .cm-host { padding-top: 3.3rem; padding-bottom: 6.5rem; }
+  .editor-pane:has(.props) .cm-host { padding-top: 0.4rem; }
+  .editor-pane .props, .editor-pane .banner { margin-top: 3.3rem; }
+  .editor-pane .props ~ .editor-row .cm-host { padding-top: 0.4rem; }
+  .editor-pane.typing .cm-host { padding-bottom: 3.4rem; }
+}
+@media (pointer: coarse) and (max-width: 760px) { .editor-pane .topbar .modebtn { white-space: nowrap; flex: none; } }

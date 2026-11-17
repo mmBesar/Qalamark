@@ -137,6 +137,7 @@ there becomes a note. More in **[docs/SELF-HOSTING.md](docs/SELF-HOSTING.md)**
 - **Quick switcher** (`Ctrl+P` / `Ctrl+K`): jump to a note, search inside note text, or run a command. Also: an **outline** of the headings, a **today's note** button, and a *recent notes* list.
 - **Rename keeps everything in step:** the file name, the `title:` property and every `[[link]]` to the note change together (server).
 - **First start (apps):** a server, or this device only, with the notes folder shown. On Android, allow "All files access" once so the notes can live in `Documents/Qalamark` (the app asks; notes made earlier are carried over).
+- **Phone layout:** the text gets the whole screen. The title bar and a floating bar (menu, search, new note, contents) hide while you scroll down, return when you scroll up or tap, and on Android the system bars hide too. While typing, the editing tools sit above the keyboard.
 - **Colourful text:** each heading level, bold and italic have their own colour in every theme.
 - **Notes folder in the apps:** the Linux and Android apps keep your notes as real `.md` files in `Documents/Qalamark` (change it in Settings). Edits made outside show up when you return to the app.
 - **Tabs:** open several notes at once; close, close others, drag to reorder, middle-click to close, `Alt+W` closes, `Ctrl+Tab` switches.

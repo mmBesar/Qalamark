@@ -5,6 +5,14 @@
 // the Rust side (src-tauri); in a normal browser none of this is used.
 
 export const inShell = (): boolean => typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
+/** Android: hide (or bring back) the status and navigation bars, so reading gets the whole screen. */
+export const immersive = (on: boolean): void => {
+  try {
+    (window as unknown as { QalamarkAndroid?: { immersive(on: boolean): void } }).QalamarkAndroid?.immersive(on);
+  } catch {
+    /* not in the Android app */
+  }
+};
 export const onAndroid = (): boolean => typeof navigator !== 'undefined' && /android/i.test(navigator.userAgent);
 
 async function call<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {

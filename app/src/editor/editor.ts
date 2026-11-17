@@ -377,6 +377,8 @@ export function createEditor(o: EditorOptions): Editor {
     codeFolding({ placeholderText: '⋯' }),
     ...(o.extra ?? []),
     EditorView.lineWrapping,
+    // on a phone the bars float over the text: keep the cursor clear of them
+    EditorView.scrollMargins.of(() => (matchMedia('(pointer: coarse) and (max-width: 760px)').matches ? { top: 56, bottom: 72 } : null)),
     // each paragraph takes its own direction (Arabic lines run right to left), and the editor measures them that way
     EditorView.perLineTextDirection.of(true),
     lineDirections,

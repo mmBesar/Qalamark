@@ -19,12 +19,67 @@
   import { applyText } from '../lib/ytext.ts';
   import { confirmBox } from '../lib/dialog.svelte.ts';
   import HelpDialog from './HelpDialog.svelte';
+  import { immersive } from '../lib/vault.ts';
   import ShareDialog from './ShareDialog.svelte';
 
   let { note, onMenu }: { note: NoteMeta; onMenu: () => void } = $props();
   const t = store.t;
 
   let host: HTMLDivElement;
+
+  // ---- phones: the text gets the whole screen; the bars hide while reading and come back with a tap or a scroll up
+  const phone = matchMedia('(pointer: coarse) and (max-width: 760px)');
+  let mobile = $state(phone.matches);
+  let bars = $state(true);
+  let typing = $state(false);
+  $effect(() => {
+    const on = () => (mobile = phone.matches);
+    phone.addEventListener('change', on);
+    return () => phone.removeEventListener('change', on);
+  });
+  $effect(() => {
+    immersive(mobile && !bars && !typing);
+  });
+  $effect(() => {
+    if (!mobile || !editorReady) return;
+    const sc = host;
+    let last = sc.scrollTop;
+    let startY = 0;
+    let startT = 0;
+    let moved = false;
+    const onScroll = () => {
+      const y = sc.scrollTop;
+      const d = y - last;
+      if (y < 48) bars = true;
+      else if (d > 10) bars = false;
+      else if (d < -10) bars = true;
+      if (Math.abs(d) > 10) last = y;
+    };
+    const down = (e: TouchEvent) => { startY = e.touches[0].clientY; startT = Date.now(); moved = false; };
+    const move = (e: TouchEvent) => { if (Math.abs(e.touches[0].clientY - startY) > 8) moved = true; };
+    const up = () => { if (!moved && Date.now() - startT < 350 && !bars) bars = true; };
+    const focus = () => { typing = true; };
+    const blur = () => { typing = false; bars = true; };
+    sc.addEventListener('scroll', onScroll, { passive: true });
+    sc.addEventListener('touchstart', down, { passive: true });
+    sc.addEventListener('touchmove', move, { passive: true });
+    sc.addEventListener('touchend', up, { passive: true });
+    sc.addEventListener('focusin', focus);
+    sc.addEventListener('focusout', blur);
+    return () => {
+      sc.removeEventListener('scroll', onScroll);
+      sc.removeEventListener('touchstart', down);
+      sc.removeEventListener('touchmove', move);
+      sc.removeEventListener('touchend', up);
+      sc.removeEventListener('focusin', focus);
+      sc.removeEventListener('focusout', blur);
+      immersive(false);
+    };
+  });
+  const MODES: Array<ViewMode | 'board'> = ['live', 'read', 'source'];
+  function nextMode() {
+    setMode(MODES[(MODES.indexOf(mode) + 1) % MODES.length]);
+  }
   let status = $state<LinkStatus>('local');
   let words = $state(0);
   // The editor is re-created for each note (see App.svelte), so the first value is all we need.
@@ -333,7 +388,7 @@
   onkeydown={(e) => e.key === 'Escape' && (menu = false)}
 />
 
-<section class="editor-pane">
+<section class="editor-pane" class:mobile class:hide-bars={mobile && !bars && !typing} class:typing={mobile && typing}>
   <header class="topbar">
     <button class="icon menu-btn" aria-label={t('menu')} onclick={onMenu}><Icon name="menu" /></button>
     <input
@@ -344,6 +399,7 @@
       onblur={rename}
       onkeydown={(e) => e.key === 'Enter' && (e.currentTarget as HTMLInputElement).blur()}
     />
+    <button class="ghost small modebtn" onclick={nextMode} aria-label={t('viewMode')}>{mode === 'read' ? t('modeRead') : mode === 'source' ? t('modeSource') : t('modeLive')}</button>
     <span class="status {status}" title={statusText}><i></i><span class="label">{statusText}</span></span>
     <div class="seg" role="group" aria-label={t('viewMode')}>
       {#if boardNote}<button class:on={mode === 'board'} onclick={() => setMode('board')}>{t('modeBoard')}</button>{/if}
@@ -411,6 +467,13 @@
   <div class="editor-row" hidden={mode === 'board'}>
     <div class="cm-host" bind:this={host} onmousedown={focusEnd}></div>
     {#if showToc && editorReady && mode !== 'board'}<Toc view={editor.view} ytext={liveText!} title={note.title} {readOnly} tick={tocTick} onClose={() => setToc(false)} />{/if}
+  </div>
+
+  <div class="float-bar" role="toolbar" aria-label={t('menu')}>
+    <button class="icon" aria-label={t('menu')} onclick={onMenu}><Icon name="menu" size={22} /></button>
+    <button class="icon" aria-label={t('search')} onclick={() => (store.palette = true)}><Icon name="search" size={22} /></button>
+    <button class="icon" aria-label={t('newNote')} onclick={() => store.createNote()}><Icon name="plus" size={22} /></button>
+    <button class="icon" aria-label={t('toc')} aria-pressed={showToc} onclick={() => setToc(!showToc)}><Icon name="outline" size={22} /></button>
   </div>
 
   <footer class="statusbar">

@@ -26,7 +26,7 @@
   --c-type: #a0541a;
   --c-property: #0b6e85;
   --radius: 10px;
-  --ui: Roboto, 'Noto Naskh Arabic', 'Noto Sans Arabic', system-ui, sans-serif;
+  --ui: 'Qalamark Roboto', Roboto, 'Qalamark Naskh UI', 'Qalamark Sans Arabic', system-ui, sans-serif;
   --mono: ui-monospace, 'JetBrains Mono', 'Cascadia Code', Consolas, monospace;
   color-scheme: light;
 }

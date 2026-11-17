@@ -16,7 +16,7 @@ use rustls::crypto::{ring as provider, verify_tls12_signature, verify_tls13_sign
 use rustls::pki_types::{CertificateDer, ServerName, UnixTime};
 use rustls::{ClientConfig, Error as TlsError, SignatureScheme};
 use sha2::{Digest, Sha256};
-use tokio::io::copy_bidirectional;
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::time::timeout;
 use tokio_rustls::TlsConnector;
@@ -112,6 +112,54 @@ fn running() -> &'static Mutex<HashMap<String, u16>> {
 }
 
 /// Try to reach the server the way the bridge would, and say what went wrong in plain words.
+/// Pass bytes from the web view to the server, giving requests the server's own `Host` (a reverse proxy in front
+/// of the server picks the site by that name), and bytes back unchanged.
+async fn pump<A, B>(inbound: A, out: B, from: Vec<u8>, to: Vec<u8>)
+where
+    A: AsyncRead + AsyncWrite + Unpin,
+    B: AsyncRead + AsyncWrite + Unpin,
+{
+    let (mut ir, mut iw) = tokio::io::split(inbound);
+    let (mut or, mut ow) = tokio::io::split(out);
+    let up = async {
+        let mut buf = vec![0u8; 16 * 1024];
+        loop {
+            let n = match ir.read(&mut buf).await {
+                Ok(0) | Err(_) => break,
+                Ok(n) => n,
+            };
+            let chunk = rewrite_host(&buf[..n], &from, &to);
+            if ow.write_all(&chunk).await.is_err() {
+                break;
+            }
+        }
+        let _ = ow.shutdown().await;
+    };
+    let down = async {
+        let _ = tokio::io::copy(&mut or, &mut iw).await;
+        let _ = iw.shutdown().await;
+    };
+    tokio::join!(up, down);
+}
+
+fn rewrite_host(data: &[u8], from: &[u8], to: &[u8]) -> Vec<u8> {
+    if from.is_empty() {
+        return data.to_vec();
+    }
+    let mut out = Vec::with_capacity(data.len());
+    let mut i = 0;
+    while i < data.len() {
+        if data[i..].starts_with(from) {
+            out.extend_from_slice(to);
+            i += from.len();
+        } else {
+            out.push(data[i]);
+            i += 1;
+        }
+    }
+    out
+}
+
 pub async fn check(host: &str, port: u16, mode: &Mode) -> Result<(), String> {
     let tcp = timeout(WAIT, TcpStream::connect((host, port)))
         .await
@@ -142,25 +190,27 @@ pub async fn start(host: String, port: u16, mode: Mode) -> Result<u16, String> {
         Mode::Roots => Some(roots_connector()),
         Mode::Pin(p) => Some(connector(p).0),
     };
+    let tls_on = tls.is_some();
     let name = if tls.is_some() { Some(server_name(&host)?) } else { None };
     running().lock().unwrap().insert(key, local);
     tokio::spawn(async move {
         loop {
-            let Ok((mut inbound, _)) = listener.accept().await else { continue };
+            let Ok((inbound, _)) = listener.accept().await else { continue };
             let tls = tls.clone();
             let name = name.clone();
             let host = host.clone();
+            let from = format!("Host: 127.0.0.1:{local}").into_bytes();
+            let to = if (tls_on && port == 443) || (!tls_on && port == 80) { format!("Host: {host}") } else { format!("Host: {host}:{port}") }.into_bytes();
             tokio::spawn(async move {
                 let Ok(Ok(out)) = timeout(WAIT, TcpStream::connect((host.as_str(), port))).await else { return };
                 let _ = out.set_nodelay(true);
                 match (tls, name) {
                     (Some(tls), Some(name)) => {
-                        let Ok(Ok(mut out)) = timeout(WAIT, tls.connect(name, out)).await else { return };
-                        let _ = copy_bidirectional(&mut inbound, &mut out).await;
+                        let Ok(Ok(out)) = timeout(WAIT, tls.connect(name, out)).await else { return };
+                        pump(inbound, out, from, to).await;
                     }
                     _ => {
-                        let mut out = out;
-                        let _ = copy_bidirectional(&mut inbound, &mut out).await;
+                        pump(inbound, out, from, to).await;
                     }
                 }
             });
@@ -260,5 +310,12 @@ mod tests {
         let (port, fp) = tls_server().await;
         assert!(check("localhost", port, &Mode::Roots).await.is_err());
         assert!(check("localhost", port, &Mode::Pin(fp)).await.is_ok());
+    }
+
+    #[test]
+    fn the_host_header_becomes_the_servers_own() {
+        let req = b"GET /api HTTP/1.1\r\nHost: 127.0.0.1:5555\r\nAccept: */*\r\n\r\n";
+        let out = rewrite_host(req, b"Host: 127.0.0.1:5555", b"Host: notes.example.com");
+        assert_eq!(out, b"GET /api HTTP/1.1\r\nHost: notes.example.com\r\nAccept: */*\r\n\r\n".to_vec());
     }
 }

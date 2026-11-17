@@ -1,4 +1,11 @@
-@font-face { font-family: 'Noto Naskh Arabic UI'; font-weight: 400; font-display: swap; src: url('./NotoNaskhArabicUI-Regular.woff2') format('woff2'); }
-@font-face { font-family: 'Noto Naskh Arabic UI'; font-weight: 700; font-display: swap; src: url('./NotoNaskhArabicUI-Bold.woff2') format('woff2'); }
+/* Fonts that travel with the app, so Arabic and Latin text look the same on every system (the same files
+   CueMe uses; SIL Open Font License, see OFL-*.txt). Own family names: a font of the same name installed on
+   the system can never take their place. */
+@font-face { font-family: 'Qalamark Naskh UI'; font-weight: 400; font-style: normal; font-display: swap; src: url('./qm-naskh-ui-400.woff2') format('woff2'); }
+@font-face { font-family: 'Qalamark Naskh UI'; font-weight: 700; font-style: normal; font-display: swap; src: url('./qm-naskh-ui-700.woff2') format('woff2'); }
+@font-face { font-family: 'Qalamark Sans Arabic'; font-weight: 400; font-style: normal; font-display: swap; src: url('./qm-sans-arabic-400.woff2') format('woff2'); }
+@font-face { font-family: 'Qalamark Sans Arabic'; font-weight: 700; font-style: normal; font-display: swap; src: url('./qm-sans-arabic-700.woff2') format('woff2'); }
+@font-face { font-family: 'Qalamark Roboto'; font-weight: 400; font-style: normal; font-display: swap; src: url('./qm-roboto-400.woff2') format('woff2'); }
+@font-face { font-family: 'Qalamark Roboto'; font-weight: 700; font-style: normal; font-display: swap; src: url('./qm-roboto-700.woff2') format('woff2'); }
 @font-face { font-family: 'JetBrainsMono Nerd Font Mono'; font-weight: 400; font-display: swap; src: url('./JetBrainsMonoNerdFontMono-Regular.woff2') format('woff2'); }
 @font-face { font-family: 'JetBrainsMono Nerd Font Mono'; font-weight: 700; font-display: swap; src: url('./JetBrainsMonoNerdFontMono-Bold.woff2') format('woff2'); }

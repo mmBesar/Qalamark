@@ -120,8 +120,8 @@ class Store {
   applyLayout() {
     const css = document.documentElement.style;
     const q = (name: string) => `'${name.replace(/['"\\]/g, '')}'`;
-    const en = [this.s.fontEn.trim() ? q(this.s.fontEn.trim()) : '', 'Roboto'].filter(Boolean).join(', ');
-    const ar = [this.s.fontAr.trim() ? q(this.s.fontAr.trim()) : '', "'Noto Naskh Arabic'", "'Noto Sans Arabic'"].filter(Boolean).join(', ');
+    const en = [this.s.fontEn.trim() ? q(this.s.fontEn.trim()) : '', "'Qalamark Roboto'", 'Roboto'].filter(Boolean).join(', ');
+    const ar = [this.s.fontAr.trim() ? q(this.s.fontAr.trim()) : '', "'Qalamark Naskh UI'", "'Qalamark Sans Arabic'"].filter(Boolean).join(', ');
     const code = [
       this.s.fontCode.trim() ? q(this.s.fontCode.trim()) : '',
       "'JetBrainsMono Nerd Font Mono'",
@@ -196,6 +196,21 @@ class Store {
       this.signupOpen = st.signup;
     } catch {
       this.serverReachable = false;
+      // in the apps the web view may refuse an address it dislikes (http from an https page, a certificate...): go round it
+      if (inShell() && this.api.base && this.api.transport === this.api.base) {
+        try {
+          const via = await this.makeApi(this.api.base, this.api.token, true);
+          if (via.transport !== via.base) {
+            const st = await via.status();
+            this.api = via;
+            this.serverReachable = true;
+            this.setupNeeded = st.setup;
+            this.signupOpen = st.signup;
+          }
+        } catch {
+          /* still unreachable */
+        }
+      }
     }
   }
 
@@ -586,13 +601,18 @@ class Store {
 
   /** An Api for this server. In the apps every request goes through a small bridge on this device, so
    *  the system web view never has to judge the address or the certificate itself. */
-  private async makeApi(base: string, token: string): Promise<Api> {
+  private async makeApi(base: string, token: string, viaBridge = false): Promise<Api> {
     if (inShell() && base) {
-      const pin = base.startsWith('https://') && this.s.allowSelfSigned ? (this.s.trust?.[base] ?? '') : '';
-      try {
-        return new Api(base, token, await tls.bridge(base, pin));
-      } catch {
-        /* fall through: try the server directly */
+      const selfSigned = base.startsWith('https://') && this.s.allowSelfSigned;
+      // Straight to the server whenever that works (as it always did); through the bridge for a self-signed
+      // certificate, or when the web view cannot reach the server by itself.
+      if (selfSigned || viaBridge) {
+        const pin = selfSigned ? (this.s.trust?.[base] ?? '') : '';
+        try {
+          return new Api(base, token, await tls.bridge(base, pin));
+        } catch {
+          /* fall through: try the server directly */
+        }
       }
     }
     return new Api(base, token);

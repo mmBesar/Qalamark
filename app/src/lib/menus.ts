@@ -26,6 +26,11 @@ export function editorMenu(e: MouseEvent, t: T): MenuItem[] {
   const inside = e.clientX && e.clientY ? view.posAtCoords({ x: e.clientX, y: e.clientY }) : null;
   // Like every editor: right-clicking outside the selection moves the cursor there first.
   if (inside != null && (inside < sel.from || inside > sel.to)) view.dispatch({ selection: { anchor: inside } });
+  // A long press with a finger selects the word under it (handles then stretch the selection).
+  if (inside != null && view.state.selection.main.empty && matchMedia('(pointer: coarse)').matches) {
+    const w = view.state.wordAt(inside);
+    if (w) view.dispatch({ selection: { anchor: w.from, head: w.to } });
+  }
   const s = view.state.selection.main;
   const has = !s.empty;
   const ro = view.state.readOnly;
@@ -34,6 +39,7 @@ export function editorMenu(e: MouseEvent, t: T): MenuItem[] {
     { label: t('cut'), icon: 'cut', hint: 'Ctrl+X', disabled: !has || ro, run: async () => { await navigator.clipboard.writeText(text()); view.dispatch({ changes: { from: s.from, to: s.to, insert: '' } }); view.focus(); } },
     { label: t('copy') === 'Make a copy' ? 'Copy' : t('copy'), icon: 'copy', hint: 'Ctrl+C', disabled: !has, run: async () => { await navigator.clipboard.writeText(text()); view.focus(); } },
     { label: t('paste'), icon: 'paste', hint: 'Ctrl+V', disabled: ro, run: async () => { const p = await clipboardText(); if (p) view.dispatch({ ...view.state.replaceSelection(p), userEvent: 'input.paste', scrollIntoView: true }); view.focus(); } },
+    { label: t('selectLine'), icon: 'select-all', run: () => { const l = view.state.doc.lineAt(s.head); view.dispatch({ selection: { anchor: l.from, head: l.to } }); view.focus(); } },
     { label: t('selectAll'), icon: 'select-all', hint: 'Ctrl+A', run: () => { view.dispatch({ selection: { anchor: 0, head: view.state.doc.length } }); view.focus(); } },
     { sep: true },
     ...(ro ? [] : [

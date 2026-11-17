@@ -760,3 +760,50 @@ test('round 11: Arabic and mixed text select, double-click and triple-click prop
   }
   assert.deepEqual(errors, []);
 });
+
+test('round 12: on a touch screen a long press selects a word and the handles stretch it', async () => {
+  const errors = [];
+  const ctx = await browser.newContext({ viewport: { width: 420, height: 820 }, hasTouch: true, isMobile: true, permissions: ['clipboard-read', 'clipboard-write'] });
+  const page = await ctx.newPage();
+  page.on('pageerror', (e) => errors.push(e.message));
+  await signIn(page, 'alice', 'alice-password');
+  await page.waitForTimeout(500);
+  await page.evaluate(async () => {
+    const mk = (type, x) => {
+      const t = new Touch({ identifier: 1, target: document.body, clientX: x, clientY: 300 });
+      document.dispatchEvent(new TouchEvent(type, { touches: type === 'touchend' ? [] : [t], changedTouches: [t], bubbles: true }));
+      window.dispatchEvent(new TouchEvent(type, { touches: type === 'touchend' ? [] : [t], changedTouches: [t] }));
+    };
+    mk('touchstart', 8);
+    for (let i = 1; i <= 8; i++) { mk('touchmove', 8 + (252 * i) / 8); await new Promise((r) => setTimeout(r, 16)); }
+    mk('touchend', 260);
+  });
+  await page.waitForSelector('.shell.drawer-open');
+  await page.click('aside .actions button:first-child');
+  await page.waitForSelector('.cm-content');
+  await page.waitForTimeout(400);
+  await page.click('.cm-content');
+  await page.keyboard.insertText('alpha bravo charlie delta echo foxtrot golf hotel india');
+  const view = (fn, arg) => page.evaluate(`(${fn})(document.querySelector('.cm-editor').cmEditorView, ${JSON.stringify(arg ?? null)})`);
+  const sel = () => view((v) => { const m = v.state.selection.main; return v.state.sliceDoc(m.from, m.to); });
+  const at = await view((v) => { const c = v.coordsAtPos(v.state.doc.toString().indexOf('charlie') + 3); return { x: c.left, y: c.top + 8 }; });
+  await page.evaluate(({ x, y }) => {
+    const c = document.querySelector('.cm-content');
+    c.dispatchEvent(new PointerEvent('pointerdown', { pointerType: 'touch', bubbles: true, clientX: x, clientY: y }));
+    c.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: x, clientY: y }));
+  }, at);
+  assert.equal(await sel(), 'charlie', 'long press selects the word');
+  await page.waitForSelector('.ctx-item:has-text("Copy")');
+  assert.ok(await page.locator('.ctx-item:has-text("Select line")').count(), 'menu offers select line');
+  await page.keyboard.press('Escape');
+  await page.waitForSelector('.qm-handle', { state: 'visible' });
+  const hb = await page.locator('.qm-handle').nth(1).boundingBox();
+  await page.mouse.move(hb.x + hb.width / 2, hb.y + hb.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(hb.x + 110, hb.y + 4, { steps: 8 });
+  await page.mouse.up();
+  const s = await sel();
+  assert.ok(s.startsWith('charlie') && s.length > 'charlie'.length + 6, 'dragging the end handle stretches the selection: ' + s);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});

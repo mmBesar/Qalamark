@@ -1,6 +1,8 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
 <!-- Copyright (C) 2026 mmBesar -->
 <script lang="ts">
+  import Icon from './Icon.svelte';
+  import FolderInfo from './FolderInfo.svelte';
   import NetOptions from './NetOptions.svelte';
   import { inShell } from '../lib/vault.ts';
   import { store } from '../lib/store.svelte.ts';
@@ -9,6 +11,7 @@
   let server = $state(store.s.serverUrl);
   let username = $state('');
   let password = $state('');
+  let show = $state(false);
   let create = $state(store.setupNeeded);
   let error = $state('');
   let busy = $state(false);
@@ -46,6 +49,7 @@
         <small class="muted">{t('serverHint')}</small>
       </label>
       {#if inShell()}<NetOptions />{/if}
+      {#if inShell()}<FolderInfo />{/if}
     {/if}
     <label>
       {t('username')}
@@ -53,7 +57,10 @@
     </label>
     <label>
       {t('password')}
-      <input type="password" bind:value={password} autocomplete={create ? 'new-password' : 'current-password'} required minlength="8" dir="ltr" />
+      <span class="pw">
+        <input type={show ? 'text' : 'password'} bind:value={password} autocomplete={create ? 'new-password' : 'current-password'} required minlength="8" dir="ltr" />
+        <button type="button" class="eye" aria-label={show ? t('hidePassword') : t('showPassword')} title={show ? t('hidePassword') : t('showPassword')} onclick={() => (show = !show)}><Icon name={show ? 'eye-off' : 'eye'} size={18} /></button>
+      </span>
     </label>
 
     {#if error}<p class="error" role="alert">{error}</p>{/if}

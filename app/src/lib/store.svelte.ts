@@ -14,7 +14,7 @@ import { Api, ApiError, cleanBase, type NoteMeta } from './server.ts';
 import { type Accent, applyTheme, type ThemeId } from './theme.ts';
 import { inShell, notePath, splitPath, tls, vault } from './vault.ts';
 import { applyText } from './ytext.ts';
-import { confirmBox } from './dialog.svelte.ts';
+import { chooseBox, confirmBox } from './dialog.svelte.ts';
 import { deleteStored, readStoredText, syncNoteNow, writeStoredText } from './session.ts';
 
 export type Mode = 'boot' | 'login' | 'local' | 'server';
@@ -121,7 +121,7 @@ class Store {
     const css = document.documentElement.style;
     const q = (name: string) => `'${name.replace(/['"\\]/g, '')}'`;
     const en = [this.s.fontEn.trim() ? q(this.s.fontEn.trim()) : '', 'Roboto'].filter(Boolean).join(', ');
-    const ar = [this.s.fontAr.trim() ? q(this.s.fontAr.trim()) : '', "'Noto Naskh Arabic UI'", "'Noto Naskh Arabic'"].filter(Boolean).join(', ');
+    const ar = [this.s.fontAr.trim() ? q(this.s.fontAr.trim()) : '', "'Noto Naskh Arabic'", "'Noto Sans Arabic'"].filter(Boolean).join(', ');
     const code = [
       this.s.fontCode.trim() ? q(this.s.fontCode.trim()) : '',
       "'JetBrainsMono Nerd Font Mono'",
@@ -169,6 +169,13 @@ class Store {
 
   async boot() {
     this.applyLook();
+    // a server set up before the connection choices existed keeps working the way it did
+    if (!this.s.allowSelfSigned && !this.s.allowHttp) {
+      const u = cleanBase(this.s.serverUrl);
+      if (u.startsWith('http://')) this.s.allowHttp = true;
+      else if (u && this.s.trust?.[u]) this.s.allowSelfSigned = true;
+      this.save();
+    }
     this.api = await this.makeApi(cleanBase(this.s.serverUrl), this.s.token);
     await this.detectServer();
     if (this.s.token && this.s.username) {
@@ -213,9 +220,27 @@ class Store {
   private vaultBusy = false;
   private vaultBound = false;
 
+  /** Each account (and the "no account" mode) gets its own notes folder, so one person's files can never be
+   *  picked up as another's notes when two people use the same computer. The first account keeps the current folder. */
+  private async vaultForAccount() {
+    const acct = this.mode === 'server' ? `${this.api.base}|${this.s.username}` : 'local';
+    const map = read<Record<string, string>>('qm.vaultFor', {});
+    const info = await vault.info();
+    let want = map[acct];
+    if (!want) {
+      want = Object.keys(map).length ? `${info.default_path}-${acct.replace(/^https?:\/\//, '').replace(/[^\w.@-]+/g, '-').slice(0, 60)}` : info.path;
+      map[acct] = want;
+      write('qm.vaultFor', map);
+    }
+    if (want !== info.path) await vault.set(want);
+    this.vaultAccount = acct;
+  }
+  private vaultAccount = '';
+
   async vaultStart() {
     if (!inShell()) return;
     try {
+      await this.vaultForAccount();
       const i = await vault.info();
       this.vaultPath = i.path;
       this.vaultDefault = i.default_path;
@@ -288,9 +313,24 @@ class Store {
           changed = true;
         } else if (!n.vp) {
           // a file with this name is already there: never overwrite either side
-          const text = await readStoredText(this.storeName(n.id));
+          let text = await readStoredText(this.storeName(n.id));
+          if (this.mode === 'server' && !text) {
+            // this note's text has not been fetched yet: get it first, so a file you already have is recognised and not copied
+            if (!this.serverReachable) {
+              keep.push(n);
+              continue;
+            }
+            try {
+              await syncNoteNow(this.storeName(n.id), this.api, n.id, () => {});
+              text = await readStoredText(this.storeName(n.id));
+            } catch {
+              keep.push(n);
+              continue;
+            }
+          }
           const theirs = await vault.read(want);
-          if (theirs.text === text) n = { ...n, vp: want, vm: theirs.mtime_ms };
+          const same = (a: string, b: string) => a.replace(/\r\n/g, '\n').trimEnd() === b.replace(/\r\n/g, '\n').trimEnd();
+          if (same(theirs.text, text)) n = { ...n, vp: want, vm: theirs.mtime_ms };
           else {
             // a different file already has this name: keep both, never overwrite either side
             const title = this.uniqueLocalTitle(`${n.title} (${this.t('appCopy')})`, n.folder ?? '');
@@ -396,6 +436,7 @@ class Store {
     try {
       const now = await vault.set(path);
       this.vaultPath = now;
+      if (this.vaultAccount) write('qm.vaultFor', { ...read<Record<string, string>>('qm.vaultFor', {}), [this.vaultAccount]: now });
       this.notes = this.notes.map((n) => ({ ...n, vp: undefined, vm: undefined }));
       this.saveNotes();
       await this.vaultSync();
@@ -519,6 +560,8 @@ class Store {
     const back = async () => {
       if (this.mode !== 'server') return;
       const was = this.serverReachable;
+      // the local bridge (apps) may have gone away while the device slept: make a fresh one
+      if (!was && inShell()) this.api = await this.makeApi(cleanBase(this.s.serverUrl), this.s.token);
       await this.detectServer();
       if (this.serverReachable && (!was || this.pending)) {
         await this.flushOutbox();
@@ -527,8 +570,16 @@ class Store {
     };
     window.addEventListener('online', () => void back());
     window.addEventListener('offline', () => { if (this.mode === 'server') this.serverReachable = false; });
-    window.addEventListener('focus', () => { if (!this.serverReachable || this.pending) void back(); });
+    // coming back to the window, and every half minute while it is open: pick up other people's (and other devices') changes
+    const refresh = async () => {
+      if (this.mode !== 'server' || document.visibilityState === 'hidden') return;
+      if (!this.serverReachable || this.pending) await back();
+      else await this.loadServerNotes(true);
+    };
+    window.addEventListener('focus', () => void refresh());
+    document.addEventListener('visibilitychange', () => void refresh());
     setInterval(() => { if (this.mode === 'server' && (!this.serverReachable || this.pending)) void back(); }, 15000);
+    setInterval(() => void refresh(), 30000);
   }
 
   // ------------------------------------------------------------ accounts
@@ -545,6 +596,17 @@ class Store {
       }
     }
     return new Api(base, token);
+  }
+
+  /** Try the server again right now (the Reconnect button). */
+  async reconnect() {
+    if (this.mode !== 'server') return;
+    if (inShell()) this.api = await this.makeApi(cleanBase(this.s.serverUrl), this.s.token);
+    await this.detectServer();
+    if (this.serverReachable) {
+      await this.flushOutbox();
+      await this.loadServerNotes(true);
+    }
   }
 
   /** The apps' two switches for unusual servers. Turning one on turns the other off. */
@@ -608,21 +670,71 @@ class Store {
     this.save();
     this.api.token = ses.token;
     this.mode = 'server';
+    // notes made without an account: ask what to do with them (never decided silently)
+    if (this.hasLocalNotes()) {
+      const n = read<NoteMeta[]>(LOCAL_NOTES, []).length;
+      const pick = await chooseBox(this.t('localToAccount', { n, name: ses.username }), [this.t('localUpload'), this.t('localKeep')]);
+      if (pick === 0) {
+        try {
+          await this.uploadLocalNotes();
+          // the notes folder those notes live in now belongs to this account
+          const map = read<Record<string, string>>('qm.vaultFor', {});
+          const acct = `${this.api.base}|${ses.username}`;
+          if (map.local && !map[acct]) {
+            map[acct] = map.local;
+            delete map.local;
+            write('qm.vaultFor', map);
+          }
+        } catch (e) {
+          this.vaultError = e instanceof Error ? e.message : String(e);
+        }
+      }
+    }
     await this.loadServerNotes();
   }
 
+  /** Sign out. By default this account's notes stay on this device (they are yours, and still work offline,
+   *  and changes made offline are kept until you sign in again). Nothing is ever mixed between accounts:
+   *  each account has its own copies and its own notes folder. Removing the copies is a separate, explicit choice. */
   async signOut() {
+    const keepLabel = this.t('signOutKeep');
+    const wipeLabel = this.t('signOutWipe');
+    const pick = await chooseBox(this.pending ? `${this.t('signOutAsk')}\n\n${this.t('signOutPending', { n: this.pending })}` : this.t('signOutAsk'), [keepLabel, wipeLabel]);
+    if (pick === null) return;
+    const wipe = pick === 1;
+    if (wipe && this.pending && !(await confirmBox(this.t('signOutLose', { n: this.pending })))) return;
     try {
       await this.api.logout();
     } catch {
       /* the server may be away; we still sign out here */
     }
+    const acct = `${this.api.base}|${this.s.username}`;
+    if (wipe) {
+      for (const n of this.notes) {
+        try {
+          indexedDB.deleteDatabase(this.storeName(n.id));
+        } catch {
+          /* best effort */
+        }
+      }
+      for (const k of [`qm.cache.${acct}`, `qm.cache.${acct}.f`, `qm.fetched.${acct}`, `qm.outbox.${acct}`]) {
+        try {
+          localStorage.removeItem(k);
+        } catch {
+          /* best effort */
+        }
+      }
+    }
+    this.tabs = [];
+    this.saveTabs();
+    this.pending = 0;
     this.s.token = '';
     this.s.username = '';
     this.s.admin = false;
     this.api.token = '';
     this.currentId = null;
     this.notes = [];
+    this.folders = [];
     this.save();
     await this.detectServer();
     if (this.serverReachable) this.mode = 'login';

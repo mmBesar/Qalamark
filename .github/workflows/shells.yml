@@ -91,6 +91,8 @@ jobs:
           else
             sed -i 's|<application|<application android:usesCleartextTraffic="true"|' "$M"
           fi
+          # the keyboard resizes the page instead of covering it
+          if grep -q windowSoftInputMode "$M"; then sed -i -E 's|android:windowSoftInputMode="[^"]*"|android:windowSoftInputMode="adjustResize"|' "$M"; else sed -i -E '0,/<activity/ s|<activity|<activity android:windowSoftInputMode="adjustResize"|' "$M"; fi
           # network access (a normal permission: Android never asks the user for it)
           grep -q 'android.permission.INTERNET' "$M" || sed -i 's|<application|<uses-permission android:name="android.permission.INTERNET" />\n    <application|' "$M"
           python3 -c "import xml.dom.minidom,sys; xml.dom.minidom.parse(sys.argv[1])" "$M"
@@ -110,7 +112,7 @@ jobs:
               super.onCreate(savedInstanceState)
               val root = findViewById<View>(android.R.id.content)
               ViewCompat.setOnApplyWindowInsetsListener(root) { v, insets ->
-                val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout())
+                val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout() or WindowInsetsCompat.Type.ime())
                 v.setPadding(bars.left, bars.top, bars.right, bars.bottom)
                 WindowInsetsCompat.CONSUMED
               }

@@ -12,6 +12,11 @@
       if (dlg && !dlg.open) dlg.showModal();
     } else if (dlg?.open) dlg.close();
   });
+  function pick(i: number) {
+    const p = dialogs.current;
+    dialogs.current = null;
+    p?.resolve(String(i));
+  }
   function done(ok: boolean) {
     const p = dialogs.current;
     dialogs.current = null;
@@ -27,10 +32,19 @@
         <!-- svelte-ignore a11y_autofocus -->
         <input autofocus type={dialogs.current.secret ? 'password' : 'text'} bind:value />
       {/if}
-      <div class="btns">
-        <button type="button" class="ghost" onclick={() => done(false)}>{t('cancel')}</button>
-        <button class="primary" type="submit">OK</button>
-      </div>
+      {#if dialogs.current.choices}
+        <div class="choices">
+          {#each dialogs.current.choices as c, i}
+            <button type="button" class:primary={i === 0} onclick={() => pick(i)}>{c}</button>
+          {/each}
+          <button type="button" class="ghost" onclick={() => done(false)}>{t('cancel')}</button>
+        </div>
+      {:else}
+        <div class="btns">
+          <button type="button" class="ghost" onclick={() => done(false)}>{t('cancel')}</button>
+          <button class="primary" type="submit">OK</button>
+        </div>
+      {/if}
     </form>
   {/if}
 </dialog>
@@ -39,5 +53,7 @@
   .askdialog { padding: 1.2rem; min-width: min(22rem, 90vw); background: var(--surface); color: var(--ink); }
   form { display: grid; gap: 0.9rem; }
   p { margin: 0; }
+  .choices { display: grid; gap: 0.45rem; }
+  .choices button { text-align: start; padding: 0.6rem 0.8rem; }
   .btns { display: flex; gap: 0.5rem; justify-content: flex-end; }
 </style>

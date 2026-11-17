@@ -26,7 +26,7 @@
   --c-type: #a0541a;
   --c-property: #0b6e85;
   --radius: 10px;
-  --ui: system-ui, -apple-system, 'Segoe UI', 'Noto Sans Arabic', 'Noto Sans', Tahoma, sans-serif;
+  --ui: Roboto, 'Noto Naskh Arabic', 'Noto Sans Arabic', system-ui, sans-serif;
   --mono: ui-monospace, 'JetBrains Mono', 'Cascadia Code', Consolas, monospace;
   color-scheme: light;
 }
@@ -1754,3 +1754,16 @@ aside .results .snip { color: var(--muted); font-size: 0.78rem; white-space: nor
 .base-cell { width: 100%; min-width: 6ch; border: 0; background: transparent; padding: 0.45rem 0.8rem; font: inherit; color: var(--ink); border-radius: 0; }
 .base-cell:focus { background: var(--surface); outline: 2px solid var(--accent); outline-offset: -2px; }
 .base-none { color: var(--muted); padding: 0.6rem 0.2rem; margin: 0; }
+
+/* password field with a show/hide button */
+.pw { position: relative; display: block; }
+.pw input { width: 100%; padding-inline-end: 2.8rem; }
+.pw .eye { position: absolute; inset-block: 0; inset-inline-end: 0.35rem; margin: auto 0; width: 2.2rem; height: 2.2rem; border: 0; background: none; color: var(--muted); border-radius: 8px; display: grid; place-items: center; padding: 0; }
+.pw .eye:hover { color: var(--ink); background: color-mix(in srgb, var(--ink) 8%, transparent); }
+/* the on-screen keyboard shrinks the page (see MainActivity); the login card scrolls instead of being covered */
+.login { max-height: 100dvh; overflow-y: auto; }
+
+/* selection handles for touch screens */
+.qm-handle { position: absolute; left: -10px; top: 0; z-index: 6; width: 20px; height: 20px; touch-action: none; }
+.qm-handle::before { content: ''; position: absolute; inset: 0; background: var(--accent); border-radius: 0 50% 50% 50%; transform: rotate(45deg) translate(2px, 2px); transform-origin: 50% 50%; box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3); }
+.qm-handle::after { content: ''; position: absolute; inset: -14px; } /* a bigger area to grab */

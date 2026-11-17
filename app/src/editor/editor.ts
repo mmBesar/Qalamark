@@ -164,6 +164,88 @@ const lineDirections = ViewPlugin.fromClass(
   { decorations: (v) => v.decorations },
 );
 
+/** On a touch screen: two draggable handles at the ends of the selection (like every mobile editor), so a
+ *  selection can be started with a long press and then stretched to exactly the text wanted. */
+const touchHandles = ViewPlugin.fromClass(
+  class {
+    a = document.createElement('div');
+    b = document.createElement('div');
+    touch = false;
+    anchor = 0;
+    drag: HTMLElement | null = null;
+    off: () => void;
+    constructor(readonly view: EditorView) {
+      for (const h of [this.a, this.b]) {
+        h.className = 'qm-handle';
+        h.style.display = 'none';
+        h.addEventListener('pointerdown', (e) => this.down(e, h));
+        h.addEventListener('pointermove', (e) => this.move(e));
+        h.addEventListener('pointerup', (e) => this.up(e, h));
+        h.addEventListener('pointercancel', (e) => this.up(e, h));
+        view.scrollDOM.append(h);
+      }
+      const seen = (e: PointerEvent) => {
+        if (e.target instanceof Node && (this.a.contains(e.target) || this.b.contains(e.target))) return;
+        this.touch = e.pointerType === 'touch';
+        if (!this.touch) this.place();
+      };
+      view.dom.addEventListener('pointerdown', seen, true);
+      this.off = () => view.dom.removeEventListener('pointerdown', seen, true);
+    }
+    down(e: PointerEvent, h: HTMLElement) {
+      e.preventDefault();
+      e.stopPropagation();
+      const m = this.view.state.selection.main;
+      this.anchor = h === this.a ? m.to : m.from;
+      this.drag = h;
+      h.setPointerCapture(e.pointerId);
+    }
+    move(e: PointerEvent) {
+      if (!this.drag) return;
+      e.preventDefault();
+      // the finger covers what it touches: aim a little above it
+      const pos = this.view.posAtCoords({ x: e.clientX, y: e.clientY - 26 }, false);
+      this.view.dispatch({ selection: EditorSelection.range(this.anchor, pos), userEvent: 'select.pointer' });
+    }
+    up(e: PointerEvent, h: HTMLElement) {
+      if (!this.drag) return;
+      this.drag = null;
+      try {
+        h.releasePointerCapture(e.pointerId);
+      } catch {
+        /* already released */
+      }
+    }
+    update(u: ViewUpdate) {
+      if (u.selectionSet || u.docChanged || u.geometryChanged || u.viewportChanged || u.focusChanged) this.place();
+    }
+    place() {
+      const view = this.view;
+      view.requestMeasure({
+        read: () => {
+          const m = view.state.selection.main;
+          if (!this.touch || m.empty) return null;
+          const r = view.scrollDOM.getBoundingClientRect();
+          const f = view.coordsAtPos(m.from, 1);
+          const t = view.coordsAtPos(m.to, -1);
+          return f && t ? { fx: f.left - r.left, fy: f.bottom - r.top, tx: t.left - r.left, ty: t.bottom - r.top } : null;
+        },
+        write: (v) => {
+          for (const h of [this.a, this.b]) h.style.display = v ? '' : 'none';
+          if (!v) return;
+          this.a.style.transform = `translate(${v.fx}px, ${v.fy}px)`;
+          this.b.style.transform = `translate(${v.tx}px, ${v.ty}px)`;
+        },
+      });
+    }
+    destroy() {
+      this.off();
+      this.a.remove();
+      this.b.remove();
+    }
+  },
+);
+
 const edgeClicks = ViewPlugin.fromClass(
   class {
     off: () => void;
@@ -272,6 +354,7 @@ export function createEditor(o: EditorOptions): Editor {
     EditorState.allowMultipleSelections.of(true),
     drawSelection(),
     edgeClicks,
+    touchHandles,
     dropCursor(),
     indentOnInput(),
     bracketMatching(),

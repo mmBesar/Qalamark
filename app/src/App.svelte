@@ -24,6 +24,17 @@
 
   const t = store.t;
 
+  // on a phone the keyboard appears over the page: keep the field being typed in on screen
+  onMount(() => {
+    const onFocus = (e: FocusEvent) => {
+      const el = e.target as HTMLElement;
+      if (!matchMedia('(pointer: coarse)').matches || !/^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName)) return;
+      setTimeout(() => el.scrollIntoView({ block: 'center', behavior: 'smooth' }), 350);
+    };
+    document.addEventListener('focusin', onFocus);
+    return () => document.removeEventListener('focusin', onFocus);
+  });
+
   // every open note has a tab
   $effect(() => {
     const id = store.currentId;

@@ -6,6 +6,10 @@ import App from './App.svelte';
 import '@fontsource/roboto/400.css';
 import '@fontsource/roboto/400-italic.css';
 import '@fontsource/roboto/700.css';
+import '@fontsource/noto-naskh-arabic/arabic-400.css';
+import '@fontsource/noto-naskh-arabic/arabic-700.css';
+import '@fontsource/noto-sans-arabic/arabic-400.css';
+import '@fontsource/noto-sans-arabic/arabic-700.css';
 import './fonts/fonts.css';
 import './app.css';
 

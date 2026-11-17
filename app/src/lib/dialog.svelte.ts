@@ -7,6 +7,7 @@ export interface Pending {
   message: string;
   input: boolean;
   secret: boolean;
+  choices?: string[];
   resolve: (v: string | boolean | null) => void;
 }
 
@@ -20,4 +21,10 @@ export const confirmBox = (message: string) =>
 export const askBox = (message: string, secret = false) =>
   new Promise<string | null>((resolve) => {
     dialogs.current = { message, input: true, secret, resolve: (v) => resolve(typeof v === 'string' ? v : null) };
+  });
+
+/** Several buttons: resolves with the number of the one pressed, or null for Cancel. */
+export const chooseBox = (message: string, choices: string[]) =>
+  new Promise<number | null>((resolve) => {
+    dialogs.current = { message, input: false, secret: false, choices, resolve: (v) => resolve(typeof v === 'string' ? Number(v) : null) };
   });

@@ -1773,4 +1773,4 @@ aside .results .snip { color: var(--muted); font-size: 0.78rem; white-space: nor
 .adv summary { cursor: pointer; padding: 0.5rem 0; color: var(--muted); font-size: 0.9rem; overflow-wrap: anywhere; }
 .adv[open] summary { color: var(--ink); }
 .adv label { display: grid; gap: 0.3rem; margin: 0.3rem 0 0.6rem; }
-.diag { white-space: pre-wrap; font-size: 0.8rem; margin: 0.4rem 0 0; padding: 0.5rem; border-radius: 8px; background: var(--surface0, rgba(128,128,128,.15)); user-select: text; }
+.diag { white-space: pre-wrap; font-size: 0.8rem; margin: 0.4rem 0 0; padding: 0.5rem; border-radius: 8px; background: var(--surface0, rgba(128,128,128,.15)); user-select: text; -webkit-user-select: text; }

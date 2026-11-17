@@ -19,6 +19,29 @@ use sha2::{Digest, Sha256};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::time::timeout;
+
+/// Connect to host:port trying every address it resolves to (IPv4 first), a few seconds each,
+/// so one dead address (an unreachable IPv6 one, say) cannot swallow the whole wait.
+async fn dial(host: &str, port: u16) -> Result<TcpStream, String> {
+    let mut addrs: Vec<std::net::SocketAddr> = timeout(WAIT, tokio::net::lookup_host((host, port)))
+        .await
+        .map_err(|_| format!("looking up {host} timed out (the phone's DNS cannot answer)"))?
+        .map_err(|e| format!("cannot find {host}: {e}"))?
+        .collect();
+    if addrs.is_empty() {
+        return Err(format!("cannot find {host}: no address"));
+    }
+    addrs.sort_by_key(|a| a.is_ipv6());
+    let mut last = String::new();
+    for a in &addrs {
+        match timeout(std::time::Duration::from_secs(4), TcpStream::connect(a)).await {
+            Ok(Ok(t)) => return Ok(t),
+            Ok(Err(e)) => last = format!("{a}: {e}"),
+            Err(_) => last = format!("{a}: no answer"),
+        }
+    }
+    Err(format!("{host}:{port} unreachable ({last}); tried {} address(es)", addrs.len()))
+}
 use tokio_rustls::TlsConnector;
 
 const WAIT: Duration = Duration::from_secs(8);
@@ -100,7 +123,7 @@ fn server_name(host: &str) -> Result<ServerName<'static>, String> {
 /// Look at the certificate a server presents (no trust involved). Returns its SHA-256 fingerprint.
 pub async fn probe(host: &str, port: u16) -> Result<String, String> {
     let (tls, seen) = connector("");
-    let tcp = timeout(WAIT, TcpStream::connect((host, port))).await.map_err(|_| "timed out connecting".to_string())?.map_err(|e| e.to_string())?;
+    let tcp = dial(host, port).await?;
     let _ = timeout(WAIT, tls.connect(server_name(host)?, tcp)).await.map_err(|_| "timed out in the TLS handshake (is this an https:// port?)".to_string())?.map_err(|e| e.to_string())?;
     let fp = seen.seen.lock().unwrap().clone();
     fp.ok_or_else(|| "the server did not show a certificate".to_string())
@@ -161,10 +184,7 @@ fn rewrite_host(data: &[u8], from: &[u8], to: &[u8]) -> Vec<u8> {
 }
 
 pub async fn check(host: &str, port: u16, mode: &Mode) -> Result<(), String> {
-    let tcp = timeout(WAIT, TcpStream::connect((host, port)))
-        .await
-        .map_err(|_| format!("{host}:{port} did not answer (timed out) - wrong address, or the server is off or unreachable"))?
-        .map_err(|e| format!("could not connect to {host}:{port}: {e}"))?;
+    let tcp = dial(host, port).await?;
     let tls = match mode {
         Mode::Plain => return Ok(()),
         Mode::Roots => roots_connector(),
@@ -202,7 +222,7 @@ pub async fn start(host: String, port: u16, mode: Mode) -> Result<u16, String> {
             let from = format!("Host: 127.0.0.1:{local}").into_bytes();
             let to = if (tls_on && port == 443) || (!tls_on && port == 80) { format!("Host: {host}") } else { format!("Host: {host}:{port}") }.into_bytes();
             tokio::spawn(async move {
-                let Ok(Ok(out)) = timeout(WAIT, TcpStream::connect((host.as_str(), port))).await else { return };
+                let Ok(out) = dial(host.as_str(), port).await else { return };
                 let _ = out.set_nodelay(true);
                 match (tls, name) {
                     (Some(tls), Some(name)) => {

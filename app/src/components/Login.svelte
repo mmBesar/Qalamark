@@ -67,7 +67,10 @@
       {#if inShell()}<FolderInfo />{/if}
       {#if inShell()}
         <button type="button" class="ghost" disabled={testing} onclick={test}>{testing ? '…' : t('testConn')}</button>
-        {#if report}<pre class="diag" dir="ltr">{report}</pre>{/if}
+        {#if report}
+          <pre class="diag" dir="ltr">{report}</pre>
+          <button type="button" class="ghost" onclick={() => void navigator.clipboard?.writeText(report)}>{t('copy')}</button>
+        {/if}
       {/if}
     </details>
     <label>

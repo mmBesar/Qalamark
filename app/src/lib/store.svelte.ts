@@ -1081,6 +1081,13 @@ class Store {
     write('qm.recent', this.recent);
   }
 
+  /** Notes pinned to the top of the side panel. */
+  pins = $state<string[]>(read<string[]>('qm.pins', []));
+  togglePin(id: string) {
+    this.pins = this.pins.includes(id) ? this.pins.filter((x) => x !== id) : [...this.pins, id];
+    write('qm.pins', this.pins);
+  }
+
   palette = $state(false);
 
   /** Keep a copy of a note in the Templates folder. */

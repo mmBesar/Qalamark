@@ -28,6 +28,7 @@
   });
   const titleHits = $derived(store.notes.filter((n) => n.title.toLowerCase().includes(query.trim().toLowerCase())).sort(byTitle));
   const textHits = $derived(hits.filter((h) => !titleHits.some((n) => n.id === h.id)));
+  const pinnedNotes = $derived(store.pins.map((id) => store.notes.find((n) => n.id === id)).filter((n): n is NoteMeta => !!n));
   const recentNotes = $derived(store.recent.map((id) => store.notes.find((n) => n.id === id)).filter((n): n is NoteMeta => !!n));
   let searchBox = $state<HTMLInputElement>();
   $effect(() => { if (view === 'search') searchBox?.focus(); });
@@ -200,6 +201,7 @@
     { label: t('openNote'), icon: 'note', run: () => pick(n.id) },
     { sep: true },
     ...(mine(n) ? [{ label: t('rename'), icon: 'edit', run: () => ask(t('rename'), n.title, (v) => store.renameNote(n.id, v)) }] : []),
+    { label: store.pins.includes(n.id) ? t('unpinNote') : t('pinNote'), icon: 'pin', run: () => store.togglePin(n.id) },
     { label: t('copy'), icon: 'copy', run: () => run(() => store.copyNote(n.id)) },
     ...(mine(n)
       ? [{ label: t('moveTo'), icon: 'folder-open', children: targets().map((f) => ({ label: f || t('topLevel'), icon: 'folder', disabled: f === (n.folder ?? ''), run: () => run(() => store.moveNote(n.id, f)) })) }]
@@ -332,6 +334,16 @@
       </form>
     {/if}
 
+    {#if pinnedNotes.length}
+      <div class="pinned" aria-label={t('pinned')}>
+        <h6><Icon name="pin" size={12} /> {t('pinned')}</h6>
+        {#each pinnedNotes as n (n.id)}
+          <button class="pinrow" class:active={n.id === store.currentId} onclick={() => pick(n.id)} oncontextmenu={(e) => onContext(e, { kind: 'note', note: n })}>
+            <Icon name="note" size={14} /> <span class="title">{n.title}</span>
+          </button>
+        {/each}
+      </div>
+    {/if}
     <ul
       class="tree"
       class:dropping={dropOn === ''}

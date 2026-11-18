@@ -1915,3 +1915,10 @@ aside footer .who .uname { overflow: hidden; text-overflow: ellipsis; white-spac
 .shell.zen main > .tabbar, .shell.zen .statusbar { display: none; }
 .shell.zen .topbar { opacity: 0; transition: opacity 0.25s; }
 .shell.zen .topbar:hover, .shell.zen .topbar:focus-within { opacity: 1; }
+
+aside .pinned { padding: 0.2rem 0.6rem 0.5rem; border-bottom: 1px solid color-mix(in srgb, var(--ink) 8%, transparent); margin-bottom: 0.3rem; }
+aside .pinned h6 { margin: 0.3rem 0.3rem 0.25rem; font-size: 0.72rem; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); display: flex; align-items: center; gap: 0.35rem; }
+aside .pinrow { display: flex; align-items: center; gap: 0.5rem; width: 100%; text-align: start; border: 0; background: none; color: var(--ink); padding: 0.35rem 0.5rem; border-radius: 8px; cursor: pointer; font: inherit; }
+aside .pinrow .title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+aside .pinrow:hover { background: color-mix(in srgb, var(--ink) 7%, transparent); }
+aside .pinrow.active { background: color-mix(in srgb, var(--accent) 16%, transparent); }

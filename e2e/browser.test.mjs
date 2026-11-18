@@ -930,3 +930,34 @@ test('round 16: focus mode shows only the page (Alt+Z), Escape brings everything
   assert.ok(await page.locator('aside').isVisible(), 'sidebar is back');
   assert.deepEqual(errors, []);
 });
+
+test('round 17: pinned notes sit on top; version history restores an older text', async () => {
+  const errors = [];
+  const page = await newPage(errors);
+  await signIn(page, 'alice', 'alice-password');
+  await page.waitForSelector('.shell');
+  await page.locator('aside .actions button:first-child').dispatchEvent('click');
+  await page.waitForSelector('.cm-content');
+  await page.click('.cm-content');
+  await page.keyboard.insertText('# Pin me\n\nfirst version text');
+  await page.waitForTimeout(2600); // the opening snapshot and the 400 ms save settle
+  // pin from the side panel
+  await page.locator('aside .tree .row:not(.folder)').first().click({ button: 'right' });
+  await page.locator('.ctxmenu button:has-text("Pin to top"), [role=menu] button:has-text("Pin to top")').first().click();
+  await page.waitForSelector('aside .pinned .pinrow');
+  assert.equal(await page.locator('aside .pinned .pinrow').count(), 1);
+  // a forced snapshot of the first text, then change the note
+  await page.evaluate(() => {
+    const id = Object.keys(localStorage).find((k) => k.startsWith('qm.hist.'));
+    const arr = JSON.parse(localStorage.getItem(id) || '[]');
+    arr.push({ t: Date.now() - 600000, text: '# Pin me\n\nOLD text from before' });
+    localStorage.setItem(id, JSON.stringify(arr));
+  });
+  await page.click('.menu-wrap.desk button, .topbar .menu-wrap button');
+  await page.locator('[role=menuitem]:has-text("Version history")').click();
+  await page.waitForSelector('dialog.history[open] .hist');
+  await page.locator('dialog.history [role=option]').first().click();
+  await page.locator('dialog.history button.primary').click();
+  await page.waitForFunction(() => document.querySelector('.cm-content')?.textContent.includes('OLD text'));
+  assert.deepEqual(errors, []);
+});

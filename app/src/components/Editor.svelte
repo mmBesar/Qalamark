@@ -9,6 +9,8 @@
   import type { TableLabels } from '../editor/tables.ts';
   import type { NoteMeta } from '../lib/server.ts';
   import { type LinkStatus, NoteSession } from '../lib/session.ts';
+  import HistoryDialog from './HistoryDialog.svelte';
+  import { snapshot } from '../lib/history.ts';
   import { store } from '../lib/store.svelte.ts';
   import Properties from './Properties.svelte';
   import Icon from './Icon.svelte';
@@ -127,6 +129,7 @@
   let title = $state(first.title);
   let sharing = $state(false);
   let help = $state(false);
+  let hist = $state(false);
   let links = $state<Array<{ id: string; title: string }>>([]);
   let showLinks = $state(false);
   let mode = $state<ViewMode | 'board'>((() => {
@@ -219,6 +222,7 @@
       words = (all.match(/[\p{L}\p{N}]+/gu) ?? []).length;
       store.setPreview(note.id, all.slice(0, 600));
       store.touch(note.id);
+      snapshot(note.id, all);
       if (store.vaultPath) void store.vaultPush(note.id, session.ytext.toString());
     }, 400);
   }
@@ -240,6 +244,7 @@
       if (now) boardSeen = true;
     };
     session.ytext.observe(watchBoard);
+    setTimeout(() => { try { snapshot(note.id, session.ytext.toString()); } catch { /* closed already */ } }, 2000);
     watchBoard();
     editor = createEditor({
       parent: host,
@@ -503,6 +508,7 @@
         {#if menu}
           <div class="menu" role="menu">
             <button role="menuitem" onclick={() => { menu = false; setToc(!showToc); }}>{t('toc')}</button>
+            <button role="menuitem" onclick={() => { menu = false; hist = true; }}>{t('history')}</button>
             <button role="menuitem" onclick={() => { menu = false; store.toggleZen(); }}>{t('zen')} · Alt+Z</button>
             <button role="menuitem" onclick={() => ((help = true), (menu = false))}>{t('help')} · ƒ</button>
             {#if !boardNote && !readOnly}<button role="menuitem" onclick={() => { menu = false; makeBoardNote(); }}>{t('boardUse')}</button>{/if}
@@ -604,6 +610,7 @@
       <button onclick={() => { loadLinks(); store.sheet = 'links'; }}><Icon name="link" size={20} /> {t('backlinks')}</button>
       {#if store.mode === 'server' && note.role === 'owner'}<button onclick={() => { store.sheet = null; sharing = true; }}><Icon name="share" size={20} /> {t('share')}</button>{/if}
       {#if !boardNote && !readOnly}<button onclick={() => { store.sheet = null; makeBoardNote(); }}><Icon name="board" size={20} /> {t('boardUse')}</button>{/if}
+      <button onclick={() => { store.sheet = null; hist = true; }}><Icon name="clock" size={20} /> {t('history')}</button>
       <button onclick={() => { store.sheet = null; help = true; }}><Icon name="fx" size={20} /> {t('help')}</button>
       <button onclick={() => { store.sheet = null; exportMd(); }}><Icon name="upload" size={20} /> {t('export')}</button>
       <button class="danger" onclick={() => { store.sheet = null; remove(); }}><Icon name="trash" size={20} /> {note.role === 'owner' || store.mode === 'local' ? t('delete') : t('leave')}</button>
@@ -621,6 +628,20 @@
       {/each}
     </div>
   </Sheet>
+{/if}
+
+{#if hist}
+  <HistoryDialog
+    id={note.id}
+    current={session.ytext.toString()}
+    onClose={() => (hist = false)}
+    onRestore={(text) => {
+      snapshot(note.id, session.ytext.toString(), true);
+      const yt = session.ytext;
+      yt.doc?.transact(() => { yt.delete(0, yt.length); yt.insert(0, text); });
+      changed();
+    }}
+  />
 {/if}
 
 {#if help}

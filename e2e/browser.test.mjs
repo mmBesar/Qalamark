@@ -961,3 +961,26 @@ test('round 17: pinned notes sit on top; version history restores an older text'
   await page.waitForFunction(() => document.querySelector('.cm-content')?.textContent.includes('OLD text'));
   assert.deepEqual(errors, []);
 });
+
+test('round 18: Arabic lines use the chosen font whole (letters, marks and spaces in one font)', async () => {
+  const errors = [];
+  const page = await newPage(errors);
+  await signIn(page, 'alice', 'alice-password');
+  await page.evaluate(() => { const s = JSON.parse(localStorage.getItem('qm.settings') || '{}'); s.fontAr = 'DejaVu Sans'; localStorage.setItem('qm.settings', JSON.stringify(s)); });
+  await page.reload();
+  await page.waitForSelector('.shell');
+  await page.locator('aside .actions button:first-child').dispatchEvent('click');
+  await page.waitForSelector('.cm-content');
+  await page.click('.cm-content');
+  await page.keyboard.insertText('سَيِّدُ الِاسْتِغْفَارِ\n\nEnglish line');
+  await page.waitForTimeout(800);
+  const r = await page.evaluate(async () => {
+    await document.fonts.ready;
+    const lines = [...document.querySelectorAll('.cm-line')];
+    return { ar: getComputedStyle(lines[0]).fontFamily, en: getComputedStyle(lines[lines.length - 1]).fontFamily, loaded: [...document.fonts].filter((f) => f.status === 'loaded').map((f) => f.family) };
+  });
+  assert.ok(r.ar.startsWith('"QM Arabic Line"') || r.ar.startsWith("'QM Arabic Line'"), 'Arabic line stack: ' + r.ar);
+  assert.ok(!r.en.includes('QM Arabic Line'), 'English line keeps its own stack: ' + r.en);
+  assert.ok(r.loaded.some((f) => f.includes('QM Arabic Line')), 'the whole-line face loaded: ' + r.loaded);
+  assert.deepEqual(errors, []);
+});

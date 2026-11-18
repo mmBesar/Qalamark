@@ -142,6 +142,7 @@ class Store {
       .filter(Boolean)
       .join(', ');
     css.setProperty('--ui', `${ar}, ${en}, system-ui, sans-serif`);
+    css.setProperty('--ui-rtl', `'QM Arabic Line', ${ar}, ${en}, system-ui, sans-serif`);
     css.setProperty('--mono', `${ar}, ${code}`);
     css.setProperty('--font-size', `${this.s.fontSize}px`);
     css.setProperty('--editor-w', this.s.editorWidth > 0 ? `${this.s.editorWidth}rem` : '100%');

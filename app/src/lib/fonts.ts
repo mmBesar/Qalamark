@@ -69,6 +69,7 @@ export async function removeUserFont(family: string): Promise<void> {
 }
 
 const ARABIC = 'U+0600-06FF, U+0750-077F, U+08A0-08FF, U+FB50-FDFF, U+FE70-FEFF, U+200C-200F, U+060C, U+061B';
+let arLine: FontFace | null = null;
 let arFace: FontFace | null = null;
 
 /** The Arabic font chosen in Settings, used for Arabic letters only (so the English font stays as it is).
@@ -78,14 +79,26 @@ export async function setArabicFont(name: string): Promise<void> {
     document.fonts.delete(arFace);
     arFace = null;
   }
+  if (arLine) {
+    document.fonts.delete(arLine);
+    arLine = null;
+  }
   const n = name.trim().replace(/["\\]/g, '');
   if (!n) return;
   try {
     const mine = await tx<UserFont | undefined>('readonly', (s) => s.get(n)).catch(() => undefined);
-    const face = new FontFace('QM Arabic', mine ? mine.data : `local("${n}")`, { unicodeRange: ARABIC, weight: '100 900' });
+    const src = () => (mine ? mine.data : `local("${n}")`);
+    const face = new FontFace('QM Arabic', src(), { unicodeRange: ARABIC, weight: '100 900' });
     await face.load();
     document.fonts.add(face);
     arFace = face;
+    // For whole Arabic lines the same font without a range: the spaces, marks and punctuation between the words
+    // then come from the same font as the letters, so nothing is split into separate runs (the browser built into
+    // the Linux app positions a word wrongly when its last letter's diacritic and the following space are shaped apart).
+    const whole = new FontFace('QM Arabic Line', src(), { weight: '100 900' });
+    await whole.load();
+    document.fonts.add(whole);
+    arLine = whole;
   } catch {
     /* not found: the bundled Arabic font stays */
   }

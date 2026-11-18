@@ -1922,3 +1922,6 @@ aside .pinrow { display: flex; align-items: center; gap: 0.5rem; width: 100%; te
 aside .pinrow .title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 aside .pinrow:hover { background: color-mix(in srgb, var(--ink) 7%, transparent); }
 aside .pinrow.active { background: color-mix(in srgb, var(--accent) 16%, transparent); }
+
+/* Arabic lines: one font for letters, marks, spaces and punctuation (see setArabicFont), and unhinted glyph placement */
+.cm-editor:not(.cm-source) .cm-line[dir='rtl'], .page-title[dir='rtl'] { font-family: var(--ui-rtl); text-rendering: geometricPrecision; font-kerning: auto; }

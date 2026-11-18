@@ -7,6 +7,7 @@
   import Select from './Select.svelte';
   import { askBox, confirmBox } from '../lib/dialog.svelte.ts';
   import { addUserFont, removeUserFont } from '../lib/fonts';
+  import FontPicker from './FontPicker.svelte';
   import { onMount } from 'svelte';
   import { store, type Theme } from '../lib/store.svelte.ts';
   import { ACCENTS, PALETTES, THEME_LIST, themeName } from '../lib/theme.ts';
@@ -125,26 +126,26 @@
       {t('editorWidth')}: {store.s.editorWidth > 0 ? store.s.editorWidth + ' rem' : t('widthFull')}
       <input type="range" min="30" max="100" step="2" value={store.s.editorWidth > 0 ? store.s.editorWidth : 100} oninput={(e) => store.setLayout({ editorWidth: Number(e.currentTarget.value) >= 100 ? 0 : Number(e.currentTarget.value) })} />
     </label>
-    <label>
-      {t('fontEn')}
-      <input list="fonts-en" value={store.s.fontEn} placeholder="Roboto · {t('fontDefault')}" dir="ltr" spellcheck="false" onchange={(e) => store.setLayout({ fontEn: e.currentTarget.value })} />
-    </label>
-    <label>
-      {t('fontAr')}
-      <input list="fonts-ar" value={store.s.fontAr} placeholder="Noto Naskh Arabic UI · {t('fontDefault')}" dir="ltr" spellcheck="false" onchange={(e) => store.setLayout({ fontAr: e.currentTarget.value })} />
-    </label>
-    <label>
-      {t('fontCode')}
-      <input list="fonts-code" value={store.s.fontCode} placeholder="JetBrainsMono Nerd Font Mono · {t('fontDefault')}" dir="ltr" spellcheck="false" onchange={(e) => store.setLayout({ fontCode: e.currentTarget.value })} />
-    </label>
+    <div class="field">
+      <span>{t('fontEn')}</span>
+      <FontPicker value={store.s.fontEn} suggestions={["Roboto","Inter","Georgia","system-ui"]} placeholder={"Roboto · " + t('fontDefault')} onChange={(v) => store.setLayout({ fontEn: v })} />
+    </div>
+    <div class="field">
+      <span>{t('fontAr')}</span>
+      <FontPicker value={store.s.fontAr} suggestions={["Noto Naskh Arabic UI","Noto Sans Arabic","Amiri","Cairo","Scheherazade New"]} placeholder={"Noto Naskh Arabic UI · " + t('fontDefault')} onChange={(v) => store.setLayout({ fontAr: v })} />
+    </div>
+    <div class="field">
+      <span>{t('fontCode')}</span>
+      <FontPicker value={store.s.fontCode} suggestions={["JetBrainsMono Nerd Font Mono","JetBrains Mono","Fira Code","Cascadia Code"]} placeholder={"JetBrainsMono Nerd Font Mono · " + t('fontDefault')} onChange={(v) => store.setLayout({ fontCode: v })} />
+    </div>
     <label>
       {t('sourceSize')}: {store.s.sourceSize}px
       <input type="range" min="11" max="26" step="1" value={store.s.sourceSize} oninput={(e) => store.setLayout({ sourceSize: Number(e.currentTarget.value) })} />
     </label>
-    <label>
-      {t('fontSource')}
-      <input list="fonts-code" value={store.s.fontSource} placeholder={t('fontDefault')} dir="ltr" spellcheck="false" onchange={(e) => store.setLayout({ fontSource: e.currentTarget.value })} />
-    </label>
+    <div class="field">
+      <span>{t('fontSource')}</span>
+      <FontPicker value={store.s.fontSource} suggestions={["JetBrainsMono Nerd Font Mono","JetBrains Mono","Fira Code","Cascadia Code"]} placeholder={t('fontDefault')} onChange={(v) => store.setLayout({ fontSource: v })} />
+    </div>
   </div>
   <label class="check"><input type="checkbox" checked={store.s.centerPage} onchange={(e) => store.setLayout({ centerPage: e.currentTarget.checked })} /> {t('centerPage')}</label>
   <label class="filebtn ghost">
@@ -159,9 +160,6 @@
     </div>
   {/if}
   <p class="muted tiny">{t('fontHint')}</p>
-  <datalist id="fonts-en">{#each store.userFonts as f}<option value={f}></option>{/each}<option value="Roboto"></option><option value="Inter"></option><option value="Georgia"></option><option value="system-ui"></option></datalist>
-  <datalist id="fonts-ar">{#each store.userFonts as f}<option value={f}></option>{/each}<option value="Noto Naskh Arabic UI"></option><option value="Noto Sans Arabic"></option><option value="Amiri"></option><option value="Cairo"></option></datalist>
-  <datalist id="fonts-code">{#each store.userFonts as f}<option value={f}></option>{/each}<option value="JetBrainsMono Nerd Font Mono"></option><option value="JetBrains Mono"></option><option value="Fira Code"></option><option value="Cascadia Code"></option></datalist>
 
   {#if store.vaultPath}
     <h3>{t('notesFolder')}</h3>

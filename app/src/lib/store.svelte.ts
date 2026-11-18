@@ -13,6 +13,7 @@ import { BUILT_IN, fill, TEMPLATES_FOLDER } from './templates.ts';
 import { Api, ApiError, cleanBase, type NoteMeta } from './server.ts';
 import { type Accent, applyTheme, type ThemeId } from './theme.ts';
 import { inShell, notePath, splitPath, tls, vault } from './vault.ts';
+import { setArabicFont } from './fonts.ts';
 import { applyText } from './ytext.ts';
 import { chooseBox, confirmBox } from './dialog.svelte.ts';
 import { deleteStored, readStoredText, syncNoteNow, writeStoredText } from './session.ts';
@@ -60,6 +61,8 @@ interface Settings {
   sourceSize: number; // px, source mode
   fontSource: string;
   centerPage: boolean;
+  /** Desktop: the sidebar can be hidden for a clean page. */
+  hideSide: boolean;
   /** Self-signed servers the user chose to trust (apps): address -> certificate fingerprint. */
   trust: Record<string, string>;
   /** Apps: accept a server's self-signed certificate (the first one seen is remembered). */
@@ -73,7 +76,7 @@ function defaultLang(): Lang {
 }
 
 class Store {
-  s = $state<Settings>({ lang: 'en', theme: 'auto', accent: 'default', serverUrl: '', token: '', username: '', admin: false, wantsLocal: false, welcomed: false, fontSize: 17, editorWidth: 50, fontEn: '', fontAr: '', fontCode: '', sideWidth: 304, sourceSize: 15, fontSource: '', centerPage: false, trust: {}, allowSelfSigned: false, allowHttp: false, ...read<Partial<Settings>>(SETTINGS, { lang: defaultLang() }) });
+  s = $state<Settings>({ lang: 'en', theme: 'auto', accent: 'default', serverUrl: '', token: '', username: '', admin: false, wantsLocal: false, welcomed: false, fontSize: 17, editorWidth: 50, fontEn: '', fontAr: '', fontCode: '', sideWidth: 304, sourceSize: 15, fontSource: '', centerPage: false, hideSide: false, trust: {}, allowSelfSigned: false, allowHttp: false, ...read<Partial<Settings>>(SETTINGS, { lang: defaultLang() }) });
   mode = $state<Mode>('boot');
   serverReachable = $state(false);
   setupNeeded = $state(false);
@@ -123,7 +126,10 @@ class Store {
     const css = document.documentElement.style;
     const q = (name: string) => `'${name.replace(/['"\\]/g, '')}'`;
     const en = [this.s.fontEn.trim() ? q(this.s.fontEn.trim()) : '', "'Qalamark Roboto'", 'Roboto'].filter(Boolean).join(', ');
-    const ar = [this.s.fontAr.trim() ? q(this.s.fontAr.trim()) : '', "'Qalamark Naskh UI'", "'Qalamark Sans Arabic'"].filter(Boolean).join(', ');
+    // Arabic letters: the chosen font (alias 'QM Arabic'), then the bundled ones. All of them only cover Arabic
+    // characters, so they can stand in front of the English font without changing it.
+    const ar = ["'QM Arabic'", "'Qalamark Naskh UI'", "'Qalamark Sans Arabic'"].join(', ');
+    void setArabicFont(this.s.fontAr);
     const code = [
       this.s.fontCode.trim() ? q(this.s.fontCode.trim()) : '',
       "'JetBrainsMono Nerd Font Mono'",
@@ -135,13 +141,13 @@ class Store {
     ]
       .filter(Boolean)
       .join(', ');
-    css.setProperty('--ui', `${en}, ${ar}, system-ui, sans-serif`);
-    css.setProperty('--mono', code);
+    css.setProperty('--ui', `${ar}, ${en}, system-ui, sans-serif`);
+    css.setProperty('--mono', `${code}, ${ar}`);
     css.setProperty('--font-size', `${this.s.fontSize}px`);
     css.setProperty('--editor-w', this.s.editorWidth > 0 ? `${this.s.editorWidth}rem` : '100%');
     css.setProperty('--side-w', `${this.s.sideWidth}px`);
     css.setProperty('--source-size', `${this.s.sourceSize}px`);
-    if (this.s.fontSource.trim()) css.setProperty('--source-font', `${q(this.s.fontSource.trim())}, ${code}`);
+    if (this.s.fontSource.trim()) css.setProperty('--source-font', `${q(this.s.fontSource.trim())}, ${code}, ${ar}`);
     else css.removeProperty('--source-font');
     document.documentElement.dataset.page = this.s.centerPage ? 'center' : 'side';
   }
@@ -996,6 +1002,26 @@ class Store {
   }
 
   /** Recently opened notes, newest first. */
+  /** Phones: which bottom sheet is open. */
+  sheet = $state<null | 'tabs' | 'toc' | 'more' | 'links'>(null);
+  /** The first lines of notes opened here, for the tab thumbnails. */
+  previews = $state<Record<string, string>>(read<Record<string, string>>('qm.previews', {}));
+  private previewTimer = 0;
+  setPreview(id: string, text: string) {
+    const clean = text.replace(/^---[\s\S]*?\n---\s*/, '').replace(/[#>*`_\[\]|-]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 140);
+    if (this.previews[id] === clean) return;
+    this.previews[id] = clean;
+    clearTimeout(this.previewTimer);
+    this.previewTimer = window.setTimeout(() => {
+      const keep = Object.fromEntries(Object.entries(this.previews).filter(([k]) => this.notes.some((n) => n.id === k)).slice(-60));
+      write('qm.previews', keep);
+    }, 1500);
+  }
+  toggleSide() {
+    this.s.hideSide = !this.s.hideSide;
+    this.save();
+  }
+
   /** Notes open in tabs, in order; the active one is `currentId`. */
   tabs = $state<string[]>(read<string[]>('qm.tabs', []));
   private lastTab: string | null = null;

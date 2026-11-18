@@ -164,19 +164,43 @@ const lineDirections = ViewPlugin.fromClass(
   { decorations: (v) => v.decorations },
 );
 
+/** Words for the little menu that opens from the selection handles (set by the page, so they follow the language). */
+let touchLabels = { cut: 'Cut', copy: 'Copy', paste: 'Paste', selectAll: 'Select all' };
+export function setTouchLabels(l: typeof touchLabels): void {
+  touchLabels = l;
+}
+async function clipText(): Promise<string> {
+  try {
+    return await navigator.clipboard.readText();
+  } catch {
+    return '';
+  }
+}
+
 /** On a touch screen: two draggable handles at the ends of the selection (like every mobile editor), so a
  *  selection can be started with a long press and then stretched to exactly the text wanted. */
 const touchHandles = ViewPlugin.fromClass(
   class {
     a = document.createElement('div');
     b = document.createElement('div');
+    c = document.createElement('div'); // the caret's own handle
+    menu = document.createElement('div');
+    menuOn = false;
+    caretOn = false;
+    caretTimer = 0;
+    moved = 0;
     touch = false;
     anchor = 0;
     drag: HTMLElement | null = null;
     off: () => void;
     constructor(readonly view: EditorView) {
-      for (const h of [this.a, this.b]) {
-        h.className = 'qm-handle';
+      this.menu.className = 'qm-touchmenu';
+      this.menu.style.display = 'none';
+      this.menu.addEventListener('pointerdown', (e) => e.preventDefault()); // keep the focus and the selection
+      view.scrollDOM.append(this.menu);
+      this.c.classList.add('qm-caret');
+      for (const h of [this.a, this.b, this.c]) {
+        h.classList.add('qm-handle');
         h.style.display = 'none';
         h.addEventListener('pointerdown', (e) => this.down(e, h));
         h.addEventListener('pointermove', (e) => this.move(e));
@@ -185,9 +209,15 @@ const touchHandles = ViewPlugin.fromClass(
         view.scrollDOM.append(h);
       }
       const seen = (e: PointerEvent) => {
-        if (e.target instanceof Node && (this.a.contains(e.target) || this.b.contains(e.target))) return;
+        if (e.target instanceof Node && (this.a.contains(e.target) || this.b.contains(e.target) || this.c.contains(e.target) || this.menu.contains(e.target))) return;
         this.touch = e.pointerType === 'touch';
+        this.menuOn = false;
+        // a tap on text shows the caret's handle for a few seconds: tap it for paste / select all
+        this.caretOn = this.touch && view.state.selection.main.empty;
+        clearTimeout(this.caretTimer);
+        if (this.caretOn) this.caretTimer = window.setTimeout(() => { this.caretOn = false; this.menuOn = false; this.place(); }, 6000);
         if (!this.touch) this.place();
+        else setTimeout(() => this.place(), 60);
       };
       view.dom.addEventListener('pointerdown', seen, true);
       this.off = () => view.dom.removeEventListener('pointerdown', seen, true);
@@ -198,18 +228,25 @@ const touchHandles = ViewPlugin.fromClass(
       const m = this.view.state.selection.main;
       this.anchor = h === this.a ? m.to : m.from;
       this.drag = h;
+      this.moved = 0;
+      this.menuOn = false;
+      this.place();
       h.setPointerCapture(e.pointerId);
     }
     move(e: PointerEvent) {
       if (!this.drag) return;
       e.preventDefault();
       // the finger covers what it touches: aim a little above it
+      this.moved++;
       const pos = this.view.posAtCoords({ x: e.clientX, y: e.clientY - 26 }, false);
-      this.view.dispatch({ selection: EditorSelection.range(this.anchor, pos), userEvent: 'select.pointer' });
+      this.view.dispatch({ selection: this.drag === this.c ? EditorSelection.cursor(pos) : EditorSelection.range(this.anchor, pos), userEvent: 'select.pointer' });
     }
     up(e: PointerEvent, h: HTMLElement) {
       if (!this.drag) return;
       this.drag = null;
+      // a tap on a handle (not a drag) opens or closes the menu; after a drag the menu comes back by itself
+      this.menuOn = this.moved < 3 ? !this.menuOn : true;
+      this.place();
       try {
         h.releasePointerCapture(e.pointerId);
       } catch {
@@ -217,24 +254,83 @@ const touchHandles = ViewPlugin.fromClass(
       }
     }
     update(u: ViewUpdate) {
+      if (u.docChanged) {
+        this.menuOn = false;
+        this.caretOn = false;
+      }
+      if (u.selectionSet && this.touch && !u.docChanged && !this.drag) {
+        const m = u.state.selection.main;
+        // a selection made by a long press opens the menu at once, like the system's own editors
+        if (!m.empty && u.transactions.some((t) => t.isUserEvent('select'))) this.menuOn = true;
+        else if (m.empty) this.menuOn = false;
+      }
       if (u.selectionSet || u.docChanged || u.geometryChanged || u.viewportChanged || u.focusChanged) this.place();
+    }
+    items(): Array<[string, () => void | Promise<void>]> {
+      const v = this.view;
+      const m = v.state.selection.main;
+      const ro = v.state.readOnly;
+      const text = () => v.state.sliceDoc(m.from, m.to);
+      const out: Array<[string, () => void | Promise<void>]> = [];
+      if (!m.empty && !ro) out.push([touchLabels.cut, async () => { await navigator.clipboard.writeText(text()); v.dispatch({ changes: { from: m.from, to: m.to, insert: '' } }); }]);
+      if (!m.empty) out.push([touchLabels.copy, async () => { await navigator.clipboard.writeText(text()); }]);
+      if (!ro) out.push([touchLabels.paste, async () => { const p = await clipText(); if (p) v.dispatch({ ...v.state.replaceSelection(p), userEvent: 'input.paste', scrollIntoView: true }); }]);
+      out.push([touchLabels.selectAll, () => { v.dispatch({ selection: { anchor: 0, head: v.state.doc.length } }); this.menuOn = true; }]);
+      return out;
+    }
+    drawMenu(x: number, y: number) {
+      const menu = this.menu;
+      menu.replaceChildren();
+      for (const [label, run] of this.items()) {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.textContent = label;
+        b.addEventListener('click', async () => {
+          this.menuOn = false;
+          await run();
+          this.view.focus();
+          this.place();
+        });
+        menu.append(b);
+      }
+      menu.style.display = 'flex';
+      const w = menu.offsetWidth || 220;
+      const box = this.view.scrollDOM.getBoundingClientRect().width;
+      menu.style.transform = `translate(${Math.max(6, Math.min(box - w - 6, x - w / 2))}px, ${y}px)`;
     }
     place() {
       const view = this.view;
       view.requestMeasure({
         read: () => {
           const m = view.state.selection.main;
-          if (!this.touch || m.empty) return null;
+          if (!this.touch) return null;
           const r = view.scrollDOM.getBoundingClientRect();
           const f = view.coordsAtPos(m.from, 1);
           const t = view.coordsAtPos(m.to, -1);
-          return f && t ? { fx: f.left - r.left, fy: f.bottom - r.top, tx: t.left - r.left, ty: t.bottom - r.top } : null;
+          if (!f || !t) return null;
+          return { empty: m.empty, fx: f.left - r.left, fy: f.bottom - r.top, ftop: f.top - r.top, tx: t.left - r.left, ty: t.bottom - r.top, focus: view.hasFocus };
         },
         write: (v) => {
-          for (const h of [this.a, this.b]) h.style.display = v ? '' : 'none';
-          if (!v) return;
-          this.a.style.transform = `translate(${v.fx}px, ${v.fy}px)`;
-          this.b.style.transform = `translate(${v.tx}px, ${v.ty}px)`;
+          const range = !!v && !v.empty;
+          const caret = !!v && v.empty && this.caretOn && v.focus;
+          this.a.style.display = this.b.style.display = range ? '' : 'none';
+          this.c.style.display = caret ? '' : 'none';
+          if (!v || (!range && !caret)) {
+            this.menu.style.display = 'none';
+            return;
+          }
+          if (range) {
+            this.a.style.transform = `translate(${v.fx}px, ${v.fy}px)`;
+            this.b.style.transform = `translate(${v.tx}px, ${v.ty}px)`;
+          } else {
+            this.c.style.transform = `translate(${v.fx}px, ${v.fy}px)`;
+          }
+          if (this.menuOn) {
+            // above the selection, or below it when there is no room at the top of the page
+            const top = v.ftop - 52;
+            const abs = this.view.scrollDOM.getBoundingClientRect().top + top;
+            this.drawMenu(range ? (v.fx + v.tx) / 2 : v.fx, abs > 64 ? top : v.ty + 34);
+          } else this.menu.style.display = 'none';
         },
       });
     }
@@ -242,6 +338,9 @@ const touchHandles = ViewPlugin.fromClass(
       this.off();
       this.a.remove();
       this.b.remove();
+      this.c.remove();
+      this.menu.remove();
+      clearTimeout(this.caretTimer);
     }
   },
 );

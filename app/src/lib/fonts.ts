@@ -67,3 +67,44 @@ export async function addUserFont(file: File): Promise<string> {
 export async function removeUserFont(family: string): Promise<void> {
   await tx('readwrite', (s) => s.delete(family));
 }
+
+const ARABIC = 'U+0600-06FF, U+0750-077F, U+08A0-08FF, U+FB50-FDFF, U+FE70-FEFF, U+200C-200F, U+060C, U+061B';
+let arFace: FontFace | null = null;
+
+/** The Arabic font chosen in Settings, used for Arabic letters only (so the English font stays as it is).
+ *  It is a font added by the user, or one installed on the computer. */
+export async function setArabicFont(name: string): Promise<void> {
+  if (arFace) {
+    document.fonts.delete(arFace);
+    arFace = null;
+  }
+  const n = name.trim().replace(/["\\]/g, '');
+  if (!n) return;
+  try {
+    const mine = await tx<UserFont | undefined>('readonly', (s) => s.get(n)).catch(() => undefined);
+    const face = new FontFace('QM Arabic', mine ? mine.data : `local("${n}")`, { unicodeRange: ARABIC, weight: '100 900' });
+    await face.load();
+    document.fonts.add(face);
+    arFace = face;
+  } catch {
+    /* not found: the bundled Arabic font stays */
+  }
+}
+
+/** Fonts installed on this computer (the desktop app asks the system; browsers that allow it answer too). */
+export async function listSystemFonts(): Promise<string[]> {
+  try {
+    const { invoke } = await import('@tauri-apps/api/core');
+    const l = await invoke<string[]>('system_fonts');
+    if (l.length) return l;
+  } catch {
+    /* not in the desktop app */
+  }
+  try {
+    const q = (window as unknown as { queryLocalFonts?: () => Promise<Array<{ family: string }>> }).queryLocalFonts;
+    if (q) return [...new Set((await q()).map((f) => f.family))].sort((a, b) => a.localeCompare(b));
+  } catch {
+    /* no permission */
+  }
+  return [];
+}

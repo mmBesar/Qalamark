@@ -13,6 +13,14 @@ export const immersive = (on: boolean): void => {
     /* not in the Android app */
   }
 };
+/** Android: colour the status and navigation bars like the page. `light` = dark icons for a light page. */
+export const androidBars = (color: string, light: boolean): void => {
+  try {
+    (window as unknown as { QalamarkAndroid?: { bars(c: string, l: boolean): void } }).QalamarkAndroid?.bars(color, light);
+  } catch {
+    /* not in the Android app */
+  }
+};
 export const onAndroid = (): boolean => typeof navigator !== 'undefined' && /android/i.test(navigator.userAgent);
 
 async function call<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {

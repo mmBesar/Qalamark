@@ -40,7 +40,7 @@
   // the section being read: the last heading at or above the top of the visible page
   const current = $derived.by(() => {
     tick;
-    const top = view.lineBlockAtHeight(view.scrollDOM.scrollTop + 30).from;
+    const top = view.lineBlockAtHeight((view.dom.closest('.page')?.getBoundingClientRect().top ?? 0) + 30 - view.documentTop).from;
     let at = -1;
     heads.forEach((h, i) => { if (h.pos <= top + 1) at = i; });
     return at;

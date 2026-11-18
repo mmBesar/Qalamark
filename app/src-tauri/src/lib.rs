@@ -167,6 +167,23 @@ fn mode_of(tls: bool, pin: &str) -> tlsbridge::Mode {
 }
 
 /// The SHA-256 fingerprint of the certificate a server shows (so it can be remembered).
+/// The font families installed on this computer, for the font pickers in Settings.
+#[tauri::command]
+fn system_fonts() -> Vec<String> {
+    let Ok(out) = std::process::Command::new("fc-list").args([":", "family"]).output() else {
+        return Vec::new();
+    };
+    let mut v: Vec<String> = String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .filter_map(|l| l.split(',').next())
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect();
+    v.sort_by_key(|s| s.to_lowercase());
+    v.dedup();
+    v
+}
+
 #[tauri::command]
 async fn tls_probe(url: String) -> Result<String, String> {
     let (h, p, tls) = host_port(&url)?;
@@ -196,7 +213,7 @@ async fn net_bridge(url: String, pin: String) -> Result<String, String> {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
-        .invoke_handler(tauri::generate_handler![vault_info, vault_set, vault_list, vault_read, vault_write, vault_trash, vault_rename, vault_mkdir, vault_reveal, tls_probe, net_check, net_bridge])
+        .invoke_handler(tauri::generate_handler![vault_info, vault_set, vault_list, vault_read, vault_write, vault_trash, vault_rename, vault_mkdir, vault_reveal, tls_probe, system_fonts, net_check, net_bridge])
         .run(tauri::generate_context!())
         .expect("error while running Qalamark");
 }

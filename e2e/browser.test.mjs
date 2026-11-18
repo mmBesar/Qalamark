@@ -36,7 +36,7 @@ after(async () => { await browser?.close(); proc?.kill(); });
 
 async function newPage(errors) {
   const page = await (await browser.newContext({ viewport: { width: 1100, height: 760 }, permissions: ['clipboard-read', 'clipboard-write'] })).newPage();
-  page.on('pageerror', (e) => errors.push(e.message));
+  page.on('pageerror', (e) => { errors.push(e.message); console.log('PAGEERR', e.stack); });
   page.on('console', (m) => m.type() === 'error' && !/404|Failed to load resource/.test(m.text()) && errors.push(m.text()));
   return page;
 }
@@ -61,7 +61,7 @@ test('write a note with a table, share it, edit it together', async () => {
   await alice.keyboard.insertText(
     '# Shopping\n\n- [ ] Tea\n\n| Item | Qty | Price | Total |\n| --- | --- | --- | --- |\n| Tea | 2 | 3.5 |  |\n| Sugar | 1 | 4 |  |\n| Sum |  |  |  |\n<!-- qalamark\nD = B * C\nD4 = SUM(D)\n-->\n\nنص عربي\n',
   );
-  await alice.click('.topbar .title');
+  await alice.click('.page-title');
   await alice.keyboard.press('Tab');
   await alice.waitForFunction(() => document.querySelector('.qt input[data-r="4"][data-c="3"]')?.value === '11', null, { timeout: 8000 });
 
@@ -74,7 +74,7 @@ test('write a note with a table, share it, edit it together', async () => {
   // The admin adds Bob (through the API), then shares the note with him.
   const { token } = await (await fetch(URL_ + 'api/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ username: 'alice', password: 'alice-password' }) })).json();
   await fetch(URL_ + 'api/users', { method: 'POST', headers: { 'content-type': 'application/json', authorization: 'Bearer ' + token }, body: JSON.stringify({ username: 'bob', password: 'bob-password-1' }) });
-  await alice.click('text=Share');
+  await alice.click('button.sharebtn');
   await alice.waitForSelector('dialog[open]');
   await alice.click('dialog .selbtn[dir=ltr]');
   await alice.click('.sel-pop li:has-text("bob")');
@@ -129,7 +129,7 @@ test('without a server the app still works on this device', async () => {
   await page.waitForSelector('.cm-content');
   await page.click('.cm-content');
   await page.keyboard.insertText('# Local note\n\n| a | b |\n| - | - |\n| 2 |  |\n<!-- qalamark\nB = A * 3\n-->\n');
-  await page.click('.topbar .title');
+  await page.click('.page-title');
   await page.keyboard.press('Tab');
   await page.waitForFunction(() => document.querySelector('.qt input[data-r="2"][data-c="1"]')?.value === '6', null, { timeout: 8000 });
   await sleep(500);
@@ -150,8 +150,8 @@ test('editing feels right: click anywhere, tables stay tables, links, callouts, 
 
   // A note to link to.
   await newNote();
-  await page.click('.topbar .title');
-  await page.fill('.topbar .title', 'Target');
+  await page.click('.page-title');
+  await page.fill('.page-title', 'Target');
   await page.keyboard.press('Enter');
 
   // Second note: click in the EMPTY area (not on a line) and type.
@@ -199,7 +199,7 @@ test('editing feels right: click anywhere, tables stay tables, links, callouts, 
   // Backlinks and following a link.
   await page.click('.cm-line >> nth=0', { modifiers: ['Control'], position: { x: 5, y: 5 } }).catch(() => {});
   await page.locator('.cm-wikilink').first().click({ modifiers: ['Control'] });
-  await page.waitForFunction(() => document.querySelector('.topbar .title')?.value === 'Target');
+  await page.waitForFunction(() => document.querySelector('.page-title')?.value === 'Target');
   await page.click('.links-wrap:last-child button');
   await page.waitForSelector('.links-wrap:last-child .menu button');
 
@@ -232,7 +232,7 @@ test('round 2: folders, templates, properties, MkDocs blocks, pictures, builder,
     await page.keyboard.press('Tab');
     await sleep(150);
   }
-  await page.click('.topbar .title');
+  await page.click('.page-title');
   await page.keyboard.press('Tab');
   try {
     await page.waitForFunction(() => document.querySelector('.qt input[data-r="2"][data-c="3"]')?.value === '7.5', null, { timeout: 8000 });
@@ -306,7 +306,7 @@ test('round 3: code languages, tabbed code, properties by mode, centred page', a
   await page.waitForSelector('.cm-content');
   await page.click('.cm-content');
   await page.keyboard.insertText('---\ntitle: Demo\n---\n# Hi\n\n```yml\nname: x\n```\n\n=== "Fedora"\n\n    ``` sh\n    sudo dnf install foo # c\n    ```\n\n=== "Arch"\n\n    ``` sh\n    sudo pacman -S foo\n    ```\n\nend\n');
-  await page.click('.topbar .title');
+  await page.click('.page-title');
   await page.waitForTimeout(800);
   // yaml and the code inside a tab are coloured
   const coloured = (sel) => page.locator(sel).evaluate((el) => el.querySelectorAll('span[class]').length);
@@ -346,8 +346,8 @@ test('round 4: a note becomes a Kanban board and stays plain Markdown', async ()
   await page.waitForSelector('.cm-content');
   await page.click('.cm-content');
   await page.keyboard.insertText('# Work\n\n## Todo\n- [ ] write docs\n- [ ] fix bug\n\n## Done\n- [x] ship\n');
-  await page.click('.topbar .title');
-  await page.click('.topbar .menu-wrap > button');
+  await page.click('.page-title');
+  await page.click('.topbar .menu-wrap.desk > button');
   await page.click('button[role=menuitem]:has-text("Kanban")');
   await page.waitForSelector('.board .bcol');
   assert.equal(await page.locator('.bcol:not(.newcol)').count(), 2);
@@ -380,7 +380,7 @@ test('round 5: quick switcher, text search, today note, outline', async () => {
   await page.waitForSelector('.cm-content');
   await page.click('.cm-content');
   await page.keyboard.insertText('# Big title\n\nsome words about Quokka habitats\n\n## Second part\n\nmore\n');
-  await page.click('.topbar .title');
+  await page.click('.page-title');
   await page.keyboard.press('Control+p');
   await page.waitForSelector('.pal');
   await page.keyboard.type('quokka');
@@ -396,7 +396,7 @@ test('round 5: quick switcher, text search, today note, outline', async () => {
   await page.click('aside .actions button[aria-label="Open today\'s note"]');
   const d = new Date();
   const today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-  await page.waitForFunction((x) => document.querySelector('.topbar .title')?.value === x, today);
+  await page.waitForFunction((x) => document.querySelector('.page-title')?.value === x, today);
   assert.deepEqual(errors, []);
 });
 
@@ -438,7 +438,7 @@ test('round 6: notes folder in the apps: files out, outside edits in, renames fo
   await page.keyboard.insertText('# Fresh\n\nwritten in the app');
   await page.waitForFunction(() => [...window.__fs].some(([p, f]) => /^Untitled.*\.md$/.test(p) && f.text.includes('written in the app')), null, { timeout: 5000 });
   // renaming in the app renames the file
-  await page.fill('.topbar .title', 'Journal');
+  await page.fill('.page-title', 'Journal');
   await page.keyboard.press('Enter');
   await page.waitForFunction(() => window.__fs.has('Journal.md') && ![...window.__fs.keys()].some((p) => /^Untitled/.test(p)), null, { timeout: 5000 });
   assert.match(await page.evaluate(() => window.__fs.get('Journal.md').text), /written in the app/);
@@ -447,7 +447,7 @@ test('round 6: notes folder in the apps: files out, outside edits in, renames fo
   await page.evaluate(() => window.dispatchEvent(new Event('focus')));
   await page.waitForFunction(() => /edited elsewhere/.test(document.querySelector('.cm-content')?.innerText ?? ''), null, { timeout: 5000 });
   // deleting in the app moves the file to the trash
-  await page.click('.topbar .menu-wrap > button');
+  await page.click('.topbar .menu-wrap.desk > button');
   page.once('dialog', (d) => d.accept());
   await page.click('button[role=menuitem].danger');
   await page.click('dialog.askdialog button.primary');
@@ -463,7 +463,7 @@ test('round 7: context menus, long-press, swipe drawer, live tabs, selection, cl
   await page.waitForSelector('.cm-content');
   await page.click('.cm-content');
   await page.keyboard.insertText('# Heading one\n\nsome plain words here\nsecond line\n\n```bash\nls -la\n```\n\n=== "Fedora"\n\n    alpha-body\n\n=== "Arch"\n\n    beta-body\n\nend\n');
-  await page.click('.topbar .title');
+  await page.click('.page-title');
   await page.waitForTimeout(700);
 
   // live view: no ```bash line, a language badge instead; tabs are real tabs with one body at a time
@@ -570,8 +570,8 @@ test('round 8: offline work queues and syncs when the server returns; section li
   await page.waitForSelector('.cm-content');
   await page.click('.cm-content');
   await page.keyboard.insertText('# Target note\n\n## Second part\n\ntext\n');
-  await page.click('.topbar .title');
-  await page.fill('.topbar .title', 'Target');
+  await page.click('.page-title');
+  await page.fill('.page-title', 'Target');
   await page.keyboard.press('Enter');
   await page.waitForTimeout(800);
 
@@ -622,8 +622,8 @@ test('round 9: tabs hold several notes; closing picks a neighbour', async () => 
     await page.waitForSelector('.cm-content');
     await page.click('.cm-content');
     await page.keyboard.insertText('body of ' + name);
-    await page.click('.topbar .title');
-    await page.fill('.topbar .title', name);
+    await page.click('.page-title');
+    await page.fill('.page-title', name);
     await page.keyboard.press('Enter');
     await page.waitForTimeout(500);
   }
@@ -650,8 +650,8 @@ test('round 9b: a base block lists notes by their properties and edits them', as
     await page.waitForSelector('.cm-content');
     await page.click('.cm-content');
     await page.keyboard.insertText(body);
-    await page.click('.topbar .title');
-    await page.fill('.topbar .title', title);
+    await page.click('.page-title');
+    await page.fill('.page-title', title);
     await page.keyboard.press('Enter');
     await page.waitForTimeout(500);
   };
@@ -672,7 +672,7 @@ test('round 9b: a base block lists notes by their properties and edits them', as
   await page.waitForTimeout(1200);
   // click the link: the note opens and its properties changed
   await page.click('.cm-base a.base-link:has-text("Task one")');
-  await page.waitForFunction(() => document.querySelector('.topbar .title')?.value === 'Task one');
+  await page.waitForFunction(() => document.querySelector('.page-title')?.value === 'Task one');
   await page.click('.topbar .seg button:has-text("Source")');
   await page.waitForTimeout(400);
   assert.match(await page.locator('.cm-content').innerText(), /status: in progress/);
@@ -872,12 +872,12 @@ test('round 14: on a phone the bars float and hide while reading, and the text h
   await page.waitForSelector('.editor-pane:not(.typing)');
   assert.ok(await page.locator('.float-bar').isVisible(), 'floating bar shows after typing');
   assert.equal(await page.locator('.tabbar').isVisible(), false, 'no tab strip on a phone');
-  const scroll = (y) => page.evaluate((y) => { const s = document.querySelector('.cm-host'); s.scrollTop = y; }, y);
+  const scroll = (y) => page.evaluate((y) => { const s = document.querySelector('.page'); s.scrollTop = y; }, y);
   await scroll(400); await page.waitForTimeout(150);
   await scroll(900); await page.waitForTimeout(400);
   assert.ok(await page.locator('.editor-pane.mobile').count(), 'phone mode on');
   assert.ok(await page.locator('.editor-pane.hide-bars').count(), 'scrolling down hides the bars');
-  const box = await page.locator('.topbar').boundingBox();
+  const box = await page.locator('.ctl').boundingBox();
   assert.ok(box.y + box.height <= 1, 'top bar is out of the way: ' + JSON.stringify(box));
   await scroll(600); await page.waitForTimeout(400);
   assert.equal(await page.locator('.editor-pane.hide-bars').count(), 0, 'scrolling up brings them back');

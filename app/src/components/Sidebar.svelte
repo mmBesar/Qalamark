@@ -427,12 +427,11 @@
 
   <footer>
     {#if store.mode === 'server'}
-      <span class="dot" class:off={!store.serverReachable}></span>
       <button class="link who" onclick={accountMenu} aria-haspopup="menu"><Icon name="user" size={14} /> {store.s.username}</button>
       {#if !store.serverReachable}<small class="muted">· {t('offline')}</small><button class="link retry" onclick={() => store.reconnect()}>{t('reconnect')}</button>{/if}
       {#if store.pending}<small class="muted pendingbadge" title={t('waitingSync', { n: store.pending })}>· {t('waitingSync', { n: store.pending })}</small>{/if}
     {:else}
-      <span class="dot local"></span><span>{t('localMode')}</span>
+      <span>{t('localMode')}</span>
       <span class="grow"></span>
       <button class="link" onclick={() => store.showLogin()}>{t('signIn')}</button>
     {/if}

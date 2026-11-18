@@ -5,7 +5,7 @@
   import { onMount, untrack } from 'svelte';
   import { yUndoManagerKeymap } from 'y-codemirror.next';
   import { cycleHeading, insertLink, insertSnippet, insertTable, SNIPPETS, toggleLinePrefix, toggleWrap } from '../editor/commands.ts';
-  import { createEditor, type Editor, type ViewMode } from '../editor/editor.ts';
+  import { createEditor, setTouchLabels, type Editor, type ViewMode } from '../editor/editor.ts';
   import type { TableLabels } from '../editor/tables.ts';
   import type { NoteMeta } from '../lib/server.ts';
   import { type LinkStatus, NoteSession } from '../lib/session.ts';
@@ -19,7 +19,8 @@
   import { applyText } from '../lib/ytext.ts';
   import { confirmBox } from '../lib/dialog.svelte.ts';
   import HelpDialog from './HelpDialog.svelte';
-  import { immersive } from '../lib/vault.ts';
+  import { immersive, onAndroid } from '../lib/vault.ts';
+  import Sheet from './Sheet.svelte';
   import ShareDialog from './ShareDialog.svelte';
 
   let { note, onMenu }: { note: NoteMeta; onMenu: () => void } = $props();
@@ -27,27 +28,45 @@
 
   let host: HTMLDivElement;
 
+  setTouchLabels({ cut: t('cut'), copy: t('copyText'), paste: t('paste'), selectAll: t('selectAll') });
+
   // ---- phones: the text gets the whole screen; the bars hide while reading and come back with a tap or a scroll up
   const phone = matchMedia('(pointer: coarse) and (max-width: 760px)');
   let mobile = $state(phone.matches);
   let bars = $state(true);
-  let typing = $state(false);
+  let focused = $state(false);
+  let kbOpen = $state(false);
+  let page: HTMLDivElement;
+  // On Android the keyboard shrinks the page; with it closed the editor stays in edit mode but the bars may hide again.
+  const typing = $derived(focused && (kbOpen || !onAndroid()));
   $effect(() => {
     const on = () => (mobile = phone.matches);
     phone.addEventListener('change', on);
     return () => phone.removeEventListener('change', on);
   });
   $effect(() => {
+    if (!mobile) return;
+    let tall = window.innerHeight;
+    const size = () => {
+      tall = Math.max(tall, window.innerHeight);
+      kbOpen = window.innerHeight < tall - 120;
+    };
+    window.addEventListener('resize', size);
+    return () => window.removeEventListener('resize', size);
+  });
+  $effect(() => {
     immersive(mobile && !bars && !typing);
   });
   $effect(() => {
-    if (!mobile || !editorReady) return;
-    const sc = host;
+    if (!editorReady) return;
+    const sc = page;
     let last = sc.scrollTop;
     let startY = 0;
     let startT = 0;
     let moved = false;
     const onScroll = () => {
+      if (showToc) tocTick++;
+      if (!mobile) return;
       const y = sc.scrollTop;
       const d = y - last;
       if (y < 48) bars = true;
@@ -57,9 +76,17 @@
     };
     const down = (e: TouchEvent) => { startY = e.touches[0].clientY; startT = Date.now(); moved = false; };
     const move = (e: TouchEvent) => { if (Math.abs(e.touches[0].clientY - startY) > 8) moved = true; };
-    const up = () => { if (!moved && Date.now() - startT < 350 && !bars) bars = true; };
-    const focus = () => { typing = true; };
-    const blur = () => { typing = false; bars = true; };
+    const up = () => {
+      if (moved || Date.now() - startT > 350 || !mobile) return;
+      if (!bars) bars = true;
+      // the keyboard was put away but the editor kept its focus: a tap on the text brings it back
+      else if (focused && !kbOpen && onAndroid()) {
+        const v = editor.view;
+        setTimeout(() => { v.contentDOM.blur(); v.focus(); }, 30);
+      }
+    };
+    const focus = () => queueMicrotask(() => { focused = true; });
+    const blur = () => queueMicrotask(() => { focused = false; bars = true; });
     sc.addEventListener('scroll', onScroll, { passive: true });
     sc.addEventListener('touchstart', down, { passive: true });
     sc.addEventListener('touchmove', move, { passive: true });
@@ -125,6 +152,23 @@
       if (mode !== 'read') v.focus();
     });
   }
+  function headings(): Array<{ pos: number; level: number; text: string }> {
+    if (!editorReady) return [];
+    const out: Array<{ pos: number; level: number; text: string }> = [];
+    const doc = editor.view.state.doc;
+    let fence = false;
+    for (let i = 1; i <= doc.lines; i++) {
+      const l = doc.line(i);
+      if (/^\s*(```|~~~)/.test(l.text)) fence = !fence;
+      const m = !fence && /^(#{1,6})\s+(.+?)\s*#*\s*$/.exec(l.text);
+      if (m) out.push({ pos: l.from, level: m[1].length, text: m[2] });
+    }
+    return out;
+  }
+  function makeBoardNote() {
+    if (liveText) applyText(liveText, makeBoard(liveText.toString(), t('boardColumns').split('|') as [string, string, string]));
+    setMode('board');
+  }
   let boardNote = $state(false);
   let boardSeen = false;
   let menu = $state(false);
@@ -158,7 +202,9 @@
   function changed() {
     clearTimeout(timer);
     timer = setTimeout(() => {
-      words = (session.ytext.toString().match(/[\p{L}\p{N}]+/gu) ?? []).length;
+      const all = session.ytext.toString();
+      words = (all.match(/[\p{L}\p{N}]+/gu) ?? []).length;
+      store.setPreview(note.id, all.slice(0, 600));
       store.touch(note.id);
       if (store.vaultPath) void store.vaultPush(note.id, session.ytext.toString());
     }, 400);
@@ -390,90 +436,99 @@
 
 <section class="editor-pane" class:mobile class:hide-bars={mobile && !bars && !typing} class:typing={mobile && typing}>
   <header class="topbar">
-    <button class="icon menu-btn" aria-label={t('menu')} onclick={onMenu}><Icon name="menu" /></button>
-    <input
-      class="title"
-      bind:value={title}
-      readonly={!canRename}
-      aria-label={t('rename')}
-      onblur={rename}
-      onkeydown={(e) => e.key === 'Enter' && (e.currentTarget as HTMLInputElement).blur()}
-    />
-    <button class="ghost small modebtn" onclick={nextMode} aria-label={t('viewMode')}>{mode === 'read' ? t('modeRead') : mode === 'source' ? t('modeSource') : t('modeLive')}</button>
-    <span class="status {status}" title={statusText}><i></i><span class="label">{statusText}</span></span>
-    <div class="seg" role="group" aria-label={t('viewMode')}>
-      {#if boardNote}<button class:on={mode === 'board'} onclick={() => setMode('board')}>{t('modeBoard')}</button>{/if}
-      <button class:on={mode === 'live'} onclick={() => setMode('live')}>{t('modeLive')}</button>
-      <button class:on={mode === 'read'} onclick={() => setMode('read')}>{t('modeRead')}</button>
-      <button class:on={mode === 'source'} onclick={() => setMode('source')}>{t('modeSource')}</button>
-    </div>
-    {#if readOnly}<span class="pill">{t('readOnly')}</span>{/if}
-    {#if store.mode === 'server' && note.role === 'owner'}
-      <button class="ghost small" onclick={() => (sharing = true)}><Icon name="share" size={16} /><span class="lbl">{t('share')}</span></button>
-    {/if}
-    <div class="menu-wrap">
-      <button class="icon" aria-label={t('menu')} aria-expanded={menu} onclick={() => (menu = !menu)}><Icon name="more" /></button>
-      {#if menu}
-        <div class="menu" role="menu">
-          <button role="menuitem" onclick={() => ((help = true), (menu = false))}>{t('help')} · ƒ</button>
-          {#if !boardNote && !readOnly}<button role="menuitem" onclick={() => { menu = false; if (liveText) applyText(liveText, makeBoard(liveText.toString(), t('boardColumns').split('|') as [string, string, string])); setMode('board'); }}>{t('boardUse')}</button>{/if}
-          <button role="menuitem" onclick={exportMd}>{t('export')}</button>
-          <button role="menuitem" class="danger" onclick={remove}>{note.role === 'owner' || store.mode === 'local' ? t('delete') : t('leave')}</button>
-        </div>
-      {/if}
-    </div>
-  </header>
+    <button class="icon side-btn" aria-label={t('sidebar')} title="{t('sidebar')} (Ctrl+\\)" onclick={() => store.toggleSide()}><Icon name="files" /></button>
 
-  {#if !readOnly && mode !== 'read' && mode !== 'board'}
-    <div class="toolbar" role="toolbar">
-      <button title="{t('bold')} (Ctrl+B)" onclick={run((v) => toggleWrap(v, '**'))}><Icon name="bold" /></button>
-      <button title="{t('italic')} (Ctrl+I)" onclick={run((v) => toggleWrap(v, '*'))}><Icon name="italic" /></button>
-      <button title={t('strike')} onclick={run((v) => toggleWrap(v, '~~'))}><Icon name="strike" /></button>
-      <button title={t('code')} onclick={run((v) => toggleWrap(v, '`'))}><Icon name="code" /></button>
-      <span class="sep"></span>
-      <button title={t('heading')} onclick={run(cycleHeading)}><Icon name="heading" /></button>
-      <button title={t('bullet')} onclick={run((v) => toggleLinePrefix(v, '- '))}><Icon name="list" /></button>
-      <button title={t('task')} onclick={run((v) => toggleLinePrefix(v, '- [ ] '))}><Icon name="check" /></button>
-      <button title={t('quote')} onclick={run((v) => toggleLinePrefix(v, '> '))}><Icon name="quote" /></button>
-      <span class="sep"></span>
-      <button title={t('link')} onclick={run(insertLink)}><Icon name="link" /></button>
-      <button title={t('table')} onclick={run(insertTable)}><Icon name="table" /></button>
-      <span class="relative">
-        <button title={t('insert')} aria-haspopup="menu" onclick={(e) => { e.stopPropagation(); insMenu = !insMenu; }}><Icon name="plus" /><Icon name="chevron" size={12} /></button>
-        {#if insMenu}
-          <div class="menu insmenu" role="menu">
-            <button onclick={() => snippet(SNIPPETS.callout)}>{t('insCallout')}</button>
-            <button onclick={() => snippet(SNIPPETS.admonition)}>{t('insAdmonition')}</button>
-            <button onclick={() => snippet(SNIPPETS.collapsible)}>{t('insCollapsible')}</button>
-            <button onclick={() => snippet(SNIPPETS.tabs)}>{t('insTabs')}</button>
-            <button onclick={() => snippet(SNIPPETS.codeTitle)}>{t('insCodeTitle')}</button>
-            {#if store.mode === 'server'}
-              <button onclick={() => { insMenu = false; picInput.click(); }}>{t('insPicture')}</button>
-            {/if}
+    {#if !readOnly && mode !== 'read' && mode !== 'board'}
+      <div class="toolbar" role="toolbar">
+        <button title="{t('bold')} (Ctrl+B)" onclick={run((v) => toggleWrap(v, '**'))}><Icon name="bold" /></button>
+        <button title="{t('italic')} (Ctrl+I)" onclick={run((v) => toggleWrap(v, '*'))}><Icon name="italic" /></button>
+        <button title={t('strike')} onclick={run((v) => toggleWrap(v, '~~'))}><Icon name="strike" /></button>
+        <button title={t('code')} onclick={run((v) => toggleWrap(v, '`'))}><Icon name="code" /></button>
+        <span class="sep"></span>
+        <button title={t('heading')} onclick={run(cycleHeading)}><Icon name="heading" /></button>
+        <button title={t('bullet')} onclick={run((v) => toggleLinePrefix(v, '- '))}><Icon name="list" /></button>
+        <button title={t('task')} onclick={run((v) => toggleLinePrefix(v, '- [ ] '))}><Icon name="check" /></button>
+        <button title={t('quote')} onclick={run((v) => toggleLinePrefix(v, '> '))}><Icon name="quote" /></button>
+        <span class="sep"></span>
+        <button title={t('link')} onclick={run(insertLink)}><Icon name="link" /></button>
+        <button title={t('table')} onclick={run(insertTable)}><Icon name="table" /></button>
+        <span class="relative">
+          <button title={t('insert')} aria-haspopup="menu" onclick={(e) => { e.stopPropagation(); insMenu = !insMenu; }}><Icon name="plus" /><Icon name="chevron" size={12} /></button>
+          {#if insMenu}
+            <div class="menu insmenu" role="menu">
+              <button onclick={() => snippet(SNIPPETS.callout)}>{t('insCallout')}</button>
+              <button onclick={() => snippet(SNIPPETS.admonition)}>{t('insAdmonition')}</button>
+              <button onclick={() => snippet(SNIPPETS.collapsible)}>{t('insCollapsible')}</button>
+              <button onclick={() => snippet(SNIPPETS.tabs)}>{t('insTabs')}</button>
+              <button onclick={() => snippet(SNIPPETS.codeTitle)}>{t('insCodeTitle')}</button>
+              {#if store.mode === 'server'}
+                <button onclick={() => { insMenu = false; picInput.click(); }}>{t('insPicture')}</button>
+              {/if}
+            </div>
+          {/if}
+        </span>
+        <input bind:this={picInput} type="file" accept="image/*" hidden onchange={pickPicture} />
+        <button title={t('help')} onclick={() => (help = true)}><Icon name="fx" /></button>
+      </div>
+    {/if}
+    <span class="grow"></span>
+
+    <div class="ctl">
+      <span class="status {status}" title={statusText} role="img" aria-label={statusText}><i></i></span>
+      {#if readOnly}<span class="pill">{t('readOnly')}</span>{/if}
+      <button class="ghost small modebtn" onclick={nextMode} aria-label={t('viewMode')}>{mode === 'read' ? t('modeRead') : mode === 'source' ? t('modeSource') : t('modeLive')}</button>
+      <div class="seg" role="group" aria-label={t('viewMode')}>
+        {#if boardNote}<button class:on={mode === 'board'} onclick={() => setMode('board')}>{t('modeBoard')}</button>{/if}
+        <button class:on={mode === 'live'} onclick={() => setMode('live')}>{t('modeLive')}</button>
+        <button class:on={mode === 'read'} onclick={() => setMode('read')}>{t('modeRead')}</button>
+        <button class:on={mode === 'source'} onclick={() => setMode('source')}>{t('modeSource')}</button>
+      </div>
+      {#if store.mode === 'server' && note.role === 'owner'}
+        <button class="icon sharebtn" aria-label={t('share')} title={t('share')} onclick={() => (sharing = true)}><Icon name="share" size={18} /></button>
+      {/if}
+      <div class="menu-wrap desk">
+        <button class="icon" aria-label={t('menu')} aria-expanded={menu} onclick={() => (menu = !menu)}><Icon name="more" /></button>
+        {#if menu}
+          <div class="menu" role="menu">
+            <button role="menuitem" onclick={() => ((help = true), (menu = false))}>{t('help')} · ƒ</button>
+            {#if !boardNote && !readOnly}<button role="menuitem" onclick={() => { menu = false; makeBoardNote(); }}>{t('boardUse')}</button>{/if}
+            <button role="menuitem" onclick={exportMd}>{t('export')}</button>
+            <button role="menuitem" class="danger" onclick={remove}>{note.role === 'owner' || store.mode === 'local' ? t('delete') : t('leave')}</button>
           </div>
         {/if}
-      </span>
-      <input bind:this={picInput} type="file" accept="image/*" hidden onchange={pickPicture} />
-      <button title={t('help')} onclick={() => (help = true)}><Icon name="fx" /></button>
+      </div>
     </div>
-  {/if}
+  </header>
 
   {#if err}<p class="error banner" role="alert">{err} <button class="link" onclick={() => (err = '')}>×</button></p>{/if}
 
   {#if liveText && mode === 'board'}<Board ytext={liveText} {readOnly} noteId={note.id} />{/if}
-  {#if liveText && mode !== 'source' && mode !== 'board'}<Properties ytext={liveText} readOnly={readOnly || mode === 'read'} noteId={note.id} />{/if}
 
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div class="editor-row" hidden={mode === 'board'}>
-    <div class="cm-host" bind:this={host} onmousedown={focusEnd}></div>
+    <div class="page" bind:this={page}>
+      <input
+        class="page-title"
+        bind:value={title}
+        readonly={!canRename}
+        aria-label={t('rename')}
+        placeholder={t('untitled')}
+        onblur={rename}
+        onkeydown={(e) => e.key === 'Enter' && (e.currentTarget as HTMLInputElement).blur()}
+      />
+      {#if liveText && mode !== 'source' && mode !== 'board'}<Properties ytext={liveText} readOnly={readOnly || mode === 'read'} noteId={note.id} />{/if}
+      <div class="cm-host" bind:this={host} onmousedown={focusEnd}></div>
+    </div>
     {#if showToc && editorReady && mode !== 'board'}<Toc view={editor.view} ytext={liveText!} title={note.title} {readOnly} tick={tocTick} onClose={() => setToc(false)} />{/if}
   </div>
 
+  <!-- phones: a floating bar instead of a fixed one -->
   <div class="float-bar" role="toolbar" aria-label={t('menu')}>
-    <button class="icon" aria-label={t('menu')} onclick={onMenu}><Icon name="menu" size={22} /></button>
+    <button class="icon" aria-label={t('menu')} onclick={onMenu}><Icon name="files" size={22} /></button>
     <button class="icon" aria-label={t('search')} onclick={() => (store.palette = true)}><Icon name="search" size={22} /></button>
-    <button class="icon" aria-label={t('newNote')} onclick={() => store.createNote()}><Icon name="plus" size={22} /></button>
-    <button class="icon" aria-label={t('toc')} aria-pressed={showToc} onclick={() => setToc(!showToc)}><Icon name="outline" size={22} /></button>
+    <button class="icon plus" aria-label={t('newNote')} onclick={() => store.createNote()}><Icon name="plus" size={24} /></button>
+    <button class="icon tabs" aria-label={t('tabs')} onclick={() => (store.sheet = 'tabs')}><Icon name="layers" size={22} />{#if store.tabs.length > 1}<b>{store.tabs.length}</b>{/if}</button>
+    <button class="icon" aria-label={t('more')} onclick={() => (store.sheet = 'more')}><Icon name="more" size={22} /></button>
   </div>
 
   <footer class="statusbar">
@@ -495,6 +550,64 @@
     {#if store.mode === 'server' && note.role !== 'owner'}<span>· {t('sharedByOther', { name: note.owner })}</span>{/if}
   </footer>
 </section>
+
+{#if mobile && store.sheet === 'tabs'}
+  <Sheet title={t('tabs')} onClose={() => (store.sheet = null)}>
+    <div class="tab-grid">
+      {#each store.tabs as id (id)}
+        {@const n = store.notes.find((x) => x.id === id)}
+        {#if n}
+          <div class="tab-card" class:on={id === store.currentId} role="button" tabindex="0" onclick={() => { store.currentId = id; store.sheet = null; }} onkeydown={(e) => { if (e.key === 'Enter') { store.currentId = id; store.sheet = null; } }}>
+            <b>{n.title}</b>
+            <small>{n.folder || t('personal')}</small>
+            <p>{store.previews[id] ?? ''}</p>
+            <button class="x" aria-label={t('tabClose')} onclick={(e) => { e.stopPropagation(); store.closeTabs([id]); if (!store.tabs.length) store.sheet = null; }}><Icon name="close" size={14} /></button>
+          </div>
+        {/if}
+      {/each}
+      <button class="tab-card new" onclick={() => { store.sheet = null; store.createNote(); }}><Icon name="plus" size={26} /></button>
+    </div>
+  </Sheet>
+{/if}
+
+{#if mobile && store.sheet === 'toc'}
+  <Sheet title={t('toc')} onClose={() => (store.sheet = null)}>
+    <div class="sheet-list toc-list">
+      {#each headings() as h (h.pos)}
+        <button style:--lv={h.level - 1} onclick={() => { store.sheet = null; jump(h.pos); }}><span>{h.text}</span></button>
+      {:else}
+        <span class="muted">{t('tocEmpty')}</span>
+      {/each}
+    </div>
+  </Sheet>
+{/if}
+
+{#if mobile && store.sheet === 'more'}
+  <Sheet title={note.title} onClose={() => (store.sheet = null)}>
+    <div class="sheet-list">
+      <span class="muted">{t('words', { n: words })}{#if store.mode === 'server' && note.role !== 'owner'} · {t('sharedByOther', { name: note.owner })}{/if}</span>
+      <button onclick={() => (store.sheet = 'toc')}><Icon name="outline" size={20} /> {t('toc')}</button>
+      <button onclick={() => { loadLinks(); store.sheet = 'links'; }}><Icon name="link" size={20} /> {t('backlinks')}</button>
+      {#if store.mode === 'server' && note.role === 'owner'}<button onclick={() => { store.sheet = null; sharing = true; }}><Icon name="share" size={20} /> {t('share')}</button>{/if}
+      {#if !boardNote && !readOnly}<button onclick={() => { store.sheet = null; makeBoardNote(); }}><Icon name="board" size={20} /> {t('boardUse')}</button>{/if}
+      <button onclick={() => { store.sheet = null; help = true; }}><Icon name="fx" size={20} /> {t('help')}</button>
+      <button onclick={() => { store.sheet = null; exportMd(); }}><Icon name="upload" size={20} /> {t('export')}</button>
+      <button class="danger" onclick={() => { store.sheet = null; remove(); }}><Icon name="trash" size={20} /> {note.role === 'owner' || store.mode === 'local' ? t('delete') : t('leave')}</button>
+    </div>
+  </Sheet>
+{/if}
+
+{#if mobile && store.sheet === 'links'}
+  <Sheet title={t('backlinks')} onClose={() => (store.sheet = null)}>
+    <div class="sheet-list">
+      {#each links as l (l.id)}
+        <button onclick={() => { store.sheet = null; store.currentId = l.id; }}>{l.title}</button>
+      {:else}
+        <span class="muted">{t('noBacklinks')}</span>
+      {/each}
+    </div>
+  </Sheet>
+{/if}
 
 {#if help}
   <HelpDialog onClose={() => (help = false)} />

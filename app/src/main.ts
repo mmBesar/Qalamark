@@ -12,7 +12,7 @@ import './app.css';
 import { loadUserFonts } from './lib/fonts';
 import { store } from './lib/store.svelte';
 
-void loadUserFonts().then((names) => (store.userFonts = names));
+void loadUserFonts().then((names) => { store.userFonts = names; store.applyLayout(); });
 mount(App, { target: document.getElementById('app')! });
 
 // Let the app open without internet.

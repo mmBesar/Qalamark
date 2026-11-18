@@ -112,6 +112,9 @@ jobs:
           import android.os.Build
           import android.os.Environment
           import android.provider.Settings
+          import android.graphics.Color
+          import android.graphics.drawable.ColorDrawable
+          import android.view.WindowManager
           import android.webkit.JavascriptInterface
           import android.webkit.WebView
           import androidx.core.view.WindowCompat
@@ -130,10 +133,18 @@ jobs:
               } else {
                 askForFiles()
               }
+              // draw into the camera cut-out area too (otherwise a strip stays empty when the bars are hidden)
+              if (Build.VERSION.SDK_INT >= 28) {
+                window.attributes = window.attributes.apply {
+                  layoutInDisplayCutoutMode = if (Build.VERSION.SDK_INT >= 30) WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS else WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+                }
+              }
               val root = findViewById<View>(android.R.id.content)
               ViewCompat.setOnApplyWindowInsetsListener(root) { v, insets ->
-                val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout() or WindowInsetsCompat.Type.ime())
-                v.setPadding(bars.left, bars.top, bars.right, bars.bottom)
+                // the camera cut-out is ignored at the top: with the bars hidden the text may use that space
+                val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.ime())
+                val cut = insets.getInsets(WindowInsetsCompat.Type.displayCutout())
+                v.setPadding(maxOf(bars.left, cut.left), bars.top, maxOf(bars.right, cut.right), bars.bottom)
                 WindowInsetsCompat.CONSUMED
               }
             }
@@ -150,6 +161,21 @@ jobs:
                       c.hide(WindowInsetsCompat.Type.systemBars())
                     } else {
                       c.show(WindowInsetsCompat.Type.systemBars())
+                    }
+                  }
+                }
+                // the colour behind the status and navigation bars follows the app's theme
+                @JavascriptInterface
+                fun bars(color: String, light: Boolean) {
+                  runOnUiThread {
+                    try {
+                      val c = Color.parseColor(color)
+                      window.setBackgroundDrawable(ColorDrawable(c))
+                      findViewById<View>(android.R.id.content).setBackgroundColor(c)
+                      val ctl = WindowCompat.getInsetsController(window, window.decorView)
+                      ctl.isAppearanceLightStatusBars = light
+                      ctl.isAppearanceLightNavigationBars = light
+                    } catch (e: Exception) {
                     }
                   }
                 }

@@ -1,9 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 mmBesar
+
 //
 // Colour themes: the four Catppuccin flavours (with all 14 accents to pick
 // from), AMOLED, the system's own colours, and two themes of our own.
 // A theme is a list of colours; applyTheme() turns it into CSS variables.
+
+import { androidBars } from './vault.ts';
 
 export type ThemeId = 'auto' | 'system' | 'latte' | 'frappe' | 'macchiato' | 'mocha' | 'amoled' | 'paper' | 'nile';
 
@@ -164,6 +167,13 @@ export function applyTheme(theme: ThemeId, accent: Accent): void {
   }
   setVars(vars);
   document.querySelector('meta[name="theme-color"]')?.setAttribute('content', meta);
+  // Android: the status and navigation bars take the colour of the page
+  const m = getComputedStyle(document.body).backgroundColor.match(/[\d.]+/g);
+  if (m && m.length >= 3) {
+    const [r, g, b] = m.map(Number);
+    const hex = '#' + [r, g, b].map((x) => Math.round(x).toString(16).padStart(2, '0')).join('');
+    androidBars(hex, (0.299 * r + 0.587 * g + 0.114 * b) / 255 > 0.6);
+  }
 }
 
 export function themeName(id: ThemeId, t: (k: 'themeAuto' | 'themeSystem') => string): string {

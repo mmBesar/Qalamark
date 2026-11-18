@@ -503,6 +503,7 @@
         {#if menu}
           <div class="menu" role="menu">
             <button role="menuitem" onclick={() => { menu = false; setToc(!showToc); }}>{t('toc')}</button>
+            <button role="menuitem" onclick={() => { menu = false; store.toggleZen(); }}>{t('zen')} · Alt+Z</button>
             <button role="menuitem" onclick={() => ((help = true), (menu = false))}>{t('help')} · ƒ</button>
             {#if !boardNote && !readOnly}<button role="menuitem" onclick={() => { menu = false; makeBoardNote(); }}>{t('boardUse')}</button>{/if}
             <button role="menuitem" onclick={exportMd}>{t('export')}</button>

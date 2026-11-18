@@ -117,7 +117,7 @@ there becomes a note. More in **[docs/SELF-HOSTING.md](docs/SELF-HOSTING.md)**
 - **Files edited from outside** (Syncthing, a text editor) are merged in and shown live.
 - **Works offline.** The app installs as a PWA; a note you opened keeps working without internet and syncs when you are back.
 - **Without any server** the same app keeps notes on your device. This is what the GitHub Pages **preview** shows. Real use is your own server.
-- **Themes:** all four Catppuccin flavours with the 14 accent colours to choose from, AMOLED, your system's own colours, and two of our own (Paper and Nile). Android dynamic colour comes with the Android app.
+- **Themes:** all four Catppuccin flavours with the 14 accent colours to choose from, AMOLED, and the **System** theme: Material You on Android (wallpaper colours), your KDE colour scheme or GNOME accent on Linux; plus two of our own (Paper and Nile). **Focus mode** (Alt+Z) shows only the page.
 - **Three ways to view a note:** Live preview (like Obsidian), Reading, and Source.
 - **Folders and subfolders** with a tree in the sidebar: create, rename, move (menu or drag and drop), copy. A note's file name does not have to be its title: a `title:` property is shown instead.
 - **Properties** (YAML front matter): a panel above the note to edit title, tags, aliases or your own properties; the text stays plain YAML at the top of the file.

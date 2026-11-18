@@ -6,7 +6,7 @@
 // from), AMOLED, the system's own colours, and two themes of our own.
 // A theme is a list of colours; applyTheme() turns it into CSS variables.
 
-import { androidBars } from './vault.ts';
+import { androidBars, onAndroid, systemColors, type SystemColors } from './vault.ts';
 
 export type ThemeId = 'auto' | 'system' | 'latte' | 'frappe' | 'macchiato' | 'mocha' | 'amoled' | 'paper' | 'nile';
 
@@ -152,11 +152,52 @@ function systemVars(accent: Accent): Record<string, string> {
   };
 }
 
+let sysCache: SystemColors | null | undefined;
+
+/** A palette made of the system's own colours: Material You on Android, the KDE scheme or GNOME accent on Linux. */
+function systemPalette(c: SystemColors, osDark: boolean): Palette {
+  const y = c.you;
+  if (y) {
+    const dark = osDark;
+    const g = (k: string, d: string) => y[k] ?? d;
+    return dark
+      ? { name: 'Material You', dark, base: g('neutral1_900', '#1c1b1f'), mantle: g('neutral1_1000', '#000'), crust: g('neutral1_1000', '#000'), surface0: g('neutral1_800', '#303033'), surface1: g('neutral1_800', '#303033'), overlay0: g('neutral2_300', '#c7c5d0'), subtext0: g('neutral2_300', '#c7c5d0'), text: g('neutral1_100', '#e6e1e5'), accents: mochaAccents, accent: g('accent1_200', '#cba6f7'), code: g('neutral1_800', '#303033') }
+      : { name: 'Material You', dark, base: g('neutral1_10', '#fffbff'), mantle: g('neutral1_50', '#f4eff4'), crust: g('neutral1_100', '#e6e1e5'), surface0: g('neutral1_200', '#c9c5ca'), surface1: g('neutral1_200', '#c9c5ca'), overlay0: g('neutral2_700', '#49454f'), subtext0: g('neutral2_700', '#49454f'), text: g('neutral1_900', '#1c1b1f'), accents: latteAccents, accent: g('accent1_600', '#8839ef'), code: g('neutral1_50', '#f4eff4') };
+  }
+  const dark = c.dark ?? osDark;
+  const base = c.bg ?? (dark ? '#1e1e1e' : '#fafafa');
+  const text = c.fg ?? (dark ? '#f0f0f0' : '#242424');
+  return {
+    name: 'System', dark, base,
+    mantle: c.side ?? `color-mix(in srgb, ${base} 94%, ${text})`,
+    crust: `color-mix(in srgb, ${base} 90%, ${text})`,
+    surface0: `color-mix(in srgb, ${base} 84%, ${text})`,
+    surface1: `color-mix(in srgb, ${base} 76%, ${text})`,
+    overlay0: `color-mix(in srgb, ${text} 45%, ${base})`,
+    subtext0: `color-mix(in srgb, ${text} 62%, ${base})`,
+    text, accents: dark ? mochaAccents : latteAccents,
+    accent: c.accent ?? (dark ? '#78aeed' : '#3584e4'),
+    code: `color-mix(in srgb, ${base} 92%, ${text})`,
+  };
+}
+
 export function applyTheme(theme: ThemeId, accent: Accent): void {
   const dark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+  if (theme === 'system' && sysCache === undefined) {
+    // ask the system once, then apply again with its colours
+    sysCache = null;
+    void systemColors().then((c) => {
+      sysCache = c;
+      if (c) applyTheme(theme, accent);
+    });
+  }
   let vars: Record<string, string>;
   let meta = '#eff1f5';
-  if (theme === 'system') {
+  if (theme === 'system' && sysCache) {
+    const p = systemPalette(sysCache, dark);
+    vars = paletteVars(p, accent);
+    meta = p.base;
+  } else if (theme === 'system') {
     vars = systemVars(accent);
     meta = dark ? '#1e1e1e' : '#ffffff';
   } else {
@@ -178,6 +219,6 @@ export function applyTheme(theme: ThemeId, accent: Accent): void {
 
 export function themeName(id: ThemeId, t: (k: 'themeAuto' | 'themeSystem') => string): string {
   if (id === 'auto') return t('themeAuto');
-  if (id === 'system') return t('themeSystem');
+  if (id === 'system') return onAndroid() ? 'Material You' : t('themeSystem');
   return PALETTES[id].name;
 }

@@ -184,6 +184,66 @@ fn system_fonts() -> Vec<String> {
     v
 }
 
+
+/// The desktop's own colours, so the "System" theme can follow them: the KDE colour scheme when there is one,
+/// otherwise the GNOME accent colour and light/dark choice. Empty when nothing is known.
+#[tauri::command]
+fn system_colors() -> serde_json::Value {
+    system_colors_inner()
+}
+
+fn system_colors_inner() -> serde_json::Value {
+    use serde_json::json;
+    let home = std::env::var("HOME").unwrap_or_default();
+    if let Ok(text) = std::fs::read_to_string(format!("{home}/.config/kdeglobals")) {
+        let get = |section: &str, key: &str| -> Option<String> {
+            let mut inside = false;
+            for l in text.lines() {
+                let l = l.trim();
+                if l.starts_with('[') {
+                    inside = l == format!("[{section}]");
+                } else if inside {
+                    if let Some(v) = l.strip_prefix(&format!("{key}=")) {
+                        let p: Vec<u8> = v.split(',').filter_map(|x| x.trim().parse().ok()).collect();
+                        if p.len() >= 3 {
+                            return Some(format!("#{:02x}{:02x}{:02x}", p[0], p[1], p[2]));
+                        }
+                    }
+                }
+            }
+            None
+        };
+        if let (Some(bg), Some(fg)) = (get("Colors:View", "BackgroundNormal"), get("Colors:View", "ForegroundNormal")) {
+            return json!({
+                "bg": bg,
+                "side": get("Colors:Window", "BackgroundNormal"),
+                "fg": fg,
+                "accent": get("Colors:Selection", "BackgroundNormal").or_else(|| get("Colors:View", "DecorationFocus")),
+            });
+        }
+    }
+    let gs = |key: &str| -> Option<String> {
+        let o = std::process::Command::new("gsettings").args(["get", "org.gnome.desktop.interface", key]).output().ok()?;
+        o.status.success().then(|| String::from_utf8_lossy(&o.stdout).trim().trim_matches('\'').to_string())
+    };
+    let accent = gs("accent-color").map(|n| match n.as_str() {
+        "teal" => "#2190a4",
+        "green" => "#3a944a",
+        "yellow" => "#c88800",
+        "orange" => "#ed5b00",
+        "red" => "#e62d42",
+        "pink" => "#d56199",
+        "purple" => "#9141ac",
+        "slate" => "#6f8396",
+        _ => "#3584e4",
+    });
+    let dark = gs("color-scheme").map(|s| s.contains("dark"));
+    if accent.is_none() && dark.is_none() {
+        return json!({});
+    }
+    json!({ "accent": accent, "dark": dark })
+}
+
 #[tauri::command]
 async fn tls_probe(url: String) -> Result<String, String> {
     let (h, p, tls) = host_port(&url)?;
@@ -213,7 +273,7 @@ async fn net_bridge(url: String, pin: String) -> Result<String, String> {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
-        .invoke_handler(tauri::generate_handler![vault_info, vault_set, vault_list, vault_read, vault_write, vault_trash, vault_rename, vault_mkdir, vault_reveal, tls_probe, system_fonts, net_check, net_bridge])
+        .invoke_handler(tauri::generate_handler![vault_info, vault_set, vault_list, vault_read, vault_write, vault_trash, vault_rename, vault_mkdir, vault_reveal, tls_probe, system_fonts, system_colors, net_check, net_bridge])
         .run(tauri::generate_context!())
         .expect("error while running Qalamark");
 }

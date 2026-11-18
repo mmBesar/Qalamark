@@ -1908,3 +1908,10 @@ aside footer .who { display: flex; align-items: center; gap: 0.55rem; padding: 0
 aside footer .who:hover { background: color-mix(in srgb, var(--accent) 14%, transparent); }
 aside footer .who .avatar { display: grid; place-items: center; width: 1.7rem; height: 1.7rem; border-radius: 50%; background: var(--accent); color: var(--on-accent, #fff); font-weight: 700; font-size: 0.85rem; }
 aside footer .who .uname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 9rem; }
+
+/* focus mode: just the page; the top row fades in when the pointer goes to the top edge */
+.shell.zen { grid-template-columns: 1fr; }
+.shell.zen aside, .shell.zen .resizer { display: none; }
+.shell.zen main > .tabbar, .shell.zen .statusbar { display: none; }
+.shell.zen .topbar { opacity: 0; transition: opacity 0.25s; }
+.shell.zen .topbar:hover, .shell.zen .topbar:focus-within { opacity: 1; }

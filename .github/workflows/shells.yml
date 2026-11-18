@@ -114,6 +114,7 @@ jobs:
           import android.provider.Settings
           import android.graphics.Color
           import android.graphics.drawable.ColorDrawable
+          import org.json.JSONObject
           import android.view.WindowManager
           import android.webkit.JavascriptInterface
           import android.webkit.WebView
@@ -163,6 +164,20 @@ jobs:
                       c.show(WindowInsetsCompat.Type.systemBars())
                     }
                   }
+                }
+                // Material You: the wallpaper-derived colours of the phone (Android 12 and later), as JSON
+                @JavascriptInterface
+                fun dynamicColors(): String {
+                  if (Build.VERSION.SDK_INT < 31) return ""
+                  val o = JSONObject()
+                  for (n in listOf("accent1_100", "accent1_200", "accent1_600", "accent2_200", "accent2_600", "neutral1_10", "neutral1_50", "neutral1_100", "neutral1_200", "neutral1_800", "neutral1_900", "neutral1_1000", "neutral2_300", "neutral2_700")) {
+                    try {
+                      val id = android.R.color::class.java.getField("system_" + n).getInt(null)
+                      o.put(n, String.format("#%06X", getColor(id) and 0xFFFFFF))
+                    } catch (e: Exception) {
+                    }
+                  }
+                  return o.toString()
                 }
                 // the colour behind the status and navigation bars follows the app's theme
                 @JavascriptInterface

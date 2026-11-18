@@ -21,6 +21,27 @@ export const androidBars = (color: string, light: boolean): void => {
     /* not in the Android app */
   }
 };
+/** The phone's or desktop's own colours, when the app can read them (Material You, KDE scheme, GNOME accent). */
+export interface SystemColors { bg?: string; side?: string; fg?: string; accent?: string; dark?: boolean; you?: Record<string, string> }
+export async function systemColors(): Promise<SystemColors | null> {
+  try {
+    const a = (window as unknown as { QalamarkAndroid?: { dynamicColors?(): string } }).QalamarkAndroid;
+    if (a?.dynamicColors) {
+      const raw = a.dynamicColors();
+      return raw ? { you: JSON.parse(raw) as Record<string, string> } : null;
+    }
+    if (inShell()) {
+      const r = await call<Record<string, unknown>>('system_colors');
+      const out: SystemColors = {};
+      for (const k of ['bg', 'side', 'fg', 'accent'] as const) if (typeof r[k] === 'string') out[k] = r[k] as string;
+      if (typeof r.dark === 'boolean') out.dark = r.dark;
+      return Object.keys(out).length ? out : null;
+    }
+  } catch {
+    /* not available */
+  }
+  return null;
+}
 export const onAndroid = (): boolean => typeof navigator !== 'undefined' && /android/i.test(navigator.userAgent);
 
 async function call<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {

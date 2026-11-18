@@ -889,3 +889,44 @@ test('round 14: on a phone the bars float and hide while reading, and the text h
   assert.deepEqual(errors, []);
   await ctx.close();
 });
+
+test('round 15: the System theme takes the phone\'s own colours (Material You)', async () => {
+  const errors = [];
+  const ctx = await browser.newContext({ viewport: { width: 1100, height: 760 } });
+  const page = await ctx.newPage();
+  page.on('pageerror', (e) => errors.push(e.message));
+  await page.addInitScript(() => {
+    window.QalamarkAndroid = {
+      dynamicColors: () => JSON.stringify({ accent1_600: '#006a60', accent1_200: '#80d5c9', neutral1_10: '#fbfdf9', neutral1_50: '#f0f1ed', neutral1_100: '#e1e3df', neutral1_200: '#c5c7c3', neutral1_900: '#191c1a', neutral1_800: '#2e312f', neutral1_1000: '#000000', neutral2_300: '#bfc9c5', neutral2_700: '#3f4946', neutral1_900x: '' }),
+      bars() {}, immersive() {},
+    };
+    try { if (!localStorage.getItem('qm-init')) { localStorage.setItem('qm-init', '1'); } } catch {}
+  });
+  await page.emulateMedia({ colorScheme: 'light' });
+  await signIn(page, 'alice', 'alice-password');
+  await page.evaluate(() => { const s = JSON.parse(localStorage.getItem('qm.settings') || '{}'); s.theme = 'system'; localStorage.setItem('qm.settings', JSON.stringify(s)); });
+  await page.reload();
+  await page.waitForSelector('aside');
+  await page.waitForTimeout(500);
+  const v = await page.evaluate(() => { const c = getComputedStyle(document.documentElement); return [c.getPropertyValue('--accent').trim(), c.getPropertyValue('--surface').trim()]; });
+  assert.deepEqual(v, ['#006a60', '#fbfdf9'], 'accent and page colour come from the system palette: ' + v);
+  await ctx.close();
+  assert.deepEqual(errors, []);
+});
+
+test('round 16: focus mode shows only the page (Alt+Z), Escape brings everything back', async () => {
+  const errors = [];
+  const page = await newPage(errors);
+  await signIn(page, 'alice', 'alice-password');
+  await page.waitForSelector('.shell');
+  await page.locator('aside .actions button:first-child').dispatchEvent('click');
+  await page.waitForSelector('.cm-content');
+  await page.keyboard.press('Alt+z');
+  await page.waitForSelector('.shell.zen');
+  assert.equal(await page.locator('aside').isVisible(), false, 'sidebar hidden in focus mode');
+  assert.equal(await page.locator('.statusbar').isVisible(), false, 'status bar hidden');
+  await page.keyboard.press('Escape');
+  await page.waitForSelector('.shell:not(.zen)');
+  assert.ok(await page.locator('aside').isVisible(), 'sidebar is back');
+  assert.deepEqual(errors, []);
+});

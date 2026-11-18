@@ -12,7 +12,7 @@ import { translate, type Key, type Lang } from './i18n.ts';
 import { BUILT_IN, fill, TEMPLATES_FOLDER } from './templates.ts';
 import { Api, ApiError, cleanBase, type NoteMeta } from './server.ts';
 import { type Accent, applyTheme, type ThemeId } from './theme.ts';
-import { inShell, notePath, splitPath, tls, vault } from './vault.ts';
+import { inShell, notePath, onAndroid, splitPath, tls, vault } from './vault.ts';
 import { setArabicFont } from './fonts.ts';
 import { applyText } from './ytext.ts';
 import { chooseBox, confirmBox } from './dialog.svelte.ts';
@@ -76,7 +76,7 @@ function defaultLang(): Lang {
 }
 
 class Store {
-  s = $state<Settings>({ lang: 'en', theme: 'auto', accent: 'default', serverUrl: '', token: '', username: '', admin: false, wantsLocal: false, welcomed: false, fontSize: 17, editorWidth: 50, fontEn: '', fontAr: '', fontCode: '', sideWidth: 304, sourceSize: 15, fontSource: '', centerPage: false, hideSide: false, trust: {}, allowSelfSigned: false, allowHttp: false, ...read<Partial<Settings>>(SETTINGS, { lang: defaultLang() }) });
+  s = $state<Settings>({ lang: 'en', theme: onAndroid() ? 'system' : 'auto', accent: 'default', serverUrl: '', token: '', username: '', admin: false, wantsLocal: false, welcomed: false, fontSize: 17, editorWidth: 50, fontEn: '', fontAr: '', fontCode: '', sideWidth: 304, sourceSize: 15, fontSource: '', centerPage: false, hideSide: false, trust: {}, allowSelfSigned: false, allowHttp: false, ...read<Partial<Settings>>(SETTINGS, { lang: defaultLang() }) });
   mode = $state<Mode>('boot');
   serverReachable = $state(false);
   setupNeeded = $state(false);
@@ -1016,6 +1016,11 @@ class Store {
       const keep = Object.fromEntries(Object.entries(this.previews).filter(([k]) => this.notes.some((n) => n.id === k)).slice(-60));
       write('qm.previews', keep);
     }, 1500);
+  }
+  /** Zen mode: only the text, nothing else on screen. */
+  zen = $state(false);
+  toggleZen() {
+    this.zen = !this.zen;
   }
   toggleSide() {
     this.s.hideSide = !this.s.hideSide;

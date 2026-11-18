@@ -64,15 +64,28 @@
     let startY = 0;
     let startT = 0;
     let moved = false;
+    // Hide after a clear pull down the page, show after a clear pull up; never flip twice within a moment,
+    // because hiding the bars changes the window size and the page can nudge itself back and forth.
+    let acc = 0;
+    let lastFlip = 0;
+    const flip = (v: boolean) => {
+      if (bars === v) return;
+      const now = Date.now();
+      if (now - lastFlip < 700) return;
+      lastFlip = now;
+      bars = v;
+    };
     const onScroll = () => {
       if (showToc) tocTick++;
       if (!mobile) return;
       const y = sc.scrollTop;
       const d = y - last;
-      if (y < 48) bars = true;
-      else if (d > 10) bars = false;
-      else if (d < -10) bars = true;
-      if (Math.abs(d) > 10) last = y;
+      last = y;
+      if (y < 48) { acc = 0; flip(true); return; }
+      if (Math.abs(d) > 120) return; // a jump from a layout change, not a finger
+      acc = Math.sign(d) === Math.sign(acc) ? acc + d : d;
+      if (acc > 36) { flip(false); acc = 0; }
+      else if (acc < -36) { flip(true); acc = 0; }
     };
     const down = (e: TouchEvent) => { startY = e.touches[0].clientY; startT = Date.now(); moved = false; };
     const move = (e: TouchEvent) => { if (Math.abs(e.touches[0].clientY - startY) > 8) moved = true; };
@@ -436,7 +449,7 @@
 
 <section class="editor-pane" class:mobile class:hide-bars={mobile && !bars && !typing} class:typing={mobile && typing}>
   <header class="topbar">
-    <button class="icon side-btn" aria-label={t('sidebar')} title="{t('sidebar')} (Ctrl+\\)" onclick={() => store.toggleSide()}><Icon name="files" /></button>
+    <button class="icon side-btn" aria-label={t('sidebar')} title="{t('sidebar')} (Ctrl+\\)" onclick={() => store.toggleSide()}><Icon name="sidebar" /></button>
 
     {#if !readOnly && mode !== 'read' && mode !== 'board'}
       <div class="toolbar" role="toolbar">
@@ -471,7 +484,6 @@
         <button title={t('help')} onclick={() => (help = true)}><Icon name="fx" /></button>
       </div>
     {/if}
-    <span class="grow"></span>
 
     <div class="ctl">
       <span class="status {status}" title={statusText} role="img" aria-label={statusText}><i></i></span>
@@ -490,6 +502,7 @@
         <button class="icon" aria-label={t('menu')} aria-expanded={menu} onclick={() => (menu = !menu)}><Icon name="more" /></button>
         {#if menu}
           <div class="menu" role="menu">
+            <button role="menuitem" onclick={() => { menu = false; setToc(!showToc); }}>{t('toc')}</button>
             <button role="menuitem" onclick={() => ((help = true), (menu = false))}>{t('help')} · ƒ</button>
             {#if !boardNote && !readOnly}<button role="menuitem" onclick={() => { menu = false; makeBoardNote(); }}>{t('boardUse')}</button>{/if}
             <button role="menuitem" onclick={exportMd}>{t('export')}</button>

@@ -427,7 +427,7 @@
 
   <footer>
     {#if store.mode === 'server'}
-      <button class="link who" onclick={accountMenu} aria-haspopup="menu"><Icon name="user" size={14} /> {store.s.username}</button>
+      <button class="who" onclick={accountMenu} aria-haspopup="menu"><span class="avatar">{(store.s.username || '?').slice(0, 1).toUpperCase()}</span><span class="uname">{store.s.username}</span><Icon name="chevron" size={14} /></button>
       {#if !store.serverReachable}<small class="muted">· {t('offline')}</small><button class="link retry" onclick={() => store.reconnect()}>{t('reconnect')}</button>{/if}
       {#if store.pending}<small class="muted pendingbadge" title={t('waitingSync', { n: store.pending })}>· {t('waitingSync', { n: store.pending })}</small>{/if}
     {:else}

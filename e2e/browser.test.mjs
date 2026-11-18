@@ -872,14 +872,14 @@ test('round 14: on a phone the bars float and hide while reading, and the text h
   await page.waitForSelector('.editor-pane:not(.typing)');
   assert.ok(await page.locator('.float-bar').isVisible(), 'floating bar shows after typing');
   assert.equal(await page.locator('.tabbar').isVisible(), false, 'no tab strip on a phone');
-  const scroll = (y) => page.evaluate((y) => { const s = document.querySelector('.page'); s.scrollTop = y; }, y);
+  const scroll = (y) => page.evaluate(async (y) => { const s = document.querySelector('.page'); while (Math.abs(s.scrollTop - y) > 1) { s.scrollTop += Math.sign(y - s.scrollTop) * Math.min(30, Math.abs(y - s.scrollTop)); await new Promise((r) => setTimeout(r, 16)); } }, y);
   await scroll(400); await page.waitForTimeout(150);
-  await scroll(900); await page.waitForTimeout(400);
+  await scroll(900); await page.waitForTimeout(800);
   assert.ok(await page.locator('.editor-pane.mobile').count(), 'phone mode on');
   assert.ok(await page.locator('.editor-pane.hide-bars').count(), 'scrolling down hides the bars');
   const box = await page.locator('.ctl').boundingBox();
   assert.ok(box.y + box.height <= 1, 'top bar is out of the way: ' + JSON.stringify(box));
-  await scroll(600); await page.waitForTimeout(400);
+  await scroll(600); await page.waitForTimeout(800);
   assert.equal(await page.locator('.editor-pane.hide-bars').count(), 0, 'scrolling up brings them back');
   await scroll(1200); await page.waitForTimeout(300);
   await page.touchscreen.tap(200, 400);

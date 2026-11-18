@@ -32,6 +32,7 @@
     board: 'M4 4h5v16H4zM10 4h5v10h-5zM16 4h4v13h-4z',
     pin: 'M12 17v5M8 3h8l-1 7 3 3v2H6v-2l3-3z',
     calendar: 'M4 6h16v14H4zM4 10h16M8 3v4M16 3v4',
+    sidebar: 'M4 5h16v14H4zM9.5 5v14',
     outline: 'M4 6h16M7 12h13M10 18h10',
     command: 'M9 6a3 3 0 1 0-3 3h12a3 3 0 1 0-3-3v12a3 3 0 1 0 3-3H6a3 3 0 1 0 3 3z',
     tag: 'M3 12V4h8l10 10-8 8zM7.5 8.5h.01',

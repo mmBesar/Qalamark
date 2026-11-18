@@ -875,7 +875,7 @@ dialog label {
     inset-block: 0;
     inset-inline-start: 0;
     width: min(21rem, 86vw);
-    z-index: 30;
+    z-index: 50;
     transform: translateX(-105%);
     transition: transform 0.2s ease;
     box-shadow: var(--shadow);
@@ -890,7 +890,7 @@ dialog label {
     display: block;
     position: fixed;
     inset: 0;
-    z-index: 25;
+    z-index: 45;
     border: 0;
     border-radius: 0;
     background: rgba(10, 12, 10, 0.4);
@@ -1822,7 +1822,10 @@ html[data-page='center'] .page-title { margin-inline: auto; }
 .page .props { margin-top: 0.3rem; }
 
 /* one row on top: sidebar, editing tools, then the view controls */
-.topbar { display: flex; align-items: center; gap: 0.5rem; padding: 0.4rem 0.8rem; }
+.topbar { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 0.5rem; padding: 0.4rem 0.8rem; }
+.topbar .side-btn { grid-column: 1; justify-self: start; }
+.topbar .toolbar { grid-column: 2; justify-self: center; }
+.topbar .ctl { grid-column: 3; justify-self: end; }
 .topbar .grow { flex: 1; }
 .topbar .toolbar { margin: 0; width: auto; max-width: none; flex: 0 1 auto; overflow-x: auto; scrollbar-width: none; }
 .ctl { display: flex; align-items: center; gap: 0.35rem; flex: none; }
@@ -1834,7 +1837,7 @@ html[data-page='center'] .page-title { margin-inline: auto; }
 .sharebtn { color: var(--muted); }
 .sharebtn:hover { color: var(--accent); }
 @media (min-width: 761px) {
-  .shell.side-off { grid-template-columns: 0 1fr; }
+  .shell.side-off { grid-template-columns: 1fr; }
   .shell.side-off aside, .shell.side-off .resizer { display: none; }
 }
 
@@ -1843,7 +1846,7 @@ html[data-page='center'] .page-title { margin-inline: auto; }
   .tabbar { display: none !important; }
   .editor-pane { position: relative; }
   .editor-pane .topbar { display: block; position: static; padding: 0; height: 0; border: 0; background: none; backdrop-filter: none; box-shadow: none; }
-  .side-btn, .ctl .seg, .menu-wrap.desk { display: none; }
+  .editor-pane .side-btn, .ctl .seg, .menu-wrap.desk { display: none; }
   .modebtn { display: inline-flex; white-space: nowrap; flex: none; min-height: 2.4rem; padding: 0 0.7rem; border-radius: 999px; }
   .ctl { position: fixed; top: 0.55rem; inset-inline-end: 0.55rem; z-index: 30; gap: 0.1rem; padding: 0.15rem 0.35rem 0.15rem 0.5rem; border: 1px solid var(--line); border-radius: 999px; background: color-mix(in srgb, var(--surface) 92%, transparent); backdrop-filter: blur(12px); box-shadow: var(--shadow); transition: transform 0.22s ease, opacity 0.22s; }
   .ctl .sharebtn { width: 2.4rem; height: 2.4rem; border-radius: 50%; }
@@ -1888,3 +1891,20 @@ html[data-page='center'] .page-title { margin-inline: auto; }
 .fp-sample { font-size: 1.05rem; color: var(--muted); padding: 0.1rem 0.3rem; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .field { display: grid; gap: 0.3rem; margin: 0.3rem 0; font-size: 0.9rem; }
 .field > span { color: var(--muted); }
+
+/* the editor fills what the tab strip leaves, so the status bar stays on screen */
+main { display: flex; flex-direction: column; overflow: hidden; }
+main > .tabbar { flex: none; }
+main > .editor-pane, main > .empty { flex: 1; min-height: 0; }
+.ctl .modebtn { display: none; }
+@media (pointer: coarse) and (max-width: 760px) {
+  .ctl .modebtn { display: inline-flex; }
+}
+
+.ctl .seg button, .ctl .pill { white-space: nowrap; flex: none; }
+.ctl .seg { flex: none; }
+
+aside footer .who { display: flex; align-items: center; gap: 0.55rem; padding: 0.3rem 0.55rem 0.3rem 0.3rem; border: 0; border-radius: 999px; background: color-mix(in srgb, var(--ink) 6%, transparent); color: var(--ink); text-decoration: none; font: inherit; cursor: pointer; min-width: 0; }
+aside footer .who:hover { background: color-mix(in srgb, var(--accent) 14%, transparent); }
+aside footer .who .avatar { display: grid; place-items: center; width: 1.7rem; height: 1.7rem; border-radius: 50%; background: var(--accent); color: var(--on-accent, #fff); font-weight: 700; font-size: 0.85rem; }
+aside footer .who .uname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 9rem; }

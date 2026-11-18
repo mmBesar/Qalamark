@@ -142,12 +142,12 @@ class Store {
       .filter(Boolean)
       .join(', ');
     css.setProperty('--ui', `${ar}, ${en}, system-ui, sans-serif`);
-    css.setProperty('--mono', `${code}, ${ar}`);
+    css.setProperty('--mono', `${ar}, ${code}`);
     css.setProperty('--font-size', `${this.s.fontSize}px`);
     css.setProperty('--editor-w', this.s.editorWidth > 0 ? `${this.s.editorWidth}rem` : '100%');
     css.setProperty('--side-w', `${this.s.sideWidth}px`);
     css.setProperty('--source-size', `${this.s.sourceSize}px`);
-    if (this.s.fontSource.trim()) css.setProperty('--source-font', `${q(this.s.fontSource.trim())}, ${code}, ${ar}`);
+    if (this.s.fontSource.trim()) css.setProperty('--source-font', `${ar}, ${q(this.s.fontSource.trim())}, ${code}`);
     else css.removeProperty('--source-font');
     document.documentElement.dataset.page = this.s.centerPage ? 'center' : 'side';
   }

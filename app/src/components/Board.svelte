@@ -13,7 +13,7 @@
   import { confirmBox } from '../lib/dialog.svelte.ts';
   import { addCard, addColumn, deleteCard, deleteColumn, editCard, moveCard, parseBoard, renameColumn, toggleCard } from '../lib/kanban.ts';
 
-  let { ytext, readOnly, noteId }: { ytext: YText; readOnly: boolean; noteId?: string } = $props();
+  let { ytext, readOnly, noteId, onList }: { ytext: YText; readOnly: boolean; noteId?: string; onList?: () => void } = $props();
   const t = store.t;
 
   let text = $state(ytext.toString());
@@ -52,9 +52,58 @@
     apply(deleteColumn(text, c));
   }
   const focus = (el: HTMLElement) => el.focus();
+
+  // ── filters, due dates, progress ──
+  let query = $state('');
+  let tagOn = $state<string | null>(null);
+  const allTags = $derived([...new Set(board.columns.flatMap((c) => c.cards.flatMap((k) => tags(k.text))))].sort());
+  const shown = (text: string) => (!tagOn || tags(text).includes(tagOn)) && (!query.trim() || text.toLowerCase().includes(query.trim().toLowerCase()));
+  const DUE = /(?:📅|🗓️?|due:|@due\()\s*(\d{4}-\d{2}-\d{2})/u;
+  const dueOf = (s: string) => DUE.exec(s)?.[1] ?? null;
+  const day = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  const today = day(new Date());
+  const dueState = (d: string, done: boolean | null) => (done ? 'ok' : d < today ? 'late' : d === today ? 'today' : 'soon');
+  const clean = (s: string) => plain(s).replace(new RegExp(DUE.source, 'gu'), '').replace(/\s+/g, ' ').trim();
+  const total = $derived(board.columns.reduce((n, c) => n + c.cards.filter((k) => k.done !== null).length, 0));
+  const finished = $derived(board.columns.reduce((n, c) => n + c.cards.filter((k) => k.done).length, 0));
+  const lateCount = $derived(board.columns.reduce((n, c) => n + c.cards.filter((k) => { const d = dueOf(k.text); return d && !k.done && d < today; }).length, 0));
+  const colDone = (c: { cards: Array<{ done: boolean | null }> }) => { const n = c.cards.filter((k) => k.done !== null).length; return n ? Math.round((100 * c.cards.filter((k) => k.done).length) / n) : -1; };
+
+  // phones: one column fills the screen; the strip on top shows where you are and jumps
+  let scroller: HTMLElement;
+  let at = $state(0);
+  function seen() {
+    if (!scroller) return;
+    const cols = [...scroller.querySelectorAll<HTMLElement>('.bcol:not(.newcol)')];
+    const mid = scroller.getBoundingClientRect().left + scroller.clientWidth / 2;
+    let best = 0, gap = 1e9;
+    cols.forEach((el, i) => { const r = el.getBoundingClientRect(); const d = Math.abs(r.left + r.width / 2 - mid); if (d < gap) { gap = d; best = i; } });
+    at = best;
+  }
+  function jump(i: number) {
+    scroller.querySelectorAll<HTMLElement>('.bcol:not(.newcol)')[i]?.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+  }
 </script>
 
-<div class="board" role="region" aria-label={t('modeBoard')}>
+<div class="boardwrap">
+<div class="btools">
+  <div class="bsum" title={t('boardProgress')}>
+    <div class="bar"><i style:width="{total ? (100 * finished) / total : 0}%"></i></div>
+    <span>{finished}/{total}{#if lateCount} · <b class="late">{t('boardLate', { n: lateCount })}</b>{/if}</span>
+  </div>
+  <input class="bfind" type="search" bind:value={query} placeholder={t('boardFilter')} aria-label={t('boardFilter')} />
+  {#if onList}<button class="ghost small listbtn" onclick={onList}><Icon name="outline" size={15} /> {t('boardList')}</button>{/if}
+</div>
+{#if allTags.length}
+  <div class="btags" role="group">
+    <button class:on={tagOn === null} onclick={() => (tagOn = null)}>{t('boardAll')}</button>
+    {#each allTags as tg}<button class:on={tagOn === tg} onclick={() => (tagOn = tagOn === tg ? null : tg)}>#{tg}</button>{/each}
+  </div>
+{/if}
+<nav class="bstrip" aria-label={t('modeBoard')}>
+  {#each board.columns as col, c}<button class:on={at === c} onclick={() => jump(c)}>{col.title} <small>{col.cards.length}</small></button>{/each}
+</nav>
+<div class="board" role="region" aria-label={t('modeBoard')} bind:this={scroller} onscroll={seen}>
   {#each board.columns as col, c (col.head + ':' + col.title)}
     <section class="bcol" class:over={over?.c === c && over.i >= col.cards.length}
       ondragover={(e) => { if (drag) { e.preventDefault(); over = { c, i: col.cards.length }; } }}
@@ -74,9 +123,11 @@
           <button class="icon sm" title={t('delete')} aria-label={t('delete')} onclick={() => removeColumn(c)}><Icon name="trash" size={14} /></button>
         {/if}
       </header>
+      {#if colDone(col) >= 0}<div class="cbar" title="{colDone(col)}%"><i style:width="{colDone(col)}%"></i></div>{/if}
 
       <ul>
         {#each col.cards as card, i (card.start + ':' + card.text)}
+          {#if shown(card.text)}
           <li class="card" class:done={card.done} class:dragging={drag?.c === c && drag.i === i} class:before={over?.c === c && over.i === i && drag}
             draggable={!readOnly && editing === null}
             ondragstart={(e) => { drag = { c, i }; e.dataTransfer?.setData('text/plain', card.text); }}
@@ -103,11 +154,11 @@
                     if (!readOnly) editing = { c, i };
                   }}
                   onkeydown={(e) => { if (e.key === 'Enter' && !readOnly) editing = { c, i }; }}>
-                  {#each pieces(plain(card.text) || card.text) as p}{#if p.kind === 'text'}{p.text}{:else}<a href={p.kind === 'url' ? p.target : '#'} class="clink" data-kind={p.kind} data-target={p.target}>{p.text}</a>{/if}{/each}
+                  {#each pieces(clean(card.text) || card.text) as p}{#if p.kind === 'text'}{p.text}{:else}<a href={p.kind === 'url' ? p.target : '#'} class="clink" data-kind={p.kind} data-target={p.target}>{p.text}</a>{/if}{/each}
                 </div>
               </div>
               {#if card.extra.length}<p class="extra">{card.extra.join(' · ')}</p>{/if}
-              {#if tags(card.text).length}<div class="ctags">{#each tags(card.text) as tg}<span>#{tg}</span>{/each}</div>{/if}
+              {#if tags(card.text).length || dueOf(card.text)}<div class="ctags">{#if dueOf(card.text)}<span class="due {dueState(dueOf(card.text)!, card.done)}">📅 {dueOf(card.text)}</span>{/if}{#each tags(card.text) as tg}<span>#{tg}</span>{/each}</div>{/if}
               {#if !readOnly}
                 <div class="cact">
                   <button class="icon sm" aria-label={t('moveLeft')} title={t('moveLeft')} disabled={c === 0} onclick={() => apply(moveCard(text, c, i, c - 1, 1e9))}><Icon name={store.lang === 'ar' ? 'chevron-right' : 'chevron-left'} size={14} /></button>
@@ -117,6 +168,7 @@
               {/if}
             {/if}
           </li>
+          {/if}
         {/each}
       </ul>
 
@@ -149,8 +201,38 @@
   {/if}
   {#if board.columns.length === 0}<p class="muted pad">{t('noColumns')}</p>{/if}
 </div>
+</div>
 
 <style>
+  .boardwrap { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+  .btools { display: flex; align-items: center; gap: 0.7rem; padding: 0.7rem 1.2rem 0; flex-wrap: wrap; }
+  .bsum { display: flex; align-items: center; gap: 0.5rem; font-size: 0.82rem; color: var(--muted); }
+  .bar, .cbar { height: 6px; border-radius: 6px; background: color-mix(in srgb, var(--ink) 10%, transparent); overflow: hidden; }
+  .bar { width: 7rem; }
+  .bar i, .cbar i { display: block; height: 100%; background: var(--accent); border-radius: 6px; transition: width 0.25s; }
+  .cbar { margin: 0 0.3rem; height: 4px; }
+  .late { color: var(--danger, #d20f39); font-weight: 600; }
+  .bfind { flex: 1; min-width: 8rem; max-width: 18rem; }
+  .listbtn { display: inline-flex; gap: 0.35rem; align-items: center; margin-inline-start: auto; }
+  .btags { display: flex; gap: 0.35rem; padding: 0.5rem 1.2rem 0; overflow-x: auto; }
+  .btags button { flex: none; font-size: 0.78rem; padding: 0.1rem 0.65rem; border-radius: 99px; border: 1px solid var(--line); background: none; color: var(--muted); }
+  .btags button.on { background: var(--accent); color: var(--accent-ink, #fff); border-color: var(--accent); }
+  .bstrip { display: none; }
+  .due { background: color-mix(in srgb, var(--ink) 8%, transparent) !important; color: var(--muted) !important; }
+  .due.late { background: color-mix(in srgb, var(--danger, #d20f39) 16%, transparent) !important; color: var(--danger, #d20f39) !important; }
+  .due.today { background: color-mix(in srgb, #df8e1d 22%, transparent) !important; color: #df8e1d !important; }
+  .due.ok { text-decoration: line-through; opacity: 0.6; }
+  @media (max-width: 760px) {
+    .btools { padding: 4rem 0.9rem 0; }
+    .btools .bfind { order: 3; max-width: none; flex-basis: 100%; }
+    .bstrip { display: flex; gap: 0.4rem; padding: 0.55rem 0.9rem 0; overflow-x: auto; scrollbar-width: none; }
+    .bstrip button { flex: none; border-radius: 99px; padding: 0.3rem 0.8rem; font-size: 0.85rem; border: 1px solid var(--line); background: none; color: var(--muted); }
+    .bstrip button.on { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); font-weight: 600; }
+    .bstrip small { opacity: 0.7; }
+    .board { scroll-snap-type: x mandatory; padding: 0.7rem 0.9rem 6.5rem !important; gap: 0.7rem; scroll-padding-inline: 0.9rem; }
+    .bcol { flex: 0 0 86vw !important; max-width: none !important; scroll-snap-align: center; }
+    .bcol ul { max-height: none; }
+  }
   .board { flex: 1; min-height: 0; display: flex; gap: 0.9rem; align-items: flex-start; overflow: auto; padding: 1.1rem 1.2rem 2rem; }
   .bcol { flex: 0 0 18rem; max-width: 85vw; background: color-mix(in srgb, var(--ink) 5%, var(--surface)); border: 1px solid var(--hairline, var(--line)); border-radius: 16px; padding: 0.7rem; display: flex; flex-direction: column; gap: 0.5rem; max-height: 100%; }
   .bcol.over { outline: 2px dashed var(--accent); outline-offset: -2px; }

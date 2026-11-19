@@ -118,9 +118,10 @@
       immersive(false);
     };
   });
-  const MODES: Array<ViewMode | 'board'> = ['live', 'read', 'source'];
   function nextMode() {
-    setMode(MODES[(MODES.indexOf(mode) + 1) % MODES.length]);
+    // on a board note the phone's mode button goes Board → List → Read → Source, so the board is one tap away
+    const modes: Array<ViewMode | 'board'> = boardNote ? ['board', 'live', 'read', 'source'] : ['live', 'read', 'source'];
+    setMode(modes[(modes.indexOf(mode) + 1) % modes.length]!);
   }
   let status = $state<LinkStatus>('local');
   let words = $state(0);
@@ -458,7 +459,7 @@
     if (showLinks && !(e.target as Element).closest('.links-wrap')) showLinks = false;
     if (insMenu && !(e.target as Element).closest('.relative')) insMenu = false;
   }}
-  onkeydown={(e) => { if (e.key === 'Escape') menu = false; else if (e.altKey && !e.ctrlKey && !e.metaKey && e.code === 'KeyO') { e.preventDefault(); toggleContents(); } }}
+  onkeydown={(e) => { if (e.key === 'Escape') menu = false; else if (e.altKey && !e.ctrlKey && !e.metaKey && e.code === 'KeyB' && boardNote) { e.preventDefault(); setMode(mode === 'board' ? 'live' : 'board'); } else if (e.altKey && !e.ctrlKey && !e.metaKey && e.code === 'KeyO') { e.preventDefault(); toggleContents(); } }}
 />
 
 <section class="editor-pane" class:mobile class:hide-bars={mobile && !bars && !typing} class:typing={mobile && typing}>
@@ -502,7 +503,7 @@
     <div class="ctl">
       <span class="status {status}" title={statusText} role="img" aria-label={statusText}><i></i></span>
       {#if readOnly}<span class="pill">{t('readOnly')}</span>{/if}
-      <button class="ghost small modebtn" onclick={nextMode} aria-label={t('viewMode')}>{mode === 'read' ? t('modeRead') : mode === 'source' ? t('modeSource') : t('modeLive')}</button>
+      <button class="ghost small modebtn" onclick={nextMode} aria-label={t('viewMode')}>{mode === 'board' ? t('modeBoard') : mode === 'read' ? t('modeRead') : mode === 'source' ? t('modeSource') : t('modeLive')}</button>
       <div class="seg" role="group" aria-label={t('viewMode')}>
         {#if boardNote}<button class:on={mode === 'board'} onclick={() => setMode('board')}>{t('modeBoard')}</button>{/if}
         <button class:on={mode === 'live'} onclick={() => setMode('live')}>{t('modeLive')}</button>
@@ -533,7 +534,7 @@
 
   {#if err}<p class="error banner" role="alert">{err} <button class="link" onclick={() => (err = '')}>×</button></p>{/if}
 
-  {#if liveText && mode === 'board'}<Board ytext={liveText} {readOnly} noteId={note.id} />{/if}
+  {#if liveText && mode === 'board'}<Board ytext={liveText} {readOnly} noteId={note.id} onList={() => setMode('live')} />{/if}
 
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div class="editor-row" hidden={mode === 'board'}>

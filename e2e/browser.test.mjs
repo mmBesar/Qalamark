@@ -1021,3 +1021,43 @@ test('round 20: Arabic title on the right and wrapping, [[ list themed, links op
   await page.waitForSelector('.toc, [class*=toc]');
   assert.deepEqual(errors, []);
 });
+
+test('round 21: on a phone the board clears the top bar, shows one column at a time and flips to the list and back', async () => {
+  const errors = [];
+  const ctx = await browser.newContext({ viewport: { width: 400, height: 780 }, hasTouch: true, isMobile: true, deviceScaleFactor: 2 });
+  const page = await ctx.newPage();
+  page.on('pageerror', (e) => errors.push(e.message));
+  await signIn(page, 'alice', 'alice-password');
+  await page.waitForSelector('.shell');
+  await page.locator('aside .actions button:first-child').dispatchEvent('click');
+  await page.waitForSelector('.cm-content');
+  await page.click('.cm-content');
+  await page.keyboard.insertText('# Plan\n\n## Todo\n- [ ] write docs #docs 📅 2020-01-01\n- [ ] fix bug #bug\n\n## Done\n- [x] ship\n');
+  await page.evaluate(() => document.activeElement.blur());
+  await page.waitForTimeout(500);
+  await page.locator('.ctl .modebtn').dispatchEvent('click'); // live → read
+  await page.locator('.ctl .modebtn').dispatchEvent('click'); // read → source
+  await page.locator('.ctl .modebtn').dispatchEvent('click'); // source → live
+  await page.locator('.float-bar button[aria-label]').last().dispatchEvent('click');
+  await page.locator('.sheet-list button', { hasText: /kanban/i }).dispatchEvent('click');
+  await page.waitForSelector('.board .bcol');
+  if (process.env.SHOT) await page.screenshot({ path: process.env.SHOT });
+  const g = await page.evaluate(() => {
+    const ctl = document.querySelector('.ctl').getBoundingClientRect();
+    const tools = document.querySelector('.btools');
+    const col = document.querySelector('.bcol:not(.newcol)').getBoundingClientRect();
+    const first = [...document.querySelectorAll('.btools > *')].map((e) => e.getBoundingClientRect().top);
+    return { ctlBottom: ctl.bottom, toolsTop: Math.min(...first), colW: col.width, vw: innerWidth, strip: getComputedStyle(document.querySelector('.bstrip')).display, late: !!document.querySelector('.due.late') };
+  });
+  assert.ok(g.toolsTop >= g.ctlBottom - 1, `board content starts below the top pill (${g.toolsTop} vs ${g.ctlBottom})`);
+  assert.ok(g.colW > g.vw * 0.8, 'one column fills the screen: ' + g.colW);
+  assert.equal(g.strip, 'flex');
+  assert.ok(g.late, 'an overdue card is marked');
+  await page.locator('.listbtn').dispatchEvent('click');
+  await page.waitForSelector('.cm-content');
+  await page.locator('.ctl .modebtn').dispatchEvent('click'); // list → read ... cycle reaches board again
+  await page.locator('.ctl .modebtn').dispatchEvent('click');
+  await page.locator('.ctl .modebtn').dispatchEvent('click');
+  await page.waitForSelector('.board .bcol');
+  assert.deepEqual(errors, []);
+});

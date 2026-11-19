@@ -11,13 +11,15 @@
   import { linkSuggest } from '../lib/linksuggest.ts';
   import { pieces } from '../lib/headings.ts';
   import { confirmBox } from '../lib/dialog.svelte.ts';
-  import { addCard, addColumn, deleteCard, deleteColumn, editCard, moveCard, parseBoard, renameColumn, toggleCard } from '../lib/kanban.ts';
+  import type { Sub } from '../lib/kanban.ts';
+  import { addCard, addColumn, addSub, boardKind, cardProgress, deleteCard, deleteColumn, deleteSub, editCard, moveCard, parseBoard, renameColumn, setBoardKind, toggleCard, toggleSub } from '../lib/kanban.ts';
 
   let { ytext, readOnly, noteId, onList }: { ytext: YText; readOnly: boolean; noteId?: string; onList?: () => void } = $props();
   const t = store.t;
 
   let text = $state(ytext.toString());
   const board = $derived(parseBoard(text));
+  const kind = $derived(boardKind(text));
   onMount(() => {
     const h = () => (text = ytext.toString());
     ytext.observe(h);
@@ -52,6 +54,27 @@
     apply(deleteColumn(text, c));
   }
   const focus = (el: HTMLElement) => el.focus();
+
+  // ── steps, stages and moving ──
+  let open = $state<Set<string>>(new Set());
+  let moving = $state<string | null>(null);
+  let stepDraft = $state('');
+  const key = (c: number, i: number) => `${c}:${i}`;
+  const toggleOpen = (k: string) => { const n = new Set(open); n.has(k) ? n.delete(k) : n.add(k); open = n; };
+  const stepsOf = (card: { subs: Sub[] }, title: string) =>
+    card.subs.map((s, n) => ({ s, n })).filter(({ s }) => (kind === 'pipeline' ? s.stage === title : s.stage === null || s.stage === title));
+  function goTo(c: number, i: number, to: number) {
+    moving = null;
+    if (to !== c) apply(moveCard(text, c, i, to, 1e9));
+  }
+  function cardKeys(e: KeyboardEvent, c: number, i: number) {
+    if (readOnly || !e.altKey || (e.target as HTMLElement).tagName === 'TEXTAREA' || (e.target as HTMLElement).tagName === 'INPUT') return;
+    const rtl = store.lang === 'ar';
+    const step = e.key === 'ArrowRight' ? (rtl ? -1 : 1) : e.key === 'ArrowLeft' ? (rtl ? 1 : -1) : 0;
+    if (!step || c + step < 0 || c + step >= board.columns.length) return;
+    e.preventDefault();
+    goTo(c, i, c + step);
+  }
 
   // ── filters, due dates, progress ──
   let query = $state('');
@@ -92,6 +115,7 @@
     <span>{finished}/{total}{#if lateCount} · <b class="late">{t('boardLate', { n: lateCount })}</b>{/if}</span>
   </div>
   <input class="bfind" type="search" bind:value={query} placeholder={t('boardFilter')} aria-label={t('boardFilter')} />
+  {#if !readOnly}<button class="ghost small kindbtn" class:on={kind === 'pipeline'} aria-pressed={kind === 'pipeline'} title={t('boardPipelineHint')} onclick={() => apply(setBoardKind(text, kind === 'pipeline' ? 'board' : 'pipeline'))}>{t('boardPipeline')}</button>{/if}
   {#if onList}<button class="ghost small listbtn" onclick={onList}><Icon name="outline" size={15} /> {t('boardList')}</button>{/if}
 </div>
 {#if allTags.length}
@@ -129,6 +153,7 @@
         {#each col.cards as card, i (card.start + ':' + card.text)}
           {#if shown(card.text)}
           <li class="card" class:done={card.done} class:dragging={drag?.c === c && drag.i === i} class:before={over?.c === c && over.i === i && drag}
+            onkeydown={(e) => cardKeys(e, c, i)}
             draggable={!readOnly && editing === null}
             ondragstart={(e) => { drag = { c, i }; e.dataTransfer?.setData('text/plain', card.text); }}
             ondragend={() => (drag = over = null)}
@@ -157,10 +182,47 @@
                   {#each pieces(clean(card.text) || card.text) as p}{#if p.kind === 'text'}{p.text}{:else}<a href={p.kind === 'url' ? p.target : '#'} class="clink" data-kind={p.kind} data-target={p.target}>{p.text}</a>{/if}{/each}
                 </div>
               </div>
+              {#if kind === 'pipeline'}
+                <div class="stages" role="group" aria-label={t('boardStages')}>
+                  {#each board.columns as sc, j}
+                    {@const share = j < c ? 1 : j === c ? cardProgress('board', { ...card, subs: card.subs.filter((x) => x.stage === col.title) }, 0, 1, '') : 0}
+                    <button class="seg" class:cur={j === c} title={sc.title} aria-label={sc.title} disabled={readOnly} onclick={() => goTo(c, i, j)}><i style:width="{j === c && !card.subs.some((x) => x.stage === col.title) ? (card.done ? 100 : 0) : share * 100}%"></i></button>
+                  {/each}
+                </div>
+              {:else if card.subs.length}
+                <div class="cbar subbar"><i style:width="{(100 * card.subs.filter((x) => x.done).length) / card.subs.length}%"></i></div>
+              {/if}
+              {#if open.has(key(c, i))}
+                <ul class="steps">
+                  {#each stepsOf(card, col.title) as { s: st, n }}
+                    <li class:done={st.done}>
+                      <button class="tick" class:on={st.done} aria-label={st.text} aria-pressed={st.done} disabled={readOnly} onclick={() => apply(toggleSub(text, c, i, n))}>{#if st.done}<Icon name="check-small" size={12} />{/if}</button>
+                      <span>{st.text}</span>
+                      {#if !readOnly}<button class="icon sm" aria-label={t('delete')} onclick={() => apply(deleteSub(text, c, i, n))}><Icon name="trash" size={12} /></button>{/if}
+                    </li>
+                  {/each}
+                </ul>
+                {#if !readOnly}
+                  <form class="addform stepadd" onsubmit={(e) => { e.preventDefault(); apply(addSub(text, c, i, stepDraft, kind === 'pipeline' ? col.title : null)); stepDraft = ''; }}>
+                    <input bind:value={stepDraft} placeholder={t('boardStepText')} aria-label={t('boardStepText')} />
+                  </form>
+                {/if}
+              {/if}
               {#if card.extra.length}<p class="extra">{card.extra.join(' · ')}</p>{/if}
               {#if tags(card.text).length || dueOf(card.text)}<div class="ctags">{#if dueOf(card.text)}<span class="due {dueState(dueOf(card.text)!, card.done)}">📅 {dueOf(card.text)}</span>{/if}{#each tags(card.text) as tg}<span>#{tg}</span>{/each}</div>{/if}
               {#if !readOnly}
                 <div class="cact">
+                  <button class="icon sm stepbtn" class:on={open.has(key(c, i))} aria-label={t('boardSteps')} title={t('boardSteps')} aria-expanded={open.has(key(c, i))} onclick={() => toggleOpen(key(c, i))}><Icon name="check-small" size={14} />{#if card.subs.length}<small>{card.subs.filter((x) => x.done).length}/{card.subs.length}</small>{/if}</button>
+                  <span class="grow"></span>
+                  <div class="movewrap">
+                    <button class="icon sm" aria-label={t('moveTo')} title="{t('moveTo')} · Alt+←/→" aria-expanded={moving === key(c, i)} onclick={() => (moving = moving === key(c, i) ? null : key(c, i))}><Icon name="more" size={14} /></button>
+                    {#if moving === key(c, i)}
+                      <div class="movemenu" role="menu">
+                        <b>{t('moveTo')}</b>
+                        {#each board.columns as mc, j}<button role="menuitem" class:here={j === c} onclick={() => goTo(c, i, j)}>{mc.title} <small>{mc.cards.length}</small></button>{/each}
+                      </div>
+                    {/if}
+                  </div>
                   <button class="icon sm" aria-label={t('moveLeft')} title={t('moveLeft')} disabled={c === 0} onclick={() => apply(moveCard(text, c, i, c - 1, 1e9))}><Icon name={store.lang === 'ar' ? 'chevron-right' : 'chevron-left'} size={14} /></button>
                   <button class="icon sm" aria-label={t('moveRight')} title={t('moveRight')} disabled={c === board.columns.length - 1} onclick={() => apply(moveCard(text, c, i, c + 1, 1e9))}><Icon name={store.lang === 'ar' ? 'chevron-left' : 'chevron-right'} size={14} /></button>
                   <button class="icon sm" aria-label={t('delete')} title={t('delete')} onclick={() => apply(deleteCard(text, c, i))}><Icon name="trash" size={14} /></button>
@@ -264,4 +326,24 @@
   .addform input { flex: 1; min-width: 0; }
   .addbtn { display: inline-flex; gap: 0.35rem; align-items: center; justify-content: flex-start; color: var(--muted); }
   .pad { padding: 1rem; }
+  .kindbtn.on { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
+  .stages { display: flex; gap: 3px; margin-top: 0.45rem; }
+  .seg { flex: 1; height: 7px; padding: 0; border: 0; border-radius: 4px; background: color-mix(in srgb, var(--ink) 11%, transparent); overflow: hidden; min-height: 0; }
+  .seg i { display: block; height: 100%; background: var(--accent); border-radius: 4px; transition: width 0.25s; }
+  .seg.cur { outline: 1.5px solid var(--accent); outline-offset: 1px; }
+  .subbar { margin: 0.45rem 0 0; }
+  .steps { list-style: none; margin: 0.5rem 0 0; padding: 0; display: flex; flex-direction: column; gap: 0.3rem; overflow: visible; }
+  .steps li { display: flex; align-items: center; gap: 0.5rem; font-size: 0.9rem; }
+  .steps li span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+  .steps li.done span { color: var(--muted); text-decoration: line-through; }
+  .stepadd { margin-top: 0.4rem; }
+  .stepbtn { width: auto; padding: 0 0.4rem; display: inline-flex; gap: 0.25rem; align-items: center; }
+  .stepbtn.on { color: var(--accent); }
+  .grow { flex: 1; }
+  .movewrap { position: relative; }
+  .movemenu { position: absolute; inset-inline-end: 0; bottom: 110%; z-index: 20; min-width: 11rem; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow); padding: 0.3rem; display: flex; flex-direction: column; }
+  .movemenu b { font-size: 0.72rem; color: var(--muted); padding: 0.3rem 0.6rem; text-transform: uppercase; letter-spacing: 0.05em; }
+  .movemenu button { text-align: start; background: none; border: 0; border-radius: 8px; padding: 0.55rem 0.7rem; min-height: 2.4rem; display: flex; justify-content: space-between; gap: 1rem; color: var(--ink); }
+  .movemenu button:hover { background: var(--accent-soft); }
+  .movemenu button.here { color: var(--accent); font-weight: 700; }
 </style>

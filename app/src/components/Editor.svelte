@@ -503,7 +503,14 @@
     <div class="ctl">
       <span class="status {status}" title={statusText} role="img" aria-label={statusText}><i></i></span>
       {#if readOnly}<span class="pill">{t('readOnly')}</span>{/if}
-      <button class="ghost small modebtn" onclick={nextMode} aria-label={t('viewMode')}>{mode === 'board' ? t('modeBoard') : mode === 'read' ? t('modeRead') : mode === 'source' ? t('modeSource') : t('modeLive')}</button>
+      {#if boardNote}
+        <!-- a board note: Board and its text are always one tap apart; tapping the text side again steps through Live, Read, Source -->
+        <div class="boardseg" role="group" aria-label={t('viewMode')}>
+          <button class:on={mode === 'board'} onclick={() => setMode('board')}>{t('modeBoard')}</button>
+          <button class:on={mode !== 'board'} onclick={() => { if (mode === 'board') setMode('live'); else setMode(mode === 'live' ? 'read' : mode === 'read' ? 'source' : 'live'); }}>{mode === 'read' ? t('modeRead') : mode === 'source' ? t('modeSource') : t('boardList')}</button>
+        </div>
+      {/if}
+      <button class="ghost small modebtn" class:boardnote={boardNote} onclick={nextMode} aria-label={t('viewMode')}>{mode === 'board' ? t('modeBoard') : mode === 'read' ? t('modeRead') : mode === 'source' ? t('modeSource') : t('modeLive')}</button>
       <div class="seg" role="group" aria-label={t('viewMode')}>
         {#if boardNote}<button class:on={mode === 'board'} onclick={() => setMode('board')}>{t('modeBoard')}</button>{/if}
         <button class:on={mode === 'live'} onclick={() => setMode('live')}>{t('modeLive')}</button>

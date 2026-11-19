@@ -38,15 +38,41 @@ class BaseWidget extends WidgetType {
     const root = document.createElement('div');
     root.className = 'cm-base';
     const spec = parseBase(this.src);
+    let sortKey: string | null = null;
+    let sortDir = 1;
+    let q = '';
+    let hadFocus = false;
+    const hue = (v: string) => { let h = 0; for (const ch of v.toLowerCase()) h = (h * 31 + ch.charCodeAt(0)) % 360; return h; };
+    const STATUS = /^(status|state|stage|phase|type|kind|category|priority|الحالة|المرحلة|النوع)$/i;
     const draw = async () => {
       const L = this.hooks.labels();
-      const rows = queryRows(spec, await this.hooks.rows().catch(() => []));
-      const cols = columnsOf(spec, rows);
+      const all = queryRows(spec, await this.hooks.rows().catch(() => []));
+      const cols = columnsOf(spec, all);
+      let rows = all;
+      if (q.trim()) {
+        const needle = q.trim().toLowerCase();
+        rows = rows.filter((r) => r.title.toLowerCase().includes(needle) || cols.some((c) => {
+          const x = cellOf(r, c);
+          return (x.type === 'list' ? x.items.join(' ') : x.text).toLowerCase().includes(needle);
+        }));
+      }
+      if (sortKey) {
+        const k = sortKey;
+        const val = (r: NoteRow) => { const x = cellOf(r, k); return x.type === 'list' ? x.items.join(', ') : x.text; };
+        rows = [...rows].sort((a, b) => sortDir * val(a).localeCompare(val(b), undefined, { numeric: true, sensitivity: 'base' }));
+      }
       root.textContent = '';
       const bar = document.createElement('div');
       bar.className = 'base-bar';
       const count = document.createElement('span');
       count.textContent = L.count(rows.length);
+      const find = document.createElement('input');
+      find.type = 'search';
+      find.className = 'base-find';
+      find.value = q;
+      find.placeholder = '🔍';
+      find.setAttribute('aria-label', 'filter');
+      find.oninput = () => { q = find.value; hadFocus = true; void draw(); };
       const edit = document.createElement('button');
       edit.type = 'button';
       edit.textContent = L.edit;
@@ -54,7 +80,8 @@ class BaseWidget extends WidgetType {
         view.dispatch({ selection: { anchor: this.from + 1 }, scrollIntoView: true });
         view.focus();
       };
-      bar.append(count, edit);
+      bar.append(count, find, edit);
+      if (hadFocus) { hadFocus = false; queueMicrotask(() => { find.focus(); find.setSelectionRange(find.value.length, find.value.length); }); }
       root.append(bar);
       if (!rows.length) {
         const p = document.createElement('p');
@@ -70,6 +97,12 @@ class BaseWidget extends WidgetType {
       for (const c of cols) {
         const th = document.createElement('th');
         th.textContent = L.cols[c.toLowerCase()] ?? c;
+        th.className = 'sortable';
+        if (sortKey === c) th.dataset.sort = sortDir > 0 ? 'asc' : 'desc';
+        th.tabIndex = 0;
+        const flip = () => { if (sortKey === c) sortDir = -sortDir; else { sortKey = c; sortDir = 1; } void draw(); };
+        th.onclick = flip;
+        th.onkeydown = (e) => { if (e.key === 'Enter') flip(); };
         head.append(th);
       }
       const body = table.createTBody();
@@ -104,9 +137,51 @@ class BaseWidget extends WidgetType {
             box.onchange = () => save('checkbox', box.checked ? 'true' : 'false');
             td.append(box);
             td.className = 'center';
+          } else if (cell.type === 'list' && cell.items.length) {
+            // tags and other lists are drawn as chips
+            const box = document.createElement('div');
+            box.className = 'base-chips';
+            for (const it of cell.items) {
+              const chip = document.createElement('span');
+              chip.textContent = it;
+              chip.style.setProperty('--h', String(hue(it)));
+              box.append(chip);
+            }
+            td.append(box);
+            td.classList.add('plain');
           } else if (!editable) {
-            td.textContent = cell.type === 'list' ? cell.items.join(', ') : cell.text;
-            if (!cell.editable) td.className = 'fixed';
+            if (STATUS.test(c) && cell.text) {
+              const badge = document.createElement('span');
+              badge.className = 'base-badge';
+              badge.textContent = cell.text;
+              badge.style.setProperty('--h', String(hue(cell.text)));
+              td.append(badge);
+              td.classList.add('plain');
+            } else {
+              td.textContent = cell.type === 'list' ? cell.items.join(', ') : cell.text;
+              if (!cell.editable) td.className = 'fixed';
+            }
+          } else if (STATUS.test(c) && cell.text && cell.type === 'text') {
+            // a coloured badge; a click turns it into the input
+            const badge = document.createElement('button');
+            badge.type = 'button';
+            badge.className = 'base-badge edit';
+            badge.textContent = cell.text;
+            badge.style.setProperty('--h', String(hue(cell.text)));
+            const edit = () => {
+              const inp = document.createElement('input');
+              inp.className = 'base-cell';
+              inp.value = cell.text;
+              inp.setAttribute('aria-label', c);
+              inp.onkeydown = (e) => { if (e.key === 'Enter') inp.blur(); if (e.key === 'Escape') { inp.value = cell.text; inp.blur(); } };
+              inp.onblur = () => { if (inp.value !== cell.text) save('text', inp.value); else void draw(); };
+              badge.replaceWith(inp);
+              inp.focus();
+              inp.select();
+            };
+            badge.onclick = edit;
+            td.append(badge);
+            td.classList.add('plain');
           } else {
             const inp = document.createElement('input');
             inp.className = 'base-cell';

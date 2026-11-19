@@ -1972,3 +1972,34 @@ dialog.settings .swatches button { min-height: 0; }
 .cm-completionMatchedText { text-decoration: none; font-weight: 700; color: var(--accent); }
 .cm-completionInfo { background: var(--surface); color: var(--ink); }
 .ctl .tocbtn.on { background: var(--accent-soft); color: var(--accent); }
+
+/* ───────── board notes: Board | List switch (phones; desktop has the full segmented control) ───────── */
+.boardseg { display: none; }
+@media (max-width: 760px) {
+  .ctl .modebtn.boardnote { display: none; }
+  .ctl .boardseg { display: inline-flex; padding: 2px; border-radius: 999px; background: color-mix(in srgb, var(--ink) 8%, transparent); }
+  .boardseg button { border: 0; background: none; color: var(--muted); border-radius: 999px; padding: 0.3rem 0.8rem; min-height: 2rem; font-size: 0.85rem; }
+  .boardseg button.on { background: var(--accent); color: var(--accent-ink, #fff); font-weight: 600; }
+}
+
+/* ───────── ```base tables, modern ───────── */
+.cm-base { margin: 1rem 0; }
+.base-bar { gap: 0.8rem; }
+.base-bar > span { font-variant-numeric: tabular-nums; }
+.base-find { margin-inline-start: auto; width: 9rem; max-width: 40%; min-height: 0; padding: 0.25rem 0.7rem; border-radius: 99px; font-size: 0.82rem; border: 1px solid var(--line); background: var(--surface); }
+.base-wrap { max-height: 70vh; overflow: auto; border: 1px solid var(--line); border-radius: 16px; background: var(--surface); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04), 0 8px 24px -16px rgba(0, 0, 0, 0.25); }
+.cm-base table { border-collapse: separate; border-spacing: 0; }
+.cm-base th { position: sticky; top: 0; z-index: 2; background: color-mix(in srgb, var(--surface) 88%, var(--ink)); backdrop-filter: blur(8px); border-bottom: 1px solid var(--line); cursor: pointer; user-select: none; }
+.cm-base th.sortable:hover { color: var(--ink); }
+.cm-base th[data-sort]::after { content: ' ▴'; color: var(--accent); }
+.cm-base th[data-sort='desc']::after { content: ' ▾'; }
+.cm-base td { border-bottom: 1px solid color-mix(in srgb, var(--line) 60%, transparent); }
+.cm-base tbody tr { transition: background 0.12s; }
+.cm-base tbody tr:hover { background: var(--accent-soft); }
+.cm-base td:first-child, .cm-base th:first-child { padding-inline-start: 1rem; }
+.base-chips { display: flex; flex-wrap: wrap; gap: 0.25rem; }
+.base-chips span, .base-badge { display: inline-block; font-size: 0.78rem; font-weight: 600; line-height: 1.5; padding: 0 0.6rem; border-radius: 99px; background: hsl(var(--h) 70% 55% / 0.16); color: color-mix(in srgb, hsl(var(--h) 75% 50%) 55%, var(--ink)); border: 0; }
+.base-badge.edit { cursor: pointer; }
+.base-badge.edit:hover { filter: brightness(1.1); outline: 2px solid hsl(var(--h) 70% 55% / 0.4); }
+.cm-base td.plain { padding: 0.4rem 0.8rem; }
+@media (max-width: 760px) { .base-find { width: 6rem; } .base-wrap { border-radius: 14px; } }

@@ -80,3 +80,22 @@ test('code fences and other text are left alone', () => {
   assert.equal(b.columns.length, 1);
   assert.deepEqual(b.columns[0]!.cards.map((c) => c.text), ['x', 'y']);
 });
+
+test('steps: a flat checklist and stage groups are read, ticked and added', async () => {
+  const { addSub, boardKind, cardProgress, parseBoard, setBoardKind, toggleSub } = await import('../app/src/lib/kanban.ts');
+  const t = '---\nkanban: pipeline\n---\n## Script\n\n## Shoot\n- [ ] Video one\n  - [ ] flat step\n  - Shoot\n    - [x] Unbox\n    - [ ] Test\n  - a note line\n\n## Post\n';
+  const b = parseBoard(t);
+  const card = b.columns[1]!.cards[0]!;
+  assert.equal(boardKind(t), 'pipeline');
+  assert.deepEqual(card.subs.map((s) => [s.text, s.done, s.stage]), [['flat step', false, null], ['Unbox', true, 'Shoot'], ['Test', false, 'Shoot']]);
+  assert.deepEqual(card.extra, ['- a note line']);
+  // second of three stages, half of its steps done: (1 + 0.5) / 3
+  assert.equal(cardProgress('pipeline', card, 1, 3, 'Shoot'), 0.5);
+  const ticked = toggleSub(t, 1, 0, 2);
+  assert.equal(cardProgress('pipeline', parseBoard(ticked).columns[1]!.cards[0]!, 1, 3, 'Shoot'), 2 / 3);
+  const added = parseBoard(addSub(t, 1, 0, 'Benchmark', 'Shoot')).columns[1]!.cards[0]!;
+  assert.deepEqual(added.subs.map((s) => s.text), ['flat step', 'Unbox', 'Test', 'Benchmark']);
+  const fresh = parseBoard(addSub(t, 1, 0, 'Edit', 'Post')).columns[1]!.cards[0]!;
+  assert.equal(fresh.subs.at(-1)!.stage, 'Post');
+  assert.equal(boardKind(setBoardKind(t, 'board')), 'board');
+});

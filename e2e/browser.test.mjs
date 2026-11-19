@@ -664,9 +664,19 @@ test('round 9b: a base block lists notes by their properties and edits them', as
   await page.waitForSelector('.cm-base table', { timeout: 8000 });
   const heads = await page.locator('.cm-base th').allInnerTexts();
   assert.ok(heads.length === 3, 'columns: ' + heads);
+  await page.click('.cm-base th >> nth=0');
+  await page.waitForSelector('.cm-base th[data-sort="asc"]');
+  await page.click('.cm-base th >> nth=0');
+  await page.waitForSelector('.cm-base th[data-sort="desc"]');
+  await page.fill('.base-find', 'two');
+  await page.waitForFunction(() => document.querySelectorAll('.cm-base tbody tr').length === 1);
+  await page.fill('.base-find', '');
+  await page.waitForFunction(() => document.querySelectorAll('.cm-base tbody tr').length >= 2);
   await page.waitForSelector('.cm-base a.base-link:has-text("Task one")');
   assert.equal(await page.locator('.cm-base a.base-link:has-text("Task two")').count(), 1);
   // edit a property from the list
+  const badge = page.locator('.cm-base tr:has-text("Task one") .base-badge.edit');
+  if (await badge.count()) await badge.first().click(); // a status shows as a badge until you click it
   await page.fill('.cm-base tr:has-text("Task one") input.base-cell', 'in progress');
   await page.keyboard.press('Enter');
   await page.waitForTimeout(1200);
@@ -1055,9 +1065,19 @@ test('round 21: on a phone the board clears the top bar, shows one column at a t
   assert.ok(g.late, 'an overdue card is marked');
   await page.locator('.listbtn').dispatchEvent('click');
   await page.waitForSelector('.cm-content');
-  await page.locator('.ctl .modebtn').dispatchEvent('click'); // list → read ... cycle reaches board again
-  await page.locator('.ctl .modebtn').dispatchEvent('click');
-  await page.locator('.ctl .modebtn').dispatchEvent('click');
+  await page.locator('.boardseg button').first().dispatchEvent('click');
+  await page.waitForSelector('.board .bcol');
+  // pipeline mode: one stage segment per column, and "Move to" moves a card
+  await page.locator('.kindbtn').dispatchEvent('click');
+  await page.waitForSelector('.card .stages');
+  assert.equal(await page.locator('.card').first().locator('.stages .seg').count(), 2);
+  await page.locator('.card').first().locator('.movewrap button').first().dispatchEvent('click');
+  await page.locator('.movemenu button', { hasText: 'Done' }).dispatchEvent('click');
+  await page.waitForFunction(() => document.querySelectorAll('.bcol:nth-child(2) .card').length === 2);
+  // the Board|List switch is always there: List, and back to Board
+  await page.locator('.boardseg button').last().dispatchEvent('click');
+  await page.waitForSelector('.cm-content');
+  await page.locator('.boardseg button').first().dispatchEvent('click');
   await page.waitForSelector('.board .bcol');
   assert.deepEqual(errors, []);
 });

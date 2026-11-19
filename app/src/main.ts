@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 mmBesar
 
+// engine flag for engine-specific style fixes (WebKitGTK: the Linux app and GNOME Web)
+if (/AppleWebKit/.test(navigator.userAgent) && /Linux/.test(navigator.userAgent) && !/Chrome|Chromium|Android/.test(navigator.userAgent)) document.documentElement.dataset.engine = 'webkitgtk';
+
 import { mount } from 'svelte';
 import App from './App.svelte';
 import '@fontsource/roboto/400.css';

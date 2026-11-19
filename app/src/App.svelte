@@ -17,7 +17,6 @@
   import { store } from './lib/store.svelte.ts';
 
   let drawer = $state(false);
-  let settings = $state(false);
 
   onMount(() => {
     void store.boot();
@@ -28,7 +27,7 @@
   // Android back button: close the top layer (settings, menu, palette, sign-in) before leaving the app
   let pushed = 0;
   $effect(() => {
-    const layers = (settings ? 1 : 0) + (drawer ? 1 : 0) + (store.sheet ? 1 : 0) + (store.palette ? 1 : 0) + (store.mode === 'login' ? 1 : 0);
+    const layers = (store.settingsOpen ? 1 : 0) + (drawer ? 1 : 0) + (store.sheet ? 1 : 0) + (store.palette ? 1 : 0) + (store.mode === 'login' ? 1 : 0);
     while (pushed < layers) {
       history.pushState({ qm: ++pushed }, '');
     }
@@ -38,7 +37,7 @@
       if (pushed > 0) pushed--;
       if (store.sheet) store.sheet = null;
       else if (store.palette) store.palette = false;
-      else if (settings) settings = false;
+      else if (store.settingsOpen) store.settingsOpen = false;
       else if (drawer) drawer = false;
       else if (store.mode === 'login') store.startLocal();
     };
@@ -141,7 +140,7 @@
   <Login />
 {:else}
   <div class="shell" class:side-off={store.s.hideSide} class:zen={store.zen} class:drawer-open={drawer} class:swiping={prog !== null} style:--p={prog ?? (drawer ? 1 : 0)}>
-    <Sidebar onSettings={() => (settings = true)} onPick={() => (drawer = false)} />
+    <Sidebar onSettings={() => (store.settingsOpen = true)} onPick={() => (drawer = false)} />
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <button
       class="resizer"
@@ -171,11 +170,11 @@
       {/if}
     </main>
   </div>
-  {#if settings}
-    <SettingsDialog onClose={() => (settings = false)} />
+  {#if store.settingsOpen}
+    <SettingsDialog onClose={() => (store.settingsOpen = false)} />
   {/if}
 {/if}
-{#if store.palette}<Palette onSettings={() => (settings = true)} />{/if}
+{#if store.palette}<Palette onSettings={() => (store.settingsOpen = true)} />{/if}
 <svelte:window ontouchstart={swStart} ontouchmove={swMove} ontouchend={swEnd} ontouchcancel={swEnd} oncontextmenu={onContext} onkeydown={(e) => { if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && (e.key === 'p' || e.key === 'k') && store.mode !== 'login' && store.mode !== 'welcome' && store.mode !== 'boot') { e.preventDefault(); store.palette = !store.palette; } else if (e.altKey && !e.ctrlKey && !e.metaKey && e.key === 'w' && store.currentId) { e.preventDefault(); store.closeTabs([store.currentId]); } else if ((e.ctrlKey || e.metaKey) && e.key === '\\' && store.mode !== 'login' && store.mode !== 'welcome') { e.preventDefault(); store.toggleSide(); } else if (e.altKey && !e.ctrlKey && !e.metaKey && e.key === 'z' && store.mode !== 'login' && store.mode !== 'welcome') { e.preventDefault(); store.toggleZen(); } else if (e.key === 'Escape' && store.zen && !store.palette) { store.zen = false; } else if (e.ctrlKey && e.key === 'Tab') { e.preventDefault(); store.nextTab(e.shiftKey ? -1 : 1); } }} />
 <DialogHost />
 <ContextMenu />

@@ -99,7 +99,7 @@
     });
 </script>
 
-<dialog bind:this={dlg} onclose={onClose}>
+<dialog class="settings" bind:this={dlg} onclose={onClose}>
   <form method="dialog" class="dialog-head">
     <h2>{t('settings')}</h2>
     <button class="icon" aria-label={t('close')}>×</button>
@@ -147,7 +147,7 @@
       <FontPicker value={store.s.fontSource} suggestions={["JetBrainsMono Nerd Font Mono","JetBrains Mono","Fira Code","Cascadia Code"]} placeholder={t('fontDefault')} onChange={(v) => store.setLayout({ fontSource: v })} />
     </div>
   </div>
-  <label class="check"><input type="checkbox" checked={store.s.centerPage} onchange={(e) => store.setLayout({ centerPage: e.currentTarget.checked })} /> {t('centerPage')}</label>
+  {#if !onAndroid()}<label class="check"><input type="checkbox" checked={store.s.centerPage} onchange={(e) => store.setLayout({ centerPage: e.currentTarget.checked })} /> {t('centerPage')}</label>{/if}
   <label class="filebtn ghost">
     {t('addFont')}
     <input type="file" accept=".ttf,.otf,.woff,.woff2" hidden onchange={addFont} />

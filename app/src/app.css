@@ -1723,7 +1723,7 @@ aside .results .snip { color: var(--muted); font-size: 0.78rem; white-space: nor
   button, [role='button'], .ctx-item { touch-action: manipulation; }
   .toolbar button { min-width: 2.6rem; min-height: 2.6rem; }
   .topbar button { min-height: 2.6rem; }
-  .cm-content { font-size: 1.04rem; }
+  .cm-content { font-size: calc(var(--font-size, 17px) * 1.04); }
   .status { padding-bottom: max(0.3rem, env(safe-area-inset-bottom)); }
 }
 @media (pointer: coarse) {
@@ -1925,3 +1925,29 @@ aside .pinrow.active { background: color-mix(in srgb, var(--accent) 16%, transpa
 
 /* Arabic lines: one font for letters, marks, spaces and punctuation (see setArabicFont), and unhinted glyph placement */
 .cm-editor:not(.cm-source) .cm-line[dir='rtl'], .page-title[dir='rtl'] { font-family: var(--ui-rtl); text-rendering: geometricPrecision; font-kerning: auto; }
+
+/* WebKitGTK shifts the words of an Arabic line with diacritics when spaces are preserved; collapsing them avoids it */
+html[data-engine='webkitgtk'] .cm-line.qm-tashkeel { white-space: pre-line; }
+/* ...and inline code holding Arabic with diacritics there uses the text font, since mixing the code font's spaces with
+   Arabic letters from another font brings the shift back */
+html[data-engine='webkitgtk'] .cm-line.qm-tashkeel .cm-inline-code { font-family: var(--ui-rtl); font-size: 0.95em; }
+
+/* ───────── phones: a roomier grab area for sheets, and a full-screen settings page ───────── */
+/* the bar stays small; the part you can hold is the whole top of the sheet, title included */
+.sheet .grab { padding: 0.9rem 0 1.1rem; margin-bottom: -0.9rem; position: relative; z-index: 1; }
+.sheet .grab::before { content: ''; position: absolute; inset: -0.6rem 0 -0.2rem; }
+.sheet h3 { padding-top: 0.2rem; }
+@media (pointer: coarse), (max-width: 760px) {
+  dialog:has(.settings-body), dialog.settings {
+    width: 100vw; max-width: 100vw; height: 100dvh; max-height: 100dvh; margin: 0; border: 0; border-radius: 0; padding: 0 1rem calc(1rem + env(safe-area-inset-bottom));
+    background: var(--bg);
+  }
+  dialog.settings .dialog-head { position: sticky; top: 0; z-index: 5; margin-inline: -1rem; padding: calc(0.7rem + env(safe-area-inset-top)) 1rem 0.7rem; background: var(--bg); border-bottom: 1px solid var(--line); }
+  dialog.settings .dialog-head h2 { font-size: 1.3rem; }
+  dialog.settings .dialog-head .icon { width: 2.8rem; height: 2.8rem; font-size: 1.5rem; }
+  dialog.settings .grid2 { grid-template-columns: 1fr; gap: 0.8rem; }
+  dialog.settings h3 { margin: 1.6rem 0 0.6rem; font-size: 0.78rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent); }
+  dialog.settings input:not([type='range']):not([type='checkbox']), dialog.settings button { min-height: 2.8rem; }
+  dialog.settings input[type='range'] { height: 2rem; }
+  dialog.settings .row { gap: 0.6rem; flex-wrap: wrap; }
+}

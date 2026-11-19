@@ -1086,6 +1086,7 @@ class Store {
   }
 
   palette = $state(false);
+  settingsOpen = $state(false);
 
   /** Keep a copy of a note in the Templates folder. */
   async saveAsTemplate(id: string, liveText?: string) {

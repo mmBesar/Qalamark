@@ -509,6 +509,7 @@
           <div class="menu" role="menu">
             <button role="menuitem" onclick={() => { menu = false; setToc(!showToc); }}>{t('toc')}</button>
             <button role="menuitem" onclick={() => { menu = false; hist = true; }}>{t('history')}</button>
+            <button role="menuitem" onclick={() => { menu = false; store.settingsOpen = true; }}>{t('settings')}</button>
             <button role="menuitem" onclick={() => { menu = false; store.toggleZen(); }}>{t('zen')} · Alt+Z</button>
             <button role="menuitem" onclick={() => ((help = true), (menu = false))}>{t('help')} · ƒ</button>
             {#if !boardNote && !readOnly}<button role="menuitem" onclick={() => { menu = false; makeBoardNote(); }}>{t('boardUse')}</button>{/if}
@@ -611,6 +612,7 @@
       {#if store.mode === 'server' && note.role === 'owner'}<button onclick={() => { store.sheet = null; sharing = true; }}><Icon name="share" size={20} /> {t('share')}</button>{/if}
       {#if !boardNote && !readOnly}<button onclick={() => { store.sheet = null; makeBoardNote(); }}><Icon name="board" size={20} /> {t('boardUse')}</button>{/if}
       <button onclick={() => { store.sheet = null; hist = true; }}><Icon name="clock" size={20} /> {t('history')}</button>
+      <button onclick={() => { store.sheet = null; store.settingsOpen = true; }}><Icon name="settings" size={20} /> {t('settings')}</button>
       <button onclick={() => { store.sheet = null; help = true; }}><Icon name="fx" size={20} /> {t('help')}</button>
       <button onclick={() => { store.sheet = null; exportMd(); }}><Icon name="upload" size={20} /> {t('export')}</button>
       <button class="danger" onclick={() => { store.sheet = null; remove(); }}><Icon name="trash" size={20} /> {note.role === 'owner' || store.mode === 'local' ? t('delete') : t('leave')}</button>

@@ -134,6 +134,11 @@ export interface Editor {
 const RTL = /[\u0590-\u08FF\uFB1D-\uFDFF\uFE70-\uFEFF]/;
 const rtlLine = Decoration.line({ attributes: { dir: 'rtl' } });
 const ltrLine = Decoration.line({ attributes: { dir: 'ltr' } });
+/** Lines with Arabic diacritics. WebKitGTK (the engine of the Linux app) draws the words of such a line shifted up and
+ *  down when the line keeps its spaces (white-space: pre-wrap, which the editor needs), but not when spaces collapse,
+ *  so these lines get a class the style sheet uses on that engine. */
+const TASHKEEL = /[\u064B-\u065F\u0670\u06D6-\u06ED]/;
+const tashkeelLine = Decoration.line({ class: 'qm-tashkeel' });
 /** Every paragraph runs in the direction of its first letter, so Arabic lines are right-to-left and the
  *  editor (which reads the direction from the line) places the cursor and selection correctly. */
 const lineDirections = ViewPlugin.fromClass(
@@ -154,8 +159,10 @@ const lineDirections = ViewPlugin.fromClass(
           pos = line.to + 1;
           if (line.from === last) continue;
           last = line.from;
-          const m = /\p{L}/u.exec(line.text);
+          // the task box [x] holds a Latin letter, which must not decide the direction of an Arabic task
+          const m = /\p{L}/u.exec(line.text.replace(/^\s*(?:[-*+]|\d+[.)])?\s*\[[ xX]\]/, ''));
           if (m) out.push((RTL.test(m[0]) ? rtlLine : ltrLine).range(line.from));
+          if (TASHKEEL.test(line.text)) out.push(tashkeelLine.range(line.from));
         }
       }
       return Decoration.set(out);

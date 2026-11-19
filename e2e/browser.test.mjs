@@ -984,3 +984,19 @@ test('round 18: Arabic lines use the chosen font whole (letters, marks and space
   assert.ok(r.loaded.some((f) => f.includes('QM Arabic Line')), 'the whole-line face loaded: ' + r.loaded);
   assert.deepEqual(errors, []);
 });
+
+test('round 19: an Arabic task keeps its direction when ticked and the font size reaches the text', async () => {
+  const errors = [];
+  const page = await newPage(errors);
+  await signIn(page, 'alice', 'alice-password');
+  await page.locator('aside .actions button:first-child').dispatchEvent('click');
+  await page.waitForSelector('.cm-content');
+  await page.click('.cm-content');
+  await page.keyboard.insertText('- [ ] مهمة أولى\n- [x] مهمة ثانية');
+  await page.waitForTimeout(600);
+  const dirs = await page.evaluate(() => [...document.querySelectorAll('.cm-line')].map((l) => l.getAttribute('dir')));
+  assert.deepEqual(dirs, ['rtl', 'rtl'], 'ticked and unticked Arabic tasks both run right to left');
+  const sizes = await page.evaluate(() => { document.documentElement.style.setProperty('--font-size', '26px'); return parseFloat(getComputedStyle(document.querySelector('.cm-content')).fontSize); });
+  assert.ok(sizes >= 26, 'the font-size setting reaches the editor text: ' + sizes);
+  assert.deepEqual(errors, []);
+});

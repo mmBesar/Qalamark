@@ -1956,3 +1956,19 @@ html[data-engine='webkitgtk'] .cm-line.qm-tashkeel .cm-inline-code { font-family
    marks are shaped by one font (the same rule the editor's Arabic lines follow) */
 .fp-sample .fp-en { font-family: var(--pick, var(--ui)), var(--ui); }
 .fp-sample .fp-ar { font-family: var(--pick, var(--ui-rtl)), var(--ui-rtl); text-rendering: geometricPrecision; }
+
+/* ───────── round 20 ───────── */
+/* the title is a growing text box that follows the direction of its text (Arabic titles sit on the right) */
+textarea.page-title { resize: none; overflow: hidden; overflow-wrap: anywhere; text-align: start; font-family: inherit; box-sizing: content-box; }
+/* the colour dots in settings stay round whatever the width */
+.swatches button { flex: 0 0 auto; width: 1.7rem; min-width: 1.7rem; max-width: 1.7rem; height: 1.7rem; min-height: 1.7rem; aspect-ratio: 1; box-sizing: border-box; }
+dialog.settings .swatches button { min-height: 0; }
+/* the list that opens on [[ and the other pop-ups follow the theme */
+.cm-tooltip, .cm-tooltip.cm-tooltip-autocomplete { background: var(--surface) !important; color: var(--ink) !important; border: 1px solid var(--line); box-shadow: var(--shadow); border-radius: 10px; overflow: hidden; }
+.cm-tooltip-autocomplete > ul { font-family: var(--ui); max-height: 16rem; }
+.cm-tooltip-autocomplete > ul > li { color: var(--ink); padding: 0.3rem 0.7rem; }
+.cm-tooltip-autocomplete > ul > li[aria-selected] { background: var(--accent-soft) !important; color: var(--ink) !important; }
+.cm-completionDetail, .cm-completionMatchedText { color: inherit; }
+.cm-completionMatchedText { text-decoration: none; font-weight: 700; color: var(--accent); }
+.cm-completionInfo { background: var(--surface); color: var(--ink); }
+.ctl .tocbtn.on { background: var(--accent-soft); color: var(--accent); }

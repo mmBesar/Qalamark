@@ -398,14 +398,16 @@ const plugin = ViewPlugin.fromClass(
         const el = (e.target as HTMLElement).closest?.('[data-wiki]') as HTMLElement | null;
         const cfg = view.state.facet(wikiConfig);
         if (el && cfg && el.dataset.wiki) {
-          const open = view.state.facet(readingMode) || e.ctrlKey || e.metaKey || window.matchMedia('(pointer: coarse)').matches;
+          // a plain click opens the note (Shift-click and a drag keep editing the text of the link)
+          const open = !e.shiftKey && e.button === 0;
           if (open) {
             e.preventDefault();
             cfg.open(el.dataset.wiki);
             return true;
           }
         }
-        if (!(e.ctrlKey || e.metaKey)) return false;
+        const mod = e.ctrlKey || e.metaKey;
+        if (e.shiftKey || e.button !== 0) return false;
         const pos = view.posAtCoords({ x: e.clientX, y: e.clientY });
         if (pos === null) return false;
         let node: SyntaxNode | null = syntaxTree(view.state).resolveInner(pos, 1);
@@ -414,6 +416,15 @@ const plugin = ViewPlugin.fromClass(
         const urlNode = node.name === 'URL' ? node : node.getChild('URL');
         const url = urlNode ? view.state.sliceDoc(urlNode.from, urlNode.to) : '';
         if (!url) return false;
+        // a link to another note ([text](other.md)) opens in the app; web addresses open with Ctrl/Cmd-click
+        if (!/^[a-z][a-z0-9+.-]*:/i.test(url) && !url.startsWith('#') && cfg) {
+          let name = url;
+          try { name = decodeURIComponent(url); } catch { /* keep as is */ }
+          cfg.open(name.replace(/^\.?\//, '').replace(/\.md$/i, ''));
+          e.preventDefault();
+          return true;
+        }
+        if (!mod) return false;
         window.open(url, '_blank', 'noopener');
         e.preventDefault();
         return true;

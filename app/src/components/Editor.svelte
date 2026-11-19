@@ -150,6 +150,15 @@
     }
   }
   // The contents panel (all modes): jump to, fold and rearrange sections.
+  // the title grows to as many lines as it needs, so a long one wraps instead of running off the screen
+  function fit(node: HTMLTextAreaElement, _v: string) {
+    const size = () => { node.style.height = 'auto'; node.style.height = node.scrollHeight + 'px'; };
+    size();
+    const ro = new ResizeObserver(size);
+    ro.observe(node);
+    return { update: size, destroy: () => ro.disconnect() };
+  }
+  const toggleContents = () => { if (mobile) store.sheet = 'toc'; else setToc(!showToc); };
   let showToc = $state((() => { try { return localStorage.getItem('qm.toc') === '1'; } catch { return false; } })());
   let tocTick = $state(0);
   const setToc = (on: boolean) => {
@@ -449,7 +458,7 @@
     if (showLinks && !(e.target as Element).closest('.links-wrap')) showLinks = false;
     if (insMenu && !(e.target as Element).closest('.relative')) insMenu = false;
   }}
-  onkeydown={(e) => e.key === 'Escape' && (menu = false)}
+  onkeydown={(e) => { if (e.key === 'Escape') menu = false; else if (e.altKey && !e.ctrlKey && !e.metaKey && e.code === 'KeyO') { e.preventDefault(); toggleContents(); } }}
 />
 
 <section class="editor-pane" class:mobile class:hide-bars={mobile && !bars && !typing} class:typing={mobile && typing}>
@@ -500,6 +509,7 @@
         <button class:on={mode === 'read'} onclick={() => setMode('read')}>{t('modeRead')}</button>
         <button class:on={mode === 'source'} onclick={() => setMode('source')}>{t('modeSource')}</button>
       </div>
+      <button class="icon tocbtn" class:on={showToc && !mobile} aria-label={t('toc')} title="{t('toc')} · Alt+O" onclick={toggleContents}><Icon name="outline" size={18} /></button>
       {#if store.mode === 'server' && note.role === 'owner'}
         <button class="icon sharebtn" aria-label={t('share')} title={t('share')} onclick={() => (sharing = true)}><Icon name="share" size={18} /></button>
       {/if}
@@ -528,15 +538,18 @@
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div class="editor-row" hidden={mode === 'board'}>
     <div class="page" bind:this={page}>
-      <input
+      <textarea
         class="page-title"
+        rows="1"
+        dir="auto"
         bind:value={title}
+        use:fit={title}
         readonly={!canRename}
         aria-label={t('rename')}
         placeholder={t('untitled')}
         onblur={rename}
-        onkeydown={(e) => e.key === 'Enter' && (e.currentTarget as HTMLInputElement).blur()}
-      />
+        onkeydown={(e) => { if (e.key === 'Enter') { e.preventDefault(); (e.currentTarget as HTMLTextAreaElement).blur(); } }}
+      ></textarea>
       {#if liveText && mode !== 'source' && mode !== 'board'}<Properties ytext={liveText} readOnly={readOnly || mode === 'read'} noteId={note.id} />{/if}
       <div class="cm-host" bind:this={host} onmousedown={focusEnd}></div>
     </div>

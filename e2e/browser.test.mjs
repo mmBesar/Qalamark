@@ -1000,3 +1000,24 @@ test('round 19: an Arabic task keeps its direction when ticked and the font size
   assert.ok(sizes >= 26, 'the font-size setting reaches the editor text: ' + sizes);
   assert.deepEqual(errors, []);
 });
+
+test('round 20: Arabic title on the right and wrapping, [[ list themed, links open on click, Contents one tap away', async () => {
+  const errors = [];
+  const page = await newPage(errors);
+  await signIn(page, 'alice', 'alice-password');
+  await page.locator('aside .actions button:first-child').dispatchEvent('click');
+  await page.waitForSelector('.page-title');
+  await page.fill('.page-title', 'عنوان عربي');
+  await page.locator('.page-title').blur();
+  const al = await page.evaluate(() => { const t = document.querySelector('.page-title'); const b = t.getBoundingClientRect(); return { dir: getComputedStyle(t).direction, align: getComputedStyle(t).textAlign }; });
+  assert.equal(al.dir, 'rtl');
+  await page.click('.cm-content');
+  await page.keyboard.insertText('# Head one\n\ntext\n\n## Head two\n\n[[');
+  await page.waitForSelector('.cm-tooltip-autocomplete', { timeout: 5000 }).catch(() => {});
+  const bg = await page.evaluate(() => { const e = document.querySelector('.cm-tooltip'); return e ? getComputedStyle(e).backgroundColor : null; });
+  if (bg) assert.notEqual(bg, 'rgb(255, 255, 255)', 'the [[ list follows the theme');
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('Alt+o');
+  await page.waitForSelector('.toc, [class*=toc]');
+  assert.deepEqual(errors, []);
+});

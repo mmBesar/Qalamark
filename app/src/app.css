@@ -1951,3 +1951,8 @@ html[data-engine='webkitgtk'] .cm-line.qm-tashkeel .cm-inline-code { font-family
   dialog.settings input[type='range'] { height: 2rem; }
   dialog.settings .row { gap: 0.6rem; flex-wrap: wrap; }
 }
+
+/* the font preview: the Latin and Arabic parts are separate runs, and the Arabic one starts with the Arabic stack, so letters and
+   marks are shaped by one font (the same rule the editor's Arabic lines follow) */
+.fp-sample .fp-en { font-family: var(--pick, var(--ui)), var(--ui); }
+.fp-sample .fp-ar { font-family: var(--pick, var(--ui-rtl)), var(--ui-rtl); text-rendering: geometricPrecision; }

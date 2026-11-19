@@ -82,5 +82,5 @@
       {/each}
     </div>
   {/if}
-  <div class="fp-sample" dir="auto" style:font-family={draft ? `'${draft.replace(/['"\\]/g, '')}', var(--ui)` : 'var(--ui)'}>Aa Bb · أبجد · سَيِّدُ الِاسْتِغْفَارِ</div>
+  <div class="fp-sample" dir="ltr" style:--pick={draft ? `'${draft.replace(/['"\\]/g, '')}'` : ''}><span class="fp-en">Aa Bb ·</span> <span class="fp-ar" dir="rtl">أبجد · سَيِّدُ الِاسْتِغْفَارِ</span></div>
 </div>

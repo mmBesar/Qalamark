@@ -120,6 +120,7 @@ fn vault_mkdir(app: AppHandle, folder: String) -> Result<(), String> {
 /// Show a note or folder in the system file manager (Linux: select it when the manager supports it).
 #[tauri::command]
 fn vault_reveal(app: AppHandle, path: String) -> Result<(), String> {
+    #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
     use std::process::Command;
     let target = vault::resolve(&root(&app), &path).map_err(err)?;
     let target = if target.exists() { target } else { root(&app) };

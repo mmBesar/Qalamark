@@ -979,8 +979,8 @@ test('round 18: Arabic lines use the chosen font whole (letters, marks and space
     const lines = [...document.querySelectorAll('.cm-line')];
     return { ar: getComputedStyle(lines[0]).fontFamily, en: getComputedStyle(lines[lines.length - 1]).fontFamily, loaded: [...document.fonts].filter((f) => f.status === 'loaded').map((f) => f.family) };
   });
-  assert.ok(r.ar.startsWith('"QM Arabic Line"') || r.ar.startsWith("'QM Arabic Line'"), 'Arabic line stack: ' + r.ar);
-  assert.ok(!r.en.includes('QM Arabic Line'), 'English line keeps its own stack: ' + r.en);
+  assert.ok(r.ar.startsWith('"DejaVu Sans"'), 'Arabic line stack starts with the chosen font: ' + r.ar);
+  assert.ok(r.en.startsWith('"Qalamark Roboto"'), 'English line keeps the English font first: ' + r.en);
   assert.ok(r.loaded.some((f) => f.includes('QM Arabic Line')), 'the whole-line face loaded: ' + r.loaded);
   assert.deepEqual(errors, []);
 });

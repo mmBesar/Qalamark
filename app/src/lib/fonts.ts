@@ -68,17 +68,11 @@ export async function removeUserFont(family: string): Promise<void> {
   await tx('readwrite', (s) => s.delete(family));
 }
 
-const ARABIC = 'U+0600-06FF, U+0750-077F, U+08A0-08FF, U+FB50-FDFF, U+FE70-FEFF, U+200C-200F, U+060C, U+061B';
 let arLine: FontFace | null = null;
-let arFace: FontFace | null = null;
 
 /** The Arabic font chosen in Settings, used for Arabic letters only (so the English font stays as it is).
  *  It is a font added by the user, or one installed on the computer. */
 export async function setArabicFont(name: string): Promise<void> {
-  if (arFace) {
-    document.fonts.delete(arFace);
-    arFace = null;
-  }
   if (arLine) {
     document.fonts.delete(arLine);
     arLine = null;
@@ -88,13 +82,9 @@ export async function setArabicFont(name: string): Promise<void> {
   try {
     const mine = await tx<UserFont | undefined>('readonly', (s) => s.get(n)).catch(() => undefined);
     const src = () => (mine ? mine.data : `local("${n}")`);
-    const face = new FontFace('QM Arabic', src(), { unicodeRange: ARABIC, weight: '100 900' });
-    await face.load();
-    document.fonts.add(face);
-    arFace = face;
-    // For whole Arabic lines the same font without a range: the spaces, marks and punctuation between the words
-    // then come from the same font as the letters, so nothing is split into separate runs (the browser built into
-    // the Linux app positions a word wrongly when its last letter's diacritic and the following space are shaped apart).
+    // The chosen font as one face with no unicode-range (WebKitGTK draws diacritics wrongly when an Arabic web font has a
+    // range, or when a word sits next to text from another font). A font installed on the computer is also named
+    // directly in the stacks, which is the safest path there.
     const whole = new FontFace('QM Arabic Line', src(), { weight: '100 900' });
     await whole.load();
     document.fonts.add(whole);

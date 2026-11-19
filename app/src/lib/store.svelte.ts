@@ -126,29 +126,25 @@ class Store {
     const css = document.documentElement.style;
     const q = (name: string) => `'${name.replace(/['"\\]/g, '')}'`;
     const en = [this.s.fontEn.trim() ? q(this.s.fontEn.trim()) : '', "'Qalamark Roboto'", 'Roboto'].filter(Boolean).join(', ');
-    // Arabic letters: the chosen font (alias 'QM Arabic'), then the bundled ones. All of them only cover Arabic
-    // characters, so they can stand in front of the English font without changing it.
-    const ar = ["'QM Arabic'", "'Qalamark Naskh UI'", "'Qalamark Sans Arabic'"].join(', ');
+    // Arabic: the chosen font (named directly, for a font installed on the computer, and as the face 'QM Arabic Line'
+    // for one added in Settings), then the bundled faces. None of them has a unicode-range (see fonts.css).
+    const userAr = this.s.fontAr.trim() ? q(this.s.fontAr.trim()) : '';
+    const ar = [userAr, "'QM Arabic Line'", "'Qalamark Naskh UI'", "'Qalamark Sans Arabic'"].filter(Boolean).join(', ');
     void setArabicFont(this.s.fontAr);
-    const code = [
-      this.s.fontCode.trim() ? q(this.s.fontCode.trim()) : '',
-      "'JetBrainsMono Nerd Font Mono'",
-      "'JetBrainsMono NFM'",
-      "'JetBrains Mono'",
-      'ui-monospace',
-      'Consolas',
-      'monospace',
-    ]
-      .filter(Boolean)
-      .join(', ');
-    css.setProperty('--ui', `${ar}, ${en}, system-ui, sans-serif`);
-    css.setProperty('--ui-rtl', `'QM Arabic Line', ${ar}, ${en}, system-ui, sans-serif`);
-    css.setProperty('--mono', `${ar}, ${code}`);
+    const named = [this.s.fontCode.trim() ? q(this.s.fontCode.trim()) : '', "'JetBrainsMono Nerd Font Mono'", "'JetBrainsMono NFM'", "'JetBrains Mono'"].filter(Boolean).join(', ');
+    const generic = 'ui-monospace, Consolas, monospace';
+    // Arabic text runs in one font together with its spaces and marks, so an Arabic interface and Arabic lines put the
+    // Arabic fonts first; the English interface keeps its own font and uses the Arabic ones only for Arabic letters.
+    const rtl = `${ar}, ${en}, system-ui, sans-serif`;
+    css.setProperty('--ui', this.s.lang === 'ar' ? rtl : `${en}, ${ar}, system-ui, sans-serif`);
+    css.setProperty('--ui-rtl', rtl);
+    css.setProperty('--mono', `${named}, ${ar}, ${generic}`);
+    const sourceFont = this.s.fontSource.trim() ? q(this.s.fontSource.trim()) : '';
     css.setProperty('--font-size', `${this.s.fontSize}px`);
     css.setProperty('--editor-w', this.s.editorWidth > 0 ? `${this.s.editorWidth}rem` : '100%');
     css.setProperty('--side-w', `${this.s.sideWidth}px`);
     css.setProperty('--source-size', `${this.s.sourceSize}px`);
-    if (this.s.fontSource.trim()) css.setProperty('--source-font', `${ar}, ${q(this.s.fontSource.trim())}, ${code}`);
+    if (sourceFont) css.setProperty('--source-font', `${sourceFont}, ${ar}, ${named}, ${generic}`);
     else css.removeProperty('--source-font');
     document.documentElement.dataset.page = this.s.centerPage ? 'center' : 'side';
   }

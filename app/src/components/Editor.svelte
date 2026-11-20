@@ -159,6 +159,7 @@
     ro.observe(node);
     return { update: size, destroy: () => ro.disconnect() };
   }
+  let modeMenu = $state(false);
   const toggleContents = () => { if (mobile) store.sheet = 'toc'; else setToc(!showToc); };
   let showToc = $state((() => { try { return localStorage.getItem('qm.toc') === '1'; } catch { return false; } })());
   let tocTick = $state(0);
@@ -249,7 +250,7 @@
     liveText = session.ytext;
     const watchBoard = () => {
       const now = isBoard(session.ytext.toString());
-      if (now && !boardNote && !boardSeen) setMode('board');
+      if (now && !boardNote && !boardSeen) queueMicrotask(() => setMode('board')); // not inside the editor's own update
       boardNote = now;
       if (now) boardSeen = true;
     };
@@ -507,7 +508,14 @@
         <!-- a board note: Board and its text are always one tap apart; tapping the text side again steps through Live, Read, Source -->
         <div class="boardseg" role="group" aria-label={t('viewMode')}>
           <button class:on={mode === 'board'} onclick={() => setMode('board')}>{t('modeBoard')}</button>
-          <button class:on={mode !== 'board'} onclick={() => { if (mode === 'board') setMode('live'); else setMode(mode === 'live' ? 'read' : mode === 'read' ? 'source' : 'live'); }}>{mode === 'read' ? t('modeRead') : mode === 'source' ? t('modeSource') : t('boardList')}</button>
+          <button class:on={mode !== 'board'} aria-haspopup="menu" aria-expanded={modeMenu} onclick={() => { if (mode === 'board') setMode('live'); else modeMenu = !modeMenu; }}>{mode === 'read' ? t('modeRead') : mode === 'source' ? t('modeSource') : mode === 'live' ? t('modeLive') : t('boardList')}{#if mode !== 'board'} ▾{/if}</button>
+          {#if modeMenu}
+            <div class="modemenu" role="menu">
+              {#each [['live', t('modeLive')], ['read', t('modeRead')], ['source', t('modeSource')]] as [m, label]}
+                <button role="menuitem" class:on={mode === m} onclick={() => { modeMenu = false; setMode(m as ViewMode); }}>{label}</button>
+              {/each}
+            </div>
+          {/if}
         </div>
       {/if}
       <button class="ghost small modebtn" class:boardnote={boardNote} onclick={nextMode} aria-label={t('viewMode')}>{mode === 'board' ? t('modeBoard') : mode === 'read' ? t('modeRead') : mode === 'source' ? t('modeSource') : t('modeLive')}</button>
@@ -517,7 +525,7 @@
         <button class:on={mode === 'read'} onclick={() => setMode('read')}>{t('modeRead')}</button>
         <button class:on={mode === 'source'} onclick={() => setMode('source')}>{t('modeSource')}</button>
       </div>
-      <button class="icon tocbtn" class:on={showToc && !mobile} aria-label={t('toc')} title="{t('toc')} · Alt+O" onclick={toggleContents}><Icon name="outline" size={18} /></button>
+      <button class="icon tocbtn" class:on={showToc && !mobile} aria-label={t('toc')} title="{t('toc')} · Alt+O" onclick={toggleContents}><Icon name="toc" size={18} /></button>
       {#if store.mode === 'server' && note.role === 'owner'}
         <button class="icon sharebtn" aria-label={t('share')} title={t('share')} onclick={() => (sharing = true)}><Icon name="share" size={18} /></button>
       {/if}

@@ -35,6 +35,119 @@ export function fill(text: string, title: string, now = new Date(), lang: Lang =
 
 export const BUILT_IN: BuiltIn[] = [
   {
+    id: 'video-board',
+    name: { en: 'Video production board', ar: 'لوحة إنتاج الفيديو' },
+    title: 'Videos board',
+    body: {
+      en: `---
+kanban: pipeline
+status-prop: status
+card-props: [number, type, scheduled]
+card-folder: Videos
+---
+
+## Ideas
+- [ ] Example hardware review #hardware
+  - Shooting
+    - [ ] Unbox
+    - [ ] Test
+    - [ ] Benchmark
+    - [ ] A-roll
+    - [ ] B-roll
+  - Post
+    - [ ] Edit
+    - [ ] Thumbnail
+    - [ ] Description
+
+## Scripting
+
+## Shooting
+
+## Post
+
+## Scheduled
+
+## Live
+`,
+      ar: `---
+kanban: pipeline
+status-prop: status
+card-props: [number, type, scheduled]
+card-folder: Videos
+---
+
+## أفكار
+- [ ] مثال مراجعة جهاز #hardware
+  - التصوير
+    - [ ] فتح الصندوق
+    - [ ] التجربة
+    - [ ] اختبار الأداء
+    - [ ] A-roll
+    - [ ] B-roll
+  - المونتاج
+    - [ ] المونتاج
+    - [ ] الصورة المصغرة
+    - [ ] الوصف
+
+## كتابة السيناريو
+
+## التصوير
+
+## المونتاج
+
+## مجدول
+
+## منشور
+`,
+    },
+  },
+  {
+    id: 'video',
+    name: { en: 'Video note', ar: 'ملاحظة فيديو' },
+    title: 'Video',
+    body: {
+      en: `---
+number: 
+status: Ideas
+type: review
+youtube-title: 
+youtube-id: 
+scheduled: 
+tags: [video]
+---
+# {{title}}
+
+## Script
+
+## Notes
+`,
+      ar: `---
+number: 
+status: أفكار
+type: مراجعة
+youtube-title: 
+youtube-id: 
+scheduled: 
+tags: [فيديو]
+---
+# {{title}}
+
+## السيناريو
+
+## ملاحظات
+`,
+    },
+  },
+  {
+    id: 'video-index',
+    name: { en: 'Videos index', ar: 'فهرس الفيديوهات' },
+    title: 'Videos index',
+    body: {
+      en: '# Videos\n\n```base\nfolder: Videos\nshow: number, status, type, scheduled, youtube-title\nsort: number desc\n```\n',
+      ar: '# فهرس الفيديوهات\n\n```base\nfolder: Videos\nshow: number, status, type, scheduled, youtube-title\nsort: number desc\n```\n',
+    },
+  },
+  {
     id: 'kanban',
     name: { en: 'Kanban board', ar: 'لوحة كانبان' },
     title: 'Board',

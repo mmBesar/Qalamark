@@ -34,6 +34,7 @@
     calendar: 'M4 6h16v14H4zM4 10h16M8 3v4M16 3v4',
     sidebar: 'M4 5h16v14H4zM9.5 5v14',
     outline: 'M4 6h16M7 12h13M10 18h10',
+    toc: 'M4 5h4M11 5h9M4 12h4M11 12h9M4 19h4M11 19h9M6 7.5v2M6 14.5v2',
     command: 'M9 6a3 3 0 1 0-3 3h12a3 3 0 1 0-3-3v12a3 3 0 1 0 3-3H6a3 3 0 1 0 3 3z',
     tag: 'M3 12V4h8l10 10-8 8zM7.5 8.5h.01',
     'chevron-right': 'M9 6l6 6-6 6',

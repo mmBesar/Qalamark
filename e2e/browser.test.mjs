@@ -1081,3 +1081,36 @@ test('round 21: on a phone the board clears the top bar, shows one column at a t
   await page.waitForSelector('.board .bcol');
   assert.deepEqual(errors, []);
 });
+
+test('round 22: a card that links a note shows its properties and moving it writes the note status', async () => {
+  const errors = [];
+  const page = await newPage(errors);
+  await page.setViewportSize({ width: 1300, height: 800 });
+  await signIn(page, 'alice', 'alice-password');
+  await page.locator('aside .actions button:first-child').dispatchEvent('click');
+  await page.waitForSelector('.page-title');
+  await page.fill('.page-title', 'Vid One');
+  await page.locator('.page-title').blur();
+  await page.click('.cm-content');
+  await page.keyboard.insertText('---\nstatus: Ideas\nnumber: 7\n---\n\nhello');
+  await page.waitForTimeout(1500);
+  await page.locator('aside .actions button:first-child').dispatchEvent('click');
+  await page.waitForFunction(() => document.querySelector('.page-title')?.value !== 'Vid One');
+  await page.fill('.page-title', 'Plan');
+  await page.locator('.page-title').blur();
+  await page.click('.cm-content');
+  await page.keyboard.insertText('---\nkanban: pipeline\n---\n\n## Ideas\n- [ ] [[Vid One]]\n\n## Shooting\n');
+  await page.waitForSelector('.board .bcol', { timeout: 10000 });
+  await page.waitForSelector('.nprops', { timeout: 10000 });
+  assert.match(await page.locator('.nprops').first().innerText(), /number\s*7/);
+  if (process.env.SHOT2) await page.screenshot({ path: process.env.SHOT2 });
+  await page.locator('.card').first().locator('.movewrap button').first().dispatchEvent('click');
+  await page.locator('.movemenu button', { hasText: 'Shooting' }).dispatchEvent('click');
+  await page.waitForTimeout(1500);
+  await page.click('.card .clink');
+  await page.waitForFunction(() => document.querySelector('.page-title')?.value === 'Vid One');
+  await page.click('.topbar .seg button:has-text("Source")');
+  await page.waitForTimeout(400);
+  assert.match(await page.locator('.cm-content').innerText(), /status: Shooting/);
+  assert.deepEqual(errors, []);
+});

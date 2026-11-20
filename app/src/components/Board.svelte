@@ -12,6 +12,8 @@
   import { pieces } from '../lib/headings.ts';
   import { confirmBox } from '../lib/dialog.svelte.ts';
   import type { Sub } from '../lib/kanban.ts';
+  import type { NoteRow } from '../lib/base.ts';
+  import { readFrontMatter } from '../lib/frontmatter.ts';
   import { addCard, addColumn, addSub, boardKind, cardProgress, deleteCard, deleteColumn, deleteSub, editCard, moveCard, parseBoard, renameColumn, setBoardKind, toggleCard, toggleSub } from '../lib/kanban.ts';
 
   let { ytext, readOnly, noteId, onList }: { ytext: YText; readOnly: boolean; noteId?: string; onList?: () => void } = $props();
@@ -45,7 +47,7 @@
     draft = '';
   }
   function drop(c: number, i: number) {
-    if (drag) apply(moveCard(text, drag.c, drag.i, c, i));
+    if (drag) relocate(drag.c, drag.i, c, i);
     drag = over = null;
   }
   async function removeColumn(c: number) {
@@ -54,6 +56,60 @@
     apply(deleteColumn(text, c));
   }
   const focus = (el: HTMLElement) => el.focus();
+
+  // ── cards that are notes: a card with a [[link]] shows that note's properties, and moving it writes the note's status ──
+  let rows = $state<NoteRow[]>([]);
+  const targetOf = (s: string) => /\[\[([^\]|#\n]+)/.exec(s)?.[1]?.trim() ?? '';
+  const linkKey = $derived(board.columns.flatMap((c) => c.cards.map((k) => targetOf(k.text))).join('|'));
+  $effect(() => {
+    if (linkKey.replace(/\|/g, '')) void store.baseRows().then((r) => (rows = r)).catch(() => {});
+  });
+  const fm = $derived(readFrontMatter(text)?.props ?? []);
+  const fmText = (k: string) => { const p = fm.find((x) => x.key.toLowerCase() === k); return p ? (p.type === 'list' ? p.items.join(',') : p.text) : ''; };
+  const statusKey = $derived(fmText('status-prop').trim() || 'status');
+  const fieldKeys = $derived(fmText('card-props').split(',').map((x) => x.trim()).filter(Boolean));
+  const noteRow = (cardText: string) => { const tt = targetOf(cardText).toLowerCase(); return tt ? rows.find((r) => r.title.toLowerCase() === tt && r.id !== noteId) : undefined; };
+  const propText = (r: NoteRow, k: string) => { const p = r.props.find((x) => x.key.toLowerCase() === k.toLowerCase()); return p ? (p.type === 'list' ? p.items.join(', ') : p.text).trim() : ''; };
+  const HIDE = new Set(['tags', 'tag', 'aliases', 'kanban', 'cssclasses']);
+  function facts(r: NoteRow): Array<{ k: string; v: string }> {
+    const keys = fieldKeys.length ? fieldKeys : r.props.map((p) => p.key).filter((k) => k.toLowerCase() !== statusKey.toLowerCase() && !HIDE.has(k.toLowerCase()));
+    return keys.map((k) => ({ k, v: propText(r, k) })).filter((f) => f.v).slice(0, fieldKeys.length ? 6 : 3);
+  }
+  const DATEY = /^(due|scheduled|publish|publish-date|published|date)$/i;
+  const DATE_RE = /^\d{4}-\d{2}-\d{2}/;
+  const noteDue = (r?: NoteRow) => r?.props.map((p) => ({ k: p.key, v: p.text })).find((p) => DATEY.test(p.k) && DATE_RE.test(p.v))?.v.slice(0, 10) ?? null;
+  const noteStatus = (r?: NoteRow) => (r ? propText(r, statusKey) : '');
+  async function syncNote(cardText: string, title: string) {
+    const r = noteRow(cardText);
+    if (!r || noteStatus(r).toLowerCase() === title.toLowerCase()) return;
+    await store.setNoteProp(r.id, statusKey, 'text', title);
+    rows = await store.baseRows();
+  }
+  /** Move a card; when it is a note, its status follows the column. */
+  function relocate(c: number, i: number, to: number, at = 1e9) {
+    const card = board.columns[c]?.cards[i];
+    const dest = board.columns[to]?.title;
+    apply(moveCard(text, c, i, to, at));
+    if (card && dest && to !== c) void syncNote(card.text, dest);
+  }
+  /** The note says another stage than the column the card is in: follow the note. */
+  function followNote(c: number, i: number, status: string) {
+    const to = board.columns.findIndex((x) => x.title.toLowerCase() === status.toLowerCase());
+    if (to >= 0 && to !== c) apply(moveCard(text, c, i, to, 1e9));
+  }
+  async function noteFromDraft(c: number) {
+    const name = draft.trim().replace(/[[\]|#]/g, '');
+    if (!name || readOnly) return;
+    const home = store.notes.find((n) => n.id === noteId);
+    const folder = fmText('card-folder').trim() || home?.folder || '';
+    const prev = store.currentId;
+    const id = await store.createNote(name, `---\n${statusKey}: ${board.columns[c]!.title}\n---\n\n# ${name}\n`, folder);
+    store.currentId = prev;
+    const made = store.notes.find((n) => n.id === id)?.title ?? name;
+    apply(addCard(text, c, `[[${made}]]`));
+    draft = '';
+    rows = await store.baseRows();
+  }
 
   // ── steps, stages and moving ──
   let open = $state<Set<string>>(new Set());
@@ -65,7 +121,7 @@
     card.subs.map((s, n) => ({ s, n })).filter(({ s }) => (kind === 'pipeline' ? s.stage === title : s.stage === null || s.stage === title));
   function goTo(c: number, i: number, to: number) {
     moving = null;
-    if (to !== c) apply(moveCard(text, c, i, to, 1e9));
+    if (to !== c) relocate(c, i, to);
   }
   function cardKeys(e: KeyboardEvent, c: number, i: number) {
     if (readOnly || !e.altKey || (e.target as HTMLElement).tagName === 'TEXTAREA' || (e.target as HTMLElement).tagName === 'INPUT') return;
@@ -209,11 +265,20 @@
                 {/if}
               {/if}
               {#if card.extra.length}<p class="extra">{card.extra.join(' · ')}</p>{/if}
-              {#if tags(card.text).length || dueOf(card.text)}<div class="ctags">{#if dueOf(card.text)}<span class="due {dueState(dueOf(card.text)!, card.done)}">📅 {dueOf(card.text)}</span>{/if}{#each tags(card.text) as tg}<span>#{tg}</span>{/each}</div>{/if}
+              {#if noteRow(card.text)}
+                {@const nr = noteRow(card.text)!}
+                {@const ns = noteStatus(nr)}
+                <div class="nprops">
+                  {#each facts(nr) as f}<span><em>{f.k}</em> {f.v}</span>{/each}
+                  {#if ns && ns.toLowerCase() !== col.title.toLowerCase()}
+                    <button class="drift" title={t('boardDrift')} onclick={() => followNote(c, i, ns)}>↻ {ns}</button>
+                  {/if}
+                </div>
+              {/if}
+              {#if tags(card.text).length || dueOf(card.text) || noteDue(noteRow(card.text))}<div class="ctags">{#if dueOf(card.text) || noteDue(noteRow(card.text))}{@const dd = dueOf(card.text) ?? noteDue(noteRow(card.text))!}<span class="due {dueState(dd, card.done)}">📅 {dd}</span>{/if}{#each tags(card.text) as tg}<span>#{tg}</span>{/each}</div>{/if}
               {#if !readOnly}
                 <div class="cact">
                   <button class="icon sm stepbtn" class:on={open.has(key(c, i))} aria-label={t('boardSteps')} title={t('boardSteps')} aria-expanded={open.has(key(c, i))} onclick={() => toggleOpen(key(c, i))}><Icon name="check-small" size={14} />{#if card.subs.length}<small>{card.subs.filter((x) => x.done).length}/{card.subs.length}</small>{/if}</button>
-                  <span class="grow"></span>
                   <div class="movewrap">
                     <button class="icon sm" aria-label={t('moveTo')} title="{t('moveTo')} · Alt+←/→" aria-expanded={moving === key(c, i)} onclick={() => (moving = moving === key(c, i) ? null : key(c, i))}><Icon name="more" size={14} /></button>
                     {#if moving === key(c, i)}
@@ -223,8 +288,8 @@
                       </div>
                     {/if}
                   </div>
-                  <button class="icon sm" aria-label={t('moveLeft')} title={t('moveLeft')} disabled={c === 0} onclick={() => apply(moveCard(text, c, i, c - 1, 1e9))}><Icon name={store.lang === 'ar' ? 'chevron-right' : 'chevron-left'} size={14} /></button>
-                  <button class="icon sm" aria-label={t('moveRight')} title={t('moveRight')} disabled={c === board.columns.length - 1} onclick={() => apply(moveCard(text, c, i, c + 1, 1e9))}><Icon name={store.lang === 'ar' ? 'chevron-left' : 'chevron-right'} size={14} /></button>
+                  <button class="icon sm" aria-label={t('moveLeft')} title={t('moveLeft')} disabled={c === 0} onclick={() => relocate(c, i, c - 1)}><Icon name={store.lang === 'ar' ? 'chevron-right' : 'chevron-left'} size={14} /></button>
+                  <button class="icon sm" aria-label={t('moveRight')} title={t('moveRight')} disabled={c === board.columns.length - 1} onclick={() => relocate(c, i, c + 1)}><Icon name={store.lang === 'ar' ? 'chevron-left' : 'chevron-right'} size={14} /></button>
                   <button class="icon sm" aria-label={t('delete')} title={t('delete')} onclick={() => apply(deleteCard(text, c, i))}><Icon name="trash" size={14} /></button>
                 </div>
               {/if}
@@ -240,6 +305,7 @@
             <!-- svelte-ignore a11y_autofocus -->
             <input bind:value={draft} placeholder={t('cardText')} use:focus use:linkSuggest={{ here: noteId }} onkeydown={(e) => e.key === 'Escape' && ((adding = null), (draft = ''))} onblur={() => { if (!draft.trim()) adding = null; }} />
             <button class="primary small" type="submit">{t('add')}</button>
+            <button class="ghost small" type="button" title={t('boardNewNote')} aria-label={t('boardNewNote')} disabled={!draft.trim()} onmousedown={(e) => e.preventDefault()} onclick={() => noteFromDraft(c)}><Icon name="note" size={14} />+</button>
           </form>
         {:else}
           <button class="ghost addbtn" onclick={() => ((adding = c), (draft = ''))}><Icon name="plus" size={14} /> {t('addCard')}</button>
@@ -326,6 +392,10 @@
   .addform input { flex: 1; min-width: 0; }
   .addbtn { display: inline-flex; gap: 0.35rem; align-items: center; justify-content: flex-start; color: var(--muted); }
   .pad { padding: 1rem; }
+  .nprops { display: flex; flex-wrap: wrap; gap: 0.3rem; margin-top: 0.45rem; }
+  .nprops span { font-size: 0.76rem; padding: 0 0.5rem; border-radius: 6px; background: color-mix(in srgb, var(--ink) 7%, transparent); color: var(--muted); }
+  .nprops em { font-style: normal; opacity: 0.65; margin-inline-end: 0.2rem; }
+  .drift { font-size: 0.76rem; padding: 0 0.55rem; border-radius: 6px; border: 1px dashed var(--accent); background: var(--accent-soft); color: var(--accent); min-height: 0; }
   .kindbtn.on { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
   .stages { display: flex; gap: 3px; margin-top: 0.45rem; }
   .seg { flex: 1; height: 7px; padding: 0; border: 0; border-radius: 4px; background: color-mix(in srgb, var(--ink) 11%, transparent); overflow: hidden; min-height: 0; }

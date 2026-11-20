@@ -2003,3 +2003,8 @@ dialog.settings .swatches button { min-height: 0; }
 .base-badge.edit:hover { filter: brightness(1.1); outline: 2px solid hsl(var(--h) 70% 55% / 0.4); }
 .cm-base td.plain { padding: 0.4rem 0.8rem; }
 @media (max-width: 760px) { .base-find { width: 6rem; } .base-wrap { border-radius: 14px; } }
+@media (max-width: 760px) { .editor-pane.mobile .tocbtn { display: none; } }
+.boardseg { position: relative; }
+.modemenu { position: absolute; top: calc(100% + 0.4rem); inset-inline-end: 0; z-index: 60; min-width: 9rem; display: flex; flex-direction: column; padding: 0.3rem; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow); }
+.boardseg .modemenu button { border-radius: 10px; text-align: start; padding: 0.6rem 0.8rem; min-height: 2.6rem; color: var(--ink); background: none; font-weight: 400; }
+.boardseg .modemenu button.on { background: var(--accent-soft); color: var(--accent); font-weight: 700; }

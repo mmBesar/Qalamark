@@ -2008,3 +2008,10 @@ dialog.settings .swatches button { min-height: 0; }
 .modemenu { position: absolute; top: calc(100% + 0.4rem); inset-inline-end: 0; z-index: 60; min-width: 9rem; display: flex; flex-direction: column; padding: 0.3rem; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow); }
 .boardseg .modemenu button { border-radius: 10px; text-align: start; padding: 0.6rem 0.8rem; min-height: 2.6rem; color: var(--ink); background: none; font-weight: 400; }
 .boardseg .modemenu button.on { background: var(--accent-soft); color: var(--accent); font-weight: 700; }
+
+/* ───────── phones: floating side-panel button, top start corner ───────── */
+.side-fab { display: none; }
+@media (max-width: 760px) {
+  .editor-pane.mobile .side-fab { display: grid; place-items: center; position: fixed; top: 0.55rem; inset-inline-start: 0.55rem; z-index: 30; width: 2.9rem; height: 2.9rem; border-radius: 50%; padding: 0; color: var(--ink); border: 1px solid var(--line); background: color-mix(in srgb, var(--surface) 92%, transparent); backdrop-filter: blur(12px); box-shadow: var(--shadow); transition: transform 0.22s ease, opacity 0.22s; }
+  .editor-pane.hide-bars .side-fab { transform: translateY(-220%); opacity: 0; pointer-events: none; }
+}

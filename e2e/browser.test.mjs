@@ -1114,3 +1114,169 @@ test('round 22: a card that links a note shows its properties and moving it writ
   assert.match(await page.locator('.cm-content').innerText(), /status: Shooting/);
   assert.deepEqual(errors, []);
 });
+
+// ───────── trust: typing, undo, select all, saving and two people editing the same note ─────────
+const TRICKY = 'سَيِّدُ الِاسْتِغْفَارِ\n\n\tindented with a tab\ntrailing spaces   \n😀 emoji ✓ — “quotes” ‘x’\n# not a *heading* [[x]] `code` \\* \\_\n\n\n- [ ] task\n  - nested\n> quote\n|a|b|\n|-|-|\n|1|2|\nlast line with no newline';
+const note = (name) => join(data, 'notes/alice', name + '.md');
+async function freshNote(page, name) {
+  await page.locator('aside .actions button:first-child').dispatchEvent('click');
+  await page.waitForFunction((n) => document.querySelector('.page-title') && document.querySelector('.page-title').value !== n, name);
+  await page.fill('.page-title', name);
+  await page.locator('.page-title').blur();
+  await page.waitForTimeout(400);
+  await page.click('.cm-content');
+}
+const onDisk = async (name, want, ms = 8000) => {
+  const end = Date.now() + ms;
+  let got = '';
+  while (Date.now() < end) {
+    try { got = readFileSync(note(name), 'utf8'); if (got.replace(/^---\n[\s\S]*?\n---\n/, '') .trimEnd() === want.trimEnd() || got === want) return got; } catch { /* not there yet */ }
+    await new Promise((r) => setTimeout(r, 250));
+  }
+  return got;
+};
+
+test('trust 1: what you type is what is saved, byte for byte', async () => {
+  const errors = [];
+  const page = await newPage(errors);
+  await signIn(page, 'alice', 'alice-password');
+  await freshNote(page, 'Trust A');
+  await page.keyboard.insertText(TRICKY);
+  const got = await onDisk('Trust A', TRICKY);
+  assert.equal(got.trimEnd(), TRICKY.trimEnd());
+  // switching view mode never changes the text
+  for (const m of ['Reading', 'Source', 'Live preview']) { await page.click(`.topbar .seg button:has-text("${m}")`); await page.waitForTimeout(250); }
+  await page.waitForTimeout(1500);
+  assert.equal((await onDisk('Trust A', TRICKY)).trimEnd(), TRICKY.trimEnd());
+  // and a reload brings back the same text
+  await page.reload();
+  await page.waitForSelector('aside');
+  await page.click('aside >> text=Trust A');
+  await page.click('.topbar .seg button:has-text("Source")');
+  await page.waitForSelector('.cm-content');
+  await page.waitForTimeout(600);
+  assert.equal((await page.locator('.cm-content').innerText()).replace(/\u00a0/g, ' ').replace(/\n{3,}/g, '\n\n').trim().length > 40, true);
+  assert.deepEqual(errors, []);
+});
+
+test('trust 2: undo and redo walk back and forward exactly', async () => {
+  const errors = [];
+  const page = await newPage(errors);
+  await signIn(page, 'alice', 'alice-password');
+  await freshNote(page, 'Trust B');
+  const steps = ['first line', '\nسَيِّدُ الِاسْتِغْفَارِ', '\n- a list item', '\n\n# heading', '\n**bold** end'];
+  let acc = '';
+  for (const st of steps) { await page.keyboard.insertText(st); acc += st; await page.waitForTimeout(650); }
+  await onDisk('Trust B', acc);
+  for (let i = 0; i < steps.length; i++) { await page.keyboard.press('Control+z'); await page.waitForTimeout(120); }
+  await page.waitForTimeout(900);
+  assert.equal((await onDisk('Trust B', '')).replace(/^---[\s\S]*?---\n/, '').trim(), '', 'undo all the way gives an empty note');
+  for (let i = 0; i < steps.length; i++) { await page.keyboard.press('Control+Shift+Z'); await page.waitForTimeout(120); }
+  assert.equal((await onDisk('Trust B', acc)).trimEnd(), acc.trimEnd(), 'redo all the way gives the note back');
+  // Ctrl+Y redoes too
+  for (let i = 0; i < steps.length; i++) { await page.keyboard.press('Control+z'); await page.waitForTimeout(120); }
+  for (let i = 0; i < steps.length; i++) { await page.keyboard.press('Control+y'); await page.waitForTimeout(120); }
+  assert.equal((await onDisk('Trust B', acc)).trimEnd(), acc.trimEnd());
+  assert.deepEqual(errors, []);
+});
+
+test('trust 3: select all takes the whole note, wherever the focus is', async () => {
+  const errors = [];
+  const page = await newPage(errors);
+  await page.setViewportSize({ width: 1300, height: 600 });
+  await signIn(page, 'alice', 'alice-password');
+  await freshNote(page, 'Trust C');
+  const body = Array.from({ length: 400 }, (_, i) => `line ${i} سَيِّدُ`).join('\n');
+  await page.keyboard.insertText(body);
+  await onDisk('Trust C', body);
+  const clip = async () => { await page.keyboard.press('Control+c'); return page.evaluate(() => navigator.clipboard.readText()); };
+  // focus in the text
+  await page.keyboard.press('Control+a');
+  assert.equal((await clip()).length, body.length);
+  // focus on the page's blank area, and in Reading mode (the page draws only the lines near the screen)
+  await page.click('.topbar .seg button:has-text("Reading")');
+  await page.mouse.click(1250, 300);
+  await page.keyboard.press('Control+a');
+  assert.equal((await clip()).length, body.length, 'Reading mode: the copy holds all 400 lines');
+  await page.click('.topbar .seg button:has-text("Live preview")');
+  await page.click('.cm-content');
+  await page.keyboard.press('Control+a');
+  await page.keyboard.insertText('replaced');
+  assert.equal((await onDisk('Trust C', 'replaced')).trimEnd().endsWith('replaced'), true);
+  assert.equal((await onDisk('Trust C', 'replaced')).includes('line 399'), false);
+  assert.deepEqual(errors, []);
+});
+
+test('trust 4: two people typing in the same note at once end with the same text, and nothing is lost', async () => {
+  const errors = [];
+  const a = await newPage(errors);
+  const b = await newPage(errors);
+  await signIn(a, 'alice', 'alice-password');
+  await freshNote(a, 'Trust D');
+  await a.keyboard.insertText('start\n\nmiddle\n\nend');
+  await onDisk('Trust D', 'start\n\nmiddle\n\nend');
+  await signIn(b, 'alice', 'alice-password');
+  await b.click('aside >> text=Trust D');
+  await b.waitForSelector('.cm-content');
+  await b.click('.cm-content');
+  await b.waitForTimeout(800);
+  const tokens = [];
+  for (let round = 0; round < 6; round++) {
+    const ta = `[A${round}]`, tb = `[B${round}سَ]`;
+    tokens.push(ta, tb);
+    await Promise.all([
+      (async () => { await a.keyboard.press('Control+Home'); await a.keyboard.insertText(ta); })(),
+      (async () => { await b.keyboard.press('Control+End'); await b.keyboard.insertText(tb); })(),
+    ]);
+  }
+  await a.waitForTimeout(2500);
+  const text = (p) => p.evaluate(() => [...document.querySelectorAll('.cm-line')].map((l) => { const c = l.cloneNode(true); c.querySelectorAll('.cm-ySelectionInfo, .cm-ySelectionCaret, .cm-widgetBuffer').forEach((e) => e.remove()); return c.textContent.replace(/[\u2060\u200b]/g, ''); }).join('\n'));
+  await a.click('.topbar .seg button:has-text("Source")');
+  await b.click('.topbar .seg button:has-text("Source")');
+  await a.waitForTimeout(800);
+  const ta = await text(a), tb = await text(b);
+  assert.equal(ta, tb, 'both screens show the same text');
+  for (const t of tokens) assert.ok(ta.includes(t), `${t} survived`);
+  assert.ok(ta.includes('middle'));
+  const disk = await onDisk('Trust D', ta.replace(/\u00a0/g, ' '));
+  for (const t of tokens) assert.ok(disk.includes(t), `${t} is on disk`);
+  assert.deepEqual(errors, []);
+});
+
+test('trust 5: on a phone the tool bar works by touch, and the side panel opens from the button and by a swipe inside the screen', async () => {
+  const errors = [];
+  const ctx = await browser.newContext({ viewport: { width: 400, height: 780 }, hasTouch: true, isMobile: true, deviceScaleFactor: 2 });
+  const page = await ctx.newPage();
+  page.on('pageerror', (e) => errors.push(e.message));
+  await signIn(page, 'alice', 'alice-password');
+  await freshNote(page, 'Trust E');
+  await page.tap('.cm-content');
+  await page.keyboard.insertText('item one\nitem two');
+  await page.waitForSelector('.toolbar', { state: 'visible' });
+  await page.tap('.toolbar button[title="Heading"], .toolbar button:nth-of-type(5)');
+  await page.tap('.toolbar button[title="Bullet list"], .toolbar button:nth-of-type(6)');
+  await page.waitForTimeout(500);
+  const text = await page.evaluate(() => document.querySelector('.cm-content').innerText);
+  assert.match(text, /item two/);
+  const src = await page.evaluate(() => [...document.querySelectorAll('.cm-line')].map((l) => l.textContent).join('\n'));
+  assert.ok(/#|•|-/.test(src), 'a toolbar tap changed the text: ' + JSON.stringify(src));
+  // the floating side-panel button
+  await page.evaluate(() => document.activeElement.blur());
+  await page.waitForTimeout(500);
+  await page.tap('.side-fab');
+  await page.waitForFunction(() => document.querySelector('.shell').classList.contains('drawer-open'));
+  await page.tap('.scrim');
+  await page.waitForFunction(() => !document.querySelector('.shell').classList.contains('drawer-open'));
+  // a swipe that starts 120px inside the screen (the very edge is the system's)
+  const swipe = (x0, x1) => page.evaluate(async ([a, b]) => {
+    const target = document.elementFromPoint(a, 400);
+    const mk = (type, x) => new Touch({ identifier: 1, target, clientX: x, clientY: 400, pageX: x, pageY: 400 });
+    const fire = (type, x) => target.dispatchEvent(new TouchEvent(type, { touches: type === 'touchend' ? [] : [mk(type, x)], changedTouches: [mk(type, x)], bubbles: true, cancelable: true }));
+    fire('touchstart', a);
+    for (let i = 1; i <= 8; i++) { fire('touchmove', a + ((b - a) * i) / 8); await new Promise((r) => setTimeout(r, 16)); }
+    fire('touchend', b);
+  }, [x0, x1]);
+  await swipe(130, 330);
+  await page.waitForFunction(() => document.querySelector('.shell').classList.contains('drawer-open'), null, { timeout: 4000 });
+  assert.deepEqual(errors, []);
+});

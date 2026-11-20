@@ -226,3 +226,12 @@ AppImage, deb, rpm and an APK. Optional repository secrets for a release-signed 
 `ANDROID_KEYSTORE_B64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD`.
 Plain `http://` servers on your home network work on Android. On first start, type your server
 address on the sign-in screen, or choose to keep notes on the device only.
+
+
+## Is my text safe?
+
+Notes are plain files, and the editing code is tested hard for exactly that reason (`e2e/`, run in CI):
+
+- **Property tests** (`editing.test.ts`): thousands of random documents (Arabic with diacritics, emoji, tabs, lists, blank lines) and random selections; every formatting command is checked to be undone by repeating it, to touch only what it was asked to, and to keep the selection valid.
+- **Browser tests** (`browser.test.mjs`, “trust” rounds): what you type is what is on disk, byte for byte; switching Live, Reading and Source never changes the text; undo and redo walk back and forward exactly; select all takes the whole note; two people typing into the same note at once end with identical text and lose nothing; the phone tool bar and swipe gestures work by touch.
+- **Real WebKitGTK harness** (`e2e/webkit/`): for Linux-only text rendering bugs such as shifted Arabic diacritics.

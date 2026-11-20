@@ -40,7 +40,11 @@
   let kbOpen = $state(false);
   let page: HTMLDivElement;
   // On Android the keyboard shrinks the page; with it closed the editor stays in edit mode but the bars may hide again.
-  const typing = $derived(focused && (kbOpen || !onAndroid()));
+  // a tap on the tool bar takes the focus away for a moment (and the keyboard with it); the bar must stay until the tap has landed
+  let holdBar = $state(false);
+  let holdTimer: ReturnType<typeof setTimeout> | undefined;
+  const holdTools = () => { holdBar = true; clearTimeout(holdTimer); holdTimer = setTimeout(() => (holdBar = false), 900); };
+  const typing = $derived((focused && (kbOpen || !onAndroid())) || holdBar);
   $effect(() => {
     const on = () => (mobile = phone.matches);
     phone.addEventListener('change', on);
@@ -160,6 +164,23 @@
     return { update: size, destroy: () => ro.disconnect() };
   }
   let modeMenu = $state(false);
+  // Ctrl+A selects the whole note whatever has the focus. The page shows only the lines near the screen, so the browser's own
+  // select-all (when the focus is outside the text, or in Reading mode) would take only those; this selects the note itself.
+  $effect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey || e.key.toLowerCase() !== 'a') return;
+      if (!editorReady || mode === 'board') return;
+      const t = e.target as HTMLElement | null;
+      if (t?.closest?.('input, textarea, select, dialog, [contenteditable="true"]:not(.cm-content)')) return;
+      if (document.querySelector('dialog[open]')) return;
+      e.preventDefault();
+      const v = editor.view;
+      v.focus();
+      v.dispatch({ selection: { anchor: 0, head: v.state.doc.length } });
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  });
   const toggleContents = () => { if (mobile) store.sheet = 'toc'; else setToc(!showToc); };
   let showToc = $state((() => { try { return localStorage.getItem('qm.toc') === '1'; } catch { return false; } })());
   let tocTick = $state(0);
@@ -415,7 +436,7 @@
     const md = await uploadImage(f);
     if (md) insertSnippet(editor.view, md + '\n');
   }
-  const run = (f: (v: typeof editor.view) => boolean) => () => f(editor.view);
+  const run = (f: (v: typeof editor.view) => boolean) => () => { f(editor.view); editor.view.focus(); };
 
   async function rename() {
     if (!canRename || title.trim() === note.title) return;
@@ -468,7 +489,7 @@
     <button class="icon side-btn" aria-label={t('sidebar')} title="{t('sidebar')} (Ctrl+\\)" onclick={() => store.toggleSide()}><Icon name="sidebar" /></button>
 
     {#if !readOnly && mode !== 'read' && mode !== 'board'}
-      <div class="toolbar" role="toolbar">
+      <div class="toolbar" role="toolbar" onpointerdown={holdTools} onmousedown={(e) => { if ((e.target as HTMLElement).closest('button')) e.preventDefault(); }}>
         <button title="{t('bold')} (Ctrl+B)" onclick={run((v) => toggleWrap(v, '**'))}><Icon name="bold" /></button>
         <button title="{t('italic')} (Ctrl+I)" onclick={run((v) => toggleWrap(v, '*'))}><Icon name="italic" /></button>
         <button title={t('strike')} onclick={run((v) => toggleWrap(v, '~~'))}><Icon name="strike" /></button>
@@ -571,6 +592,9 @@
     </div>
     {#if showToc && editorReady && mode !== 'board'}<Toc view={editor.view} ytext={liveText!} title={note.title} {readOnly} tick={tocTick} onClose={() => setToc(false)} />{/if}
   </div>
+
+  <!-- phones: a floating button for the side panel (the swipe from the left works too) -->
+  <button class="side-fab" aria-label={t('menu')} title={t('menu')} onclick={onMenu}><Icon name="sidebar" size={20} /></button>
 
   <!-- phones: a floating bar instead of a fixed one -->
   <div class="float-bar" role="toolbar" aria-label={t('menu')}>

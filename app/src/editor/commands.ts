@@ -9,10 +9,21 @@ import type { EditorView } from '@codemirror/view';
 /** Wrap the selection in marks (or remove them if already there): **bold**, *italic* ... */
 export function toggleWrap(view: EditorView, mark: string): boolean {
   const { state } = view;
-  const changes = state.changeByRange((range) => {
+  const changes = state.changeByRange((r) => {
+    // spaces at the edges of the selection stay outside the marks: "** word **" is not bold
+    let from = r.from;
+    let to = r.to;
+    while (from < to && /\s/.test(state.sliceDoc(from, from + 1))) from++;
+    while (to > from && /\s/.test(state.sliceDoc(to - 1, to))) to--;
+    const range = from === to && r.from !== r.to ? EditorSelection.range(r.from, r.from) : EditorSelection.range(from, to);
     const before = state.sliceDoc(range.from - mark.length, range.from);
     const after = state.sliceDoc(range.to, range.to + mark.length);
-    if (before === mark && after === mark) {
+    // *italic* around **bold** is not "already italic": a run of stars counts, an odd run means the italic star is there
+    // (*x* = 1, ***x*** = 3, **x** = 2 does not have it)
+    const run = (at: number, dir: 1 | -1) => { let n = 0; while (n < 8 && state.sliceDoc(dir > 0 ? at + n : at - n - 1, dir > 0 ? at + n + 1 : at - n) === '*') n++; return n; };
+    const stars = mark === '*' ? Math.min(run(range.from, -1), run(range.to, 1)) : 1;
+    const outer = mark === '*' && stars % 2 === 0;
+    if (before === mark && after === mark && !outer) {
       return {
         changes: [
           { from: range.from - mark.length, to: range.from },
@@ -34,16 +45,33 @@ export function toggleWrap(view: EditorView, mark: string): boolean {
   return true;
 }
 
-/** Put a prefix at the start of each selected line, or take it off if all have it. */
+const BULLET = /^(\s*)[-*+] (?!\[[ xX]\] )/;
+const TASK = /^(\s*)[-*+] \[[ xX]\] /;
+
+/**
+ * Turn the selected lines into a list, a task list or a quote, or back into plain lines when they all are already.
+ * Blank lines are left alone, a bullet becomes a task (and the other way round) instead of getting a second marker,
+ * and indentation stays where it was.
+ */
 export function toggleLinePrefix(view: EditorView, prefix: string): boolean {
   const { state } = view;
-  const lines = new Set<number>();
+  const nums = new Set<number>();
   for (const r of state.selection.ranges) {
-    for (let p = state.doc.lineAt(r.from).number; p <= state.doc.lineAt(r.to).number; p++) lines.add(p);
+    for (let p = state.doc.lineAt(r.from).number; p <= state.doc.lineAt(r.to).number; p++) nums.add(p);
   }
-  const list = [...lines].map((n) => state.doc.line(n));
-  const all = list.every((l) => l.text.startsWith(prefix));
-  const changes = state.changes(list.map((l) => (all ? { from: l.from, to: l.from + prefix.length } : { from: l.from, insert: prefix })));
+  const lines = [...nums].map((n) => state.doc.line(n)).filter((l) => l.text.trim() !== '');
+  const kind = prefix === '- [ ] ' ? 'task' : prefix === '- ' ? 'bullet' : 'other';
+  const has = (t: string) => (kind === 'task' ? TASK.test(t) : kind === 'bullet' ? BULLET.test(t) : t.startsWith(prefix));
+  const all = lines.length > 0 && lines.every((l) => has(l.text));
+  const specs = lines.map((l) => {
+    if (kind === 'other') return all ? { from: l.from, to: l.from + prefix.length } : { from: l.from, insert: prefix };
+    const m = TASK.exec(l.text) ?? BULLET.exec(l.text);
+    const indent = /^\s*/.exec(l.text)![0].length;
+    if (all) return { from: l.from + indent, to: l.from + (m ? m[0].length : indent) };
+    // a bullet becomes a task and a task a bullet: swap the marker, keep the text
+    return m ? { from: l.from + indent, to: l.from + m[0].length, insert: prefix } : { from: l.from + indent, insert: prefix };
+  });
+  const changes = state.changes(specs);
   // assoc 1: the cursor stays AFTER what was added, so you can type right away.
   view.dispatch({ changes, selection: state.selection.map(changes, 1), userEvent: 'input.format' });
   view.focus();

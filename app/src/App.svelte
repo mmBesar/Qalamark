@@ -85,16 +85,31 @@
 
   // Swipe the side panel in from the screen edge and out again, following the finger (phones and small windows).
   let prog = $state<number | null>(null); // 0 = closed … 1 = open, while a finger is down
-  let sw: { x: number; y: number; w: number; opening: boolean; live: boolean } | null = null;
+  let sw: { x: number; y: number; w: number; opening: boolean; live: boolean; t: number } | null = null;
   const small = () => matchMedia('(max-width: 760px)').matches;
   const rtl = () => document.documentElement.dir === 'rtl';
+  /** Is the finger on something that scrolls sideways (a board, a table, a code block), or on a field? */
+  function sideways(target: EventTarget | null): boolean {
+    for (let el = target as HTMLElement | null; el && el !== document.body; el = el.parentElement) {
+      if (el.matches?.('input, textarea, select, .cm-widgetBuffer, .modemenu, .sheet, dialog')) return true;
+      if (el.scrollWidth > el.clientWidth + 2) {
+        const ox = getComputedStyle(el).overflowX;
+        if (ox === 'auto' || ox === 'scroll') return true;
+      }
+    }
+    return false;
+  }
   function swStart(e: TouchEvent) {
     if (!small() || e.touches.length !== 1 || store.mode === 'login' || store.mode === 'boot') return;
     const t0 = e.touches[0]!;
-    const fromEdge = rtl() ? t0.clientX >= innerWidth - 34 : t0.clientX <= 34;
-    if (!drawer && !fromEdge) return;
+    // The very edge belongs to the system's back gesture, so the swipe can also start well inside the screen
+    // (the outer 40% on the side where the panel lives), but not on something that scrolls sideways itself.
+    const dist = rtl() ? innerWidth - t0.clientX : t0.clientX;
+    const fromEdge = dist <= innerWidth * 0.4;
+    if (!drawer && (!fromEdge || sideways(e.target))) return;
     const w = document.querySelector('aside')?.getBoundingClientRect().width ?? 300;
-    sw = { x: t0.clientX, y: t0.clientY, w, opening: !drawer, live: false };
+    if (!drawer && (getSelection()?.toString() ?? '') !== '') return; // dragging a text selection is not a swipe
+    sw = { x: t0.clientX, y: t0.clientY, w, opening: !drawer, live: false, t: Date.now() };
   }
   function swMove(e: TouchEvent) {
     if (!sw) return;
@@ -102,6 +117,7 @@
     const dx = (rtl() ? -1 : 1) * (t0.clientX - sw.x);
     const dy = t0.clientY - sw.y;
     if (!sw.live) {
+      if (Date.now() - sw.t > 450) { sw = null; return; } // a finger that rested first is selecting or scrolling, not swiping
       if (Math.abs(dy) > 12 && Math.abs(dy) > Math.abs(dx)) { sw = null; return; }
       if (Math.abs(dx) < 10) return;
       if ((sw.opening && dx < 0) || (!sw.opening && dx > 0)) { sw = null; return; }

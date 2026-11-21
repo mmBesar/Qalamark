@@ -43,6 +43,13 @@ pub fn open(path: &Path) -> rusqlite::Result<Connection> {
            key   TEXT PRIMARY KEY,
            value TEXT NOT NULL
          );
+         -- the app's own id for a create-note request, so one sent twice (app closed mid-send, a retry) makes one note
+         CREATE TABLE IF NOT EXISTS create_requests (
+           owner_id   INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+           request_id TEXT NOT NULL,
+           note_id    TEXT NOT NULL REFERENCES notes(id) ON DELETE CASCADE,
+           PRIMARY KEY (owner_id, request_id)
+         );
          CREATE TABLE IF NOT EXISTS ydocs (
            note_id TEXT PRIMARY KEY REFERENCES notes(id) ON DELETE CASCADE,
            state   BLOB NOT NULL

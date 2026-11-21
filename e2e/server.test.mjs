@@ -88,6 +88,22 @@ test('notes are plain .md files in the owner folder', async () => {
   assert.equal(same.body.title, 'Shopping - list 2');
 });
 
+test('a create request sent twice makes one note (the app may be closed mid-send)', async () => {
+  const a = await api('POST', '/api/notes', alice, { title: 'Idem', content: 'first', folder: 'tmpidem', request_id: 'tmp:abc' });
+  const b = await api('POST', '/api/notes', alice, { title: 'Idem', content: 'first', folder: 'tmpidem', request_id: 'tmp:abc' });
+  assert.equal(a.status, 200);
+  assert.equal(b.body.id, a.body.id);
+  assert.equal(b.body.title, 'Idem');
+  const c = await api('POST', '/api/notes', alice, { title: 'Idem', folder: 'tmpidem', request_id: 'tmp:other' });
+  assert.notEqual(c.body.id, a.body.id);
+  assert.equal(c.body.title, 'Idem 2');
+  // another person's request with the same id is theirs alone
+  const d = await api('POST', '/api/notes', bob, { title: 'Idem', request_id: 'tmp:abc' });
+  assert.notEqual(d.body.id, a.body.id);
+  for (const x of [a, c]) assert.equal((await api('DELETE', `/api/notes/${x.body.id}`, alice)).status, 200);
+  assert.equal((await api('DELETE', `/api/notes/${d.body.id}`, bob)).status, 200);
+});
+
 test('other people cannot see a note until it is shared', async () => {
   assert.equal((await api('GET', `/api/notes/${note.id}`, bob)).status, 404);
   assert.equal((await api('GET', '/api/notes', bob)).body.length, 0);
@@ -167,9 +183,10 @@ test('rename moves the file; delete moves it to the trash', async () => {
   assert.ok(existsSync(join(data, 'notes/alice/Groceries.md')));
   assert.equal((await api('PATCH', `/api/notes/${note.id}`, bob, { title: 'x' })).status, 403);
   assert.equal((await api('DELETE', `/api/notes/${note.id}`, bob)).status, 403);
+  const trashed = readdirSync(join(data, 'trash')).length;
   assert.equal((await api('DELETE', `/api/notes/${note.id}`, alice)).status, 200);
   assert.ok(!existsSync(join(data, 'notes/alice/Groceries.md')));
-  assert.equal(readdirSync(join(data, 'trash')).length, 1);
+  assert.equal(readdirSync(join(data, 'trash')).length, trashed + 1);
   assert.equal((await api('GET', `/api/notes/${note.id}`, alice)).status, 404);
 });
 

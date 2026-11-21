@@ -100,8 +100,9 @@ export class Api {
   notes() {
     return this.call<NoteMeta[]>('GET', '/api/notes', undefined, 8000);
   }
-  createNote(title: string, content = '', folder = '') {
-    return this.call<NoteMeta>('POST', '/api/notes', { title, content, folder });
+  /** `requestId` makes the call safe to repeat: the server answers a second call with the note the first one made. */
+  createNote(title: string, content = '', folder = '', requestId = '') {
+    return this.call<NoteMeta>('POST', '/api/notes', { title, content, folder, request_id: requestId });
   }
   folders() {
     return this.call<string[]>('GET', '/api/folders');

@@ -537,19 +537,40 @@ pub struct NewNote {
     folder: String,
     #[serde(default)]
     content: String,
+    /// The app's own id for this request: sending the same one again returns the note already made.
+    #[serde(default)]
+    request_id: String,
 }
 
 pub async fn create_note(State(s): State<Shared>, user: User, Json(n): Json<NewNote>) -> ApiResult<NoteMeta> {
+    if !n.request_id.is_empty() {
+        let again: Option<(String, String, i64)> = s
+            .db
+            .lock()
+            .unwrap()
+            .query_row(
+                "SELECT n.id, n.path, n.updated FROM create_requests r JOIN notes n ON n.id = r.note_id WHERE r.owner_id = ?1 AND r.request_id = ?2",
+                params![user.id, n.request_id],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .ok();
+        if let Some((id, rel, t)) = again {
+            return Ok(Json(NoteMeta { display: display_of(&s, &rel), folder: folder_of(&rel), id, title: title_of(&rel), owner: user.username, role: "owner", updated: t }));
+        }
+    }
     let rel = free_path(&s, &user.username, &n.folder, &n.title, None);
     let full: PathBuf = s.cfg.notes_dir().join(&rel);
     std::fs::create_dir_all(full.parent().unwrap()).map_err(internal)?;
     std::fs::write(&full, &n.content).map_err(internal)?;
     let id = uuid::Uuid::new_v4().to_string();
     let t = now();
-    s.db.lock()
-        .unwrap()
-        .execute("INSERT INTO notes (id, owner_id, path, created, updated) VALUES (?1, ?2, ?3, ?4, ?4)", params![id, user.id, rel, t])
-        .map_err(internal)?;
+    {
+        let db = s.db.lock().unwrap();
+        db.execute("INSERT INTO notes (id, owner_id, path, created, updated) VALUES (?1, ?2, ?3, ?4, ?4)", params![id, user.id, rel, t]).map_err(internal)?;
+        if !n.request_id.is_empty() {
+            db.execute("INSERT OR REPLACE INTO create_requests (owner_id, request_id, note_id) VALUES (?1, ?2, ?3)", params![user.id, n.request_id, id]).map_err(internal)?;
+        }
+    }
     Ok(Json(NoteMeta { display: display_of(&s, &rel), folder: folder_of(&rel), id, title: title_of(&rel), owner: user.username, role: "owner", updated: t }))
 }
 

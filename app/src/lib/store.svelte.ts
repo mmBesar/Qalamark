@@ -504,7 +504,9 @@ class Store {
 
   /** Changes made while the server was away, replayed in order when it is back. */
   pending = $state(0);
-  private flushing = false;
+  private flushing: Promise<void> | null = null;
+  /** Temporary ids whose note has reached the server (the real note replaced them). */
+  private sentTmp = new Set<string>();
   private outboxKey = () => `qm.outbox.${this.api.base}|${this.s.username}`;
   private readOutbox = (): Op[] => read<Op[]>(this.outboxKey(), []);
   private queueOp(op: Op) {
@@ -534,10 +536,14 @@ class Store {
   }
 
   /** Send the queued changes to the server. */
-  async flushOutbox() {
-    if (this.mode !== 'server' || this.flushing || !this.serverReachable) return;
-    this.flushing = true;
-    try {
+  flushOutbox(): Promise<void> {
+    if (this.mode !== 'server' || !this.serverReachable) return Promise.resolve();
+    // one flush at a time; whoever asks while one runs waits for that one (a second, parallel flush could send a note twice)
+    this.flushing ??= this.flushNow().finally(() => (this.flushing = null));
+    return this.flushing;
+  }
+  private async flushNow() {
+    {
       let ops = this.readOutbox();
       const ids = new Map<string, string>(); // temporary id -> real id
       const fix = (id: string) => ids.get(id) ?? id;
@@ -546,10 +552,22 @@ class Store {
         try {
           if (op.t === 'create') {
             const text = await readStoredText(this.storeName(op.tmp)).catch(() => '');
-            const n = await this.api.createNote(op.title, text, op.folder);
+            let n;
+            try {
+              n = await this.api.createNote(op.title, text, op.folder, op.tmp);
+            } catch (e) {
+              if (!(e instanceof ApiError) || e.status === 401) throw e;
+              // the server said no (a name it dislikes, a clash): keep the note, under a name that is surely free
+              n = await this.api.createNote(`${op.title} (${new Date().toISOString().slice(0, 10)})`, text, op.folder, op.tmp);
+            }
             ids.set(op.tmp, n.id);
+            this.sentTmp.add(op.tmp);
             deleteStored(this.storeName(op.tmp));
-            this.notes = this.notes.map((x) => (x.id === op.tmp ? { ...n, vp: x.vp, vm: x.vm } : x));
+            const made = n;
+            // the real note takes the place of the temporary one (and if it is already in the list, it is not added twice)
+            this.notes = this.notes
+              .map((x) => (x.id === op.tmp ? { ...made, vp: x.vp, vm: x.vm } : x))
+              .filter((x, i, all) => all.findIndex((y) => y.id === x.id) === i);
             if (this.currentId === op.tmp) this.currentId = n.id;
             this.recent = this.recent.map((r) => (r === op.tmp ? n.id : r));
           } else if (op.t === 'rename') {
@@ -570,11 +588,10 @@ class Store {
         }
         ops = ops.slice(1);
         write(this.outboxKey(), ops);
+        write(this.cacheKey(), this.notes); // list and queue move together: if the app dies now, neither is behind the other
         this.pending = ops.length;
       }
       write(this.cacheKey(), this.notes);
-    } finally {
-      this.flushing = false;
     }
   }
 
@@ -845,7 +862,24 @@ class Store {
     return `qm.cache.${this.api.base}|${this.s.username}`;
   }
 
-  async loadServerNotes(quiet = false) {
+  private loading: Promise<void> | null = null;
+  private again = false;
+  /** Refresh the list from the server; calls that arrive while one runs are folded into one more run afterwards. */
+  loadServerNotes(quiet = false): Promise<void> {
+    if (this.loading) {
+      this.again = true;
+      return this.loading;
+    }
+    this.loading = (async () => {
+      do {
+        this.again = false;
+        await this.loadServerNotesNow(quiet);
+      } while (this.again);
+    })().finally(() => (this.loading = null));
+    return this.loading;
+  }
+
+  private async loadServerNotesNow(quiet: boolean) {
     const cached = read<NoteMeta[]>(this.cacheKey(), []);
     if (!quiet) this.notes = cached;
     this.pending = this.readOutbox().length;
@@ -856,11 +890,13 @@ class Store {
       const fresh = await this.api.notes();
       const mine = new Map(cached.map((n) => [n.id, n]));
       const gone = new Set(this.readOutbox().filter((o): o is Extract<Op, { t: 'delete' }> => o.t === 'delete').map((o) => o.id));
+      // a note made offline stays in the list until it has reached the server; then the real note (in `fresh`) replaces it.
+      // Keeping the temporary entry too would show the note twice, the copy empty.
+      const seen = new Set<string>();
       this.notes = [
-        // notes made offline that have not reached the server yet stay in the list
-        ...cached.filter((n) => n.id.startsWith('tmp:')),
-        ...fresh.filter((n) => !gone.has(n.id)).map((n) => ({ ...n, vp: mine.get(n.id)?.vp, vm: mine.get(n.id)?.vm })),
-      ];
+        ...this.notes.filter((n) => n.id.startsWith('tmp:') && !this.sentTmp.has(n.id)),
+        ...fresh.filter((n) => !gone.has(n.id)).map((n) => ({ ...n, vp: mine.get(n.id)?.vp ?? this.notes.find((x) => x.id === n.id)?.vp, vm: mine.get(n.id)?.vm ?? this.notes.find((x) => x.id === n.id)?.vm })),
+      ].filter((n) => !seen.has(n.id) && !!seen.add(n.id));
       this.folders = await this.api.folders().catch(() => read<string[]>(this.cacheKey() + '.f', []));
       this.serverReachable = true;
       write(this.cacheKey(), this.notes);

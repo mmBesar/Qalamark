@@ -1280,3 +1280,39 @@ test('trust 5: on a phone the tool bar works by touch, and the side panel opens 
   await page.waitForFunction(() => document.querySelector('.shell').classList.contains('drawer-open'), null, { timeout: 4000 });
   assert.deepEqual(errors, []);
 });
+
+test('sync 1: a note made offline reaches the server once, with its text, and the list shows it once', async () => {
+  const errors = [];
+  const ctx = await browser.newContext({ viewport: { width: 1100, height: 760 } });
+  const page = await ctx.newPage();
+  page.on('pageerror', (e) => errors.push(e.message));
+  await signIn(page, 'alice', 'alice-password');
+  await page.waitForSelector('aside');
+  await ctx.setOffline(true);
+  await page.waitForTimeout(800);
+  await page.locator('aside .actions button:first-child').dispatchEvent('click');
+  await page.waitForSelector('.page-title');
+  await page.fill('.page-title', 'Made offline');
+  await page.locator('.page-title').blur();
+  await page.click('.cm-content');
+  await page.keyboard.insertText('written without a connection سَيِّدُ');
+  await page.waitForTimeout(1200);
+  // the app is closed and opened again just as the connection comes back (what happens on a phone)
+  await ctx.setOffline(false);
+  await page.reload();
+  await page.waitForSelector('aside');
+  const end = Date.now() + 25000;
+  let titles = [];
+  while (Date.now() < end) {
+    titles = await page.$$eval('aside .note-row, aside [role=treeitem], aside .notes li', (els) => els.map((e) => e.textContent.trim()));
+    if (readableOnDisk('Made offline')) break;
+    await new Promise((r) => setTimeout(r, 500));
+  }
+  await page.waitForTimeout(3000); // let every refresh path run
+  const rows = await page.$$eval('aside', (els) => els[0].innerText);
+  assert.equal((rows.match(/Made offline/g) ?? []).length, 1, 'listed exactly once:\n' + rows);
+  assert.match(readFileSync(note('Made offline'), 'utf8'), /written without a connection سَيِّدُ/);
+  assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem([...Object.keys(localStorage)].find((k) => k.startsWith('qm.outbox')) ?? '') ?? '[]').length), 0, 'nothing left waiting');
+  assert.deepEqual(errors, []);
+});
+function readableOnDisk(name) { try { return readFileSync(note(name), 'utf8').includes('written'); } catch { return false; } }

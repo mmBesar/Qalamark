@@ -54,4 +54,6 @@ jobs:
         working-directory: e2e
         run: |
           npm ci
+          # the editing tests import the editor's own commands, which need the app's CodeMirror packages
+          (cd ../app && npm ci --ignore-scripts)
           npm test

@@ -1281,6 +1281,43 @@ test('trust 5: on a phone the tool bar works by touch, and the side panel opens 
   assert.deepEqual(errors, []);
 });
 
+test('gestures 1: on a phone a swipe up on the bottom bar opens the menu, a swipe down closes it, and a swipe toward the panel side from the far side opens the contents', async () => {
+  const errors = [];
+  const ctx = await browser.newContext({ viewport: { width: 400, height: 780 }, hasTouch: true, isMobile: true, deviceScaleFactor: 2 });
+  const page = await ctx.newPage();
+  page.on('pageerror', (e) => errors.push(e.message));
+  await signIn(page, 'alice', 'alice-password');
+  await freshNote(page, 'Gestures A');
+  await page.tap('.cm-content');
+  await page.keyboard.insertText('# One\n\n## Two\n');
+  await page.evaluate(() => document.activeElement.blur());
+  await page.waitForTimeout(500);
+  const drag = (sel, from, to, y0 = null, y1 = null) => page.evaluate(async ([sel, a, b, ya, yb]) => {
+    const el = sel ? document.querySelector(sel) : null;
+    const r = el ? el.getBoundingClientRect() : null;
+    const x0 = a ?? (r.left + r.width / 2), x1 = b ?? x0;
+    const yy0 = ya ?? (r.top + r.height / 2), yy1 = yb ?? yy0;
+    const target = document.elementFromPoint(x0, yy0);
+    const mk = (x, y) => new Touch({ identifier: 1, target, clientX: x, clientY: y, pageX: x, pageY: y });
+    const fire = (type, x, y) => target.dispatchEvent(new TouchEvent(type, { touches: type === 'touchend' ? [] : [mk(x, y)], changedTouches: [mk(x, y)], bubbles: true, cancelable: true }));
+    fire('touchstart', x0, yy0);
+    for (let i = 1; i <= 8; i++) { fire('touchmove', x0 + ((x1 - x0) * i) / 8, yy0 + ((yy1 - yy0) * i) / 8); await new Promise((r) => setTimeout(r, 16)); }
+    fire('touchend', x1, yy1);
+  }, [sel, from, to, y0, y1]);
+  const bar = await page.evaluate(() => { const r = document.querySelector('.float-bar').getBoundingClientRect(); return { y: r.top + r.height / 2, x: r.left + 20 }; });
+  await drag(null, bar.x, bar.x, bar.y, bar.y - 90);
+  await page.waitForSelector('.sheet', { timeout: 3000 });
+  await drag('.sheet h3', null, null, null, null);
+  const y = await page.evaluate(() => { const r = document.querySelector('.sheet h3').getBoundingClientRect(); return r.top + 4; });
+  await drag(null, 200, 200, y, y + 140);
+  await page.waitForFunction(() => !document.querySelector('.sheet'), null, { timeout: 3000 });
+  // from the far side toward the panel's side: the contents
+  await drag(null, 350, 120, 400, 400);
+  await page.waitForSelector('.sheet', { timeout: 3000 });
+  assert.match(await page.textContent('.sheet'), /Two/);
+  assert.deepEqual(errors, []);
+});
+
 test('sync 1: a note made offline reaches the server once, with its text, and the list shows it once', async () => {
   const errors = [];
   const ctx = await browser.newContext({ viewport: { width: 1100, height: 760 } });

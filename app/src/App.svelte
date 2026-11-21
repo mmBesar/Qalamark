@@ -85,7 +85,7 @@
 
   // Swipe the side panel in from the screen edge and out again, following the finger (phones and small windows).
   let prog = $state<number | null>(null); // 0 = closed … 1 = open, while a finger is down
-  let sw: { x: number; y: number; w: number; opening: boolean; live: boolean; t: number } | null = null;
+  let sw: { x: number; y: number; w: number; opening: boolean; live: boolean; t: number; toc?: boolean } | null = null;
   const small = () => matchMedia('(max-width: 760px)').matches;
   const rtl = () => document.documentElement.dir === 'rtl';
   /** Is the finger on something that scrolls sideways (a board, a table, a code block), or on a field? */
@@ -104,12 +104,19 @@
     const t0 = e.touches[0]!;
     // The very edge belongs to the system's back gesture, so the swipe can also start well inside the screen
     // (the outer 40% on the side where the panel lives), but not on something that scrolls sideways itself.
-    const dist = rtl() ? innerWidth - t0.clientX : t0.clientX;
+    const dist = rtl() ? innerWidth - t0.clientX : t0.clientX; // from the side where the panel lives
     const fromEdge = dist <= innerWidth * 0.4;
-    if (!drawer && (!fromEdge || sideways(e.target))) return;
-    const w = document.querySelector('aside')?.getBoundingClientRect().width ?? 300;
+    const fromFar = innerWidth - dist <= innerWidth * 0.4; // from the other side: the contents of the note
+    const busy = !!store.sheet || store.palette || store.settingsOpen || !!document.querySelector('dialog[open]');
     if (!drawer && (getSelection()?.toString() ?? '') !== '') return; // dragging a text selection is not a swipe
-    sw = { x: t0.clientX, y: t0.clientY, w, opening: !drawer, live: false, t: Date.now() };
+    const w = document.querySelector('aside')?.getBoundingClientRect().width ?? 300;
+    if (drawer) {
+      sw = { x: t0.clientX, y: t0.clientY, w, opening: false, live: false, t: Date.now() };
+    } else if (!busy && fromEdge && !sideways(e.target)) {
+      sw = { x: t0.clientX, y: t0.clientY, w, opening: true, live: false, t: Date.now() };
+    } else if (!busy && fromFar && store.currentId && !sideways(e.target)) {
+      sw = { x: t0.clientX, y: t0.clientY, w, opening: true, live: false, t: Date.now(), toc: true };
+    }
   }
   function swMove(e: TouchEvent) {
     if (!sw) return;
@@ -120,12 +127,24 @@
       if (Date.now() - sw.t > 450) { sw = null; return; } // a finger that rested first is selecting or scrolling, not swiping
       if (Math.abs(dy) > 12 && Math.abs(dy) > Math.abs(dx)) { sw = null; return; }
       if (Math.abs(dx) < 10) return;
+      if (sw.toc) {
+        if (dx > 0) { sw = null; return; } // toward the panel's side from the far side: that is the contents gesture
+        sw.live = true;
+        return;
+      }
       if ((sw.opening && dx < 0) || (!sw.opening && dx > 0)) { sw = null; return; }
       sw.live = true;
     }
+    if (sw.toc) return;
     prog = Math.max(0, Math.min(1, (sw.opening ? 0 : 1) + dx / sw.w));
   }
-  function swEnd() {
+  function swEnd(e?: TouchEvent) {
+    if (sw?.toc && sw.live && e?.changedTouches[0]) {
+      const dx = (rtl() ? -1 : 1) * (e.changedTouches[0].clientX - sw.x);
+      if (dx < -70) store.sheet = 'toc'; // from the far side toward the panel's side: the note's contents come up
+      sw = null;
+      return;
+    }
     if (sw?.live && prog !== null) drawer = prog > (sw.opening ? 0.35 : 0.65);
     sw = null;
     prog = null;

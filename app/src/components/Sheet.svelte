@@ -20,11 +20,32 @@
     if (dy > 90) onClose();
     dy = 0;
   }
+  // Swiping down anywhere on the sheet closes it, as long as its own list is scrolled to the top.
+  let ty = 0, tx = 0, tdrag = false;
+  function tstart(e: TouchEvent) {
+    const t = e.touches[0]!;
+    ty = t.clientY; tx = t.clientX; tdrag = false;
+  }
+  function tmove(e: TouchEvent) {
+    const t = e.touches[0]!;
+    const body = sheet?.querySelector('.sheet-body') as HTMLElement | null;
+    const inBody = body?.contains(e.target as Node);
+    if (!tdrag) {
+      if (inBody && body && body.scrollTop > 0) return;
+      if (t.clientY - ty > 14 && t.clientY - ty > Math.abs(t.clientX - tx) * 1.5) tdrag = true;
+      else return;
+    }
+    dy = Math.max(0, t.clientY - ty);
+  }
+  function tend() {
+    if (tdrag && dy > 70) onClose();
+    dy = 0; tdrag = false;
+  }
 </script>
 
 <svelte:window onkeydown={(e) => e.key === 'Escape' && onClose()} />
-<button class="sheet-scrim" aria-label={store.t('close')} onclick={onClose}></button>
-<div class="sheet" role="dialog" aria-label={title} bind:this={sheet} style:transform={dy ? `translateY(${dy}px)` : undefined}>
+<button class="sheet-scrim" aria-label={store.t('close')} onclick={onClose} ontouchstart={tstart} ontouchmove={tmove} ontouchend={tend}></button>
+<div class="sheet" role="dialog" aria-label={title} bind:this={sheet} ontouchstart={tstart} ontouchmove={tmove} ontouchend={tend} ontouchcancel={tend} style:transform={dy ? `translateY(${dy}px)` : undefined}>
   <div class="grab" onpointerdown={down} onpointermove={move} onpointerup={up} onpointercancel={up} role="presentation"><i></i></div>
   <h3>{title}</h3>
   <div class="sheet-body">{@render children()}</div>

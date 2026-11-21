@@ -126,6 +126,10 @@ jobs:
           import androidx.core.view.WindowInsetsCompat
 
           class MainActivity : TauriActivity() {
+            // true while the page asked for full screen: the bars that come back with a swipe then float over the note
+            // instead of pushing it down (which made the page jump, and jump back when they hid again)
+            @Volatile private var hiding = false
+
             override fun onCreate(savedInstanceState: Bundle?) {
               super.onCreate(savedInstanceState)
               // asks once ("Allow Qalamark to access devices on your local network?"); without it a home server times out
@@ -145,7 +149,13 @@ jobs:
                 // the camera cut-out is ignored at the top: with the bars hidden the text may use that space
                 val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.ime())
                 val cut = insets.getInsets(WindowInsetsCompat.Type.displayCutout())
-                v.setPadding(maxOf(bars.left, cut.left), bars.top, maxOf(bars.right, cut.right), bars.bottom)
+                if (hiding) {
+                  // only the keyboard may still take room
+                  val ime = insets.getInsets(WindowInsetsCompat.Type.ime())
+                  v.setPadding(cut.left, 0, cut.right, ime.bottom)
+                } else {
+                  v.setPadding(maxOf(bars.left, cut.left), bars.top, maxOf(bars.right, cut.right), bars.bottom)
+                }
                 WindowInsetsCompat.CONSUMED
               }
             }
@@ -157,12 +167,14 @@ jobs:
                 fun immersive(on: Boolean) {
                   runOnUiThread {
                     val c = WindowCompat.getInsetsController(window, window.decorView)
+                    hiding = on
                     if (on) {
                       c.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
                       c.hide(WindowInsetsCompat.Type.systemBars())
                     } else {
                       c.show(WindowInsetsCompat.Type.systemBars())
                     }
+                    findViewById<View>(android.R.id.content).requestApplyInsets()
                   }
                 }
                 // Material You: the wallpaper-derived colours of the phone (Android 12 and later), as JSON

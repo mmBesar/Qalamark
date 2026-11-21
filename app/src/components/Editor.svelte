@@ -473,6 +473,14 @@
   const statusText = $derived(
     status === 'online' ? t('online') : status === 'connecting' ? t('connecting') : status === 'offline' ? t('offline') : t('saved'),
   );
+  // Swipe up on the bottom bar brings the menu; a swipe down on the sheet puts it away again (see Sheet.svelte).
+  let barY = 0, barX = 0, barDone = false;
+  function barStart(e: TouchEvent) { barY = e.touches[0]!.clientY; barX = e.touches[0]!.clientX; barDone = false; }
+  function barMove(e: TouchEvent) {
+    if (barDone) return;
+    const t = e.touches[0]!;
+    if (barY - t.clientY > 28 && barY - t.clientY > Math.abs(t.clientX - barX)) { barDone = true; store.sheet = 'more'; }
+  }
 </script>
 
 <svelte:window
@@ -597,7 +605,7 @@
   <button class="side-fab" aria-label={t('menu')} title={t('menu')} onclick={onMenu}><Icon name="sidebar" size={20} /></button>
 
   <!-- phones: a floating bar instead of a fixed one -->
-  <div class="float-bar" role="toolbar" aria-label={t('menu')}>
+  <div class="float-bar" role="toolbar" aria-label={t('menu')} ontouchstart={barStart} ontouchmove={barMove}>
     <button class="icon" aria-label={t('menu')} onclick={onMenu}><Icon name="files" size={22} /></button>
     <button class="icon" aria-label={t('search')} onclick={() => (store.palette = true)}><Icon name="search" size={22} /></button>
     <button class="icon plus" aria-label={t('newNote')} onclick={() => store.createNote()}><Icon name="plus" size={24} /></button>

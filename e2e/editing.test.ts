@@ -69,7 +69,7 @@ test('toggleWrap: leading and trailing spaces of a selection stay outside', () =
   assert.equal(v.state.doc.toString(), 'a  **word**  b');
 });
 
-test('toggleLinePrefix: lines without the marker get it and lose it again; blank lines are never touched', () => {
+test('toggleLinePrefix: lines without the marker get it and lose it again; blank lines are left alone (except an empty line, which starts an empty item)', () => {
   for (const prefix of ['- ', '- [ ] ', '> ']) {
     for (let seed = 1; seed <= ITER; seed++) {
       const r = rng(seed * 13 + prefix.length);
@@ -81,7 +81,11 @@ test('toggleLinePrefix: lines without the marker get it and lose it again; blank
       toggleLinePrefix(v, prefix);
       const once = v.state.doc.toString().split('\n');
       assert.equal(once.length, clean.length, 'no line is added or removed');
-      once.forEach((l, i) => { if (clean[i]!.trim() === '') assert.equal(l, clean[i], `blank line ${i} untouched (seed ${seed})`); });
+      // blank lines stay as they are, unless every selected line is blank: then it is an empty item to fill in
+      const first = text.slice(0, from).split('\n').length - 1;
+      const last = text.slice(0, to).split('\n').length - 1;
+      const onlyBlank = clean.slice(first, last + 1).every((l) => l.trim() === '');
+      if (!onlyBlank) once.forEach((l, i) => { if (clean[i]!.trim() === '') assert.equal(l, clean[i], `blank line ${i} untouched (seed ${seed})`); });
       toggleLinePrefix(v, prefix);
       assert.equal(v.state.doc.toString(), text, `twice restores the note (prefix "${prefix}", seed ${seed}, selection ${from}-${to})`);
     }

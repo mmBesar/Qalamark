@@ -870,7 +870,7 @@ dialog label {
   .shell {
     grid-template-columns: 1fr;
   }
-  aside {
+  .shell > aside {
     position: fixed;
     inset-block: 0;
     inset-inline-start: 0;
@@ -880,10 +880,10 @@ dialog label {
     transition: transform 0.2s ease;
     box-shadow: var(--shadow);
   }
-  [dir='rtl'] aside {
+  [dir='rtl'] .shell > aside {
     transform: translateX(105%);
   }
-  .drawer-open aside {
+  .shell.drawer-open > aside {
     transform: none;
   }
   .scrim {
@@ -1305,10 +1305,9 @@ aside .pad {
   display: inline-flex;
 }
 .insmenu {
-  position: absolute;
-  top: 100%;
-  inset-inline-start: 0;
-  z-index: 30;
+  position: fixed;
+  top: auto;
+  z-index: 60;
   min-width: 15rem;
   display: flex;
   flex-direction: column;
@@ -1714,11 +1713,11 @@ aside .results .snip { color: var(--muted); font-size: 0.78rem; white-space: nor
 
 /* swipe-to-open side panel follows the finger */
 @media (max-width: 760px) {
-  .shell.swiping aside { transform: translateX(calc((1 - var(--p)) * -105%)); transition: none; }
-  [dir='rtl'] .shell.swiping aside { transform: translateX(calc((1 - var(--p)) * 105%)); }
+  .shell.swiping > aside { transform: translateX(calc((1 - var(--p)) * -105%)); transition: none; }
+  [dir='rtl'] .shell.swiping > aside { transform: translateX(calc((1 - var(--p)) * 105%)); }
   .shell.swiping .scrim { opacity: var(--p); pointer-events: auto; transition: none; }
   .shell { height: 100dvh; }
-  aside { padding-top: max(1rem, env(safe-area-inset-top)); padding-bottom: max(0.8rem, env(safe-area-inset-bottom)); }
+  .shell > aside { padding-top: max(1rem, env(safe-area-inset-top)); padding-bottom: max(0.8rem, env(safe-area-inset-bottom)); }
   .topbar { padding-top: env(safe-area-inset-top); }
   button, [role='button'], .ctx-item { touch-action: manipulation; }
   .toolbar button { min-width: 2.6rem; min-height: 2.6rem; }
@@ -1838,7 +1837,7 @@ html[data-page='center'] .page-title { margin-inline: auto; }
 .sharebtn:hover { color: var(--accent); }
 @media (min-width: 761px) {
   .shell.side-off { grid-template-columns: 1fr; }
-  .shell.side-off aside, .shell.side-off .resizer { display: none; }
+  .shell.side-off > aside, .shell.side-off > .resizer { display: none; }
 }
 
 /* ---------- phones: the text gets the whole screen ---------- */
@@ -1911,7 +1910,7 @@ aside footer .who .uname { overflow: hidden; text-overflow: ellipsis; white-spac
 
 /* focus mode: just the page; the top row fades in when the pointer goes to the top edge */
 .shell.zen { grid-template-columns: 1fr; }
-.shell.zen aside, .shell.zen .resizer { display: none; }
+.shell.zen > aside, .shell.zen > .resizer { display: none; }
 .shell.zen main > .tabbar, .shell.zen .statusbar { display: none; }
 .shell.zen .topbar { opacity: 0; transition: opacity 0.25s; }
 .shell.zen .topbar:hover, .shell.zen .topbar:focus-within { opacity: 1; }
@@ -2015,3 +2014,32 @@ dialog.settings .swatches button { min-height: 0; }
   .editor-pane.mobile .side-fab { display: grid; place-items: center; position: fixed; top: 0.55rem; inset-inline-start: 0.55rem; z-index: 30; width: 2.9rem; height: 2.9rem; border-radius: 50%; padding: 0; color: var(--ink); border: 1px solid var(--line); background: color-mix(in srgb, var(--surface) 92%, transparent); backdrop-filter: blur(12px); box-shadow: var(--shadow); transition: transform 0.22s ease, opacity 0.22s; }
   .editor-pane.hide-bars .side-fab { transform: translateY(-220%); opacity: 0; pointer-events: none; }
 }
+
+/* ---- round 23: the tool bar scrolls, can be customised; panels hide on their own ---- */
+.toolbar { overflow: hidden; min-width: 0; }
+.topbar .toolbar { max-width: 100%; overflow: hidden; }
+.tb-scroll { display: flex; align-items: center; gap: 0.1rem; min-width: 0; overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; overscroll-behavior-x: contain; }
+.tb-scroll::-webkit-scrollbar { display: none; }
+.tb-scroll > button, .tb-scroll > .sep { flex: 0 0 auto; }
+.toolbar .tb-edit { flex: 0 0 auto; margin-inline-start: 0.15rem; border-inline-start: 1px solid var(--hairline); border-radius: 0 9px 9px 0; }
+.toolbar button:active { transform: scale(0.92); }
+.toolbar button { transition: background var(--ease), transform 0.1s; }
+dialog.toolbar-edit { width: min(30rem, 94vw); max-height: 88dvh; overflow: auto; }
+.toolbar-edit h3 { margin: 1rem 0 0.35rem; font-size: 0.85rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+.tb-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.15rem; }
+.tb-list li { display: flex; align-items: center; gap: 0.4rem; padding: 0.2rem 0.3rem; border-radius: 10px; }
+.tb-list li:hover { background: var(--accent-soft); }
+.tb-ico { width: 1.8rem; display: inline-grid; place-items: center; color: var(--accent); }
+.tb-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tb-sep { display: inline-block; width: 1px; height: 1.1rem; background: var(--muted); }
+.tb-list button:disabled { opacity: 0.3; }
+.toolbar-edit .row-end { display: flex; gap: 0.5rem; justify-content: flex-end; margin-top: 1rem; }
+
+/* the contents drawer on phones */
+.toc-drawer { position: fixed; inset: 0; z-index: 60; }
+.toc-scrim { position: absolute; inset: 0; border: 0; border-radius: 0; background: rgb(0 0 0 / 0.38); animation: fadeIn 0.2s ease; }
+.toc-drawer aside.toc { position: absolute; inset-block: 0; inset-inline-end: 0; width: min(20rem, 86vw); z-index: 1; padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom); background: var(--surface); box-shadow: -10px 0 30px rgb(0 0 0 / 0.3); --from: 100%; animation: tocIn 0.24s cubic-bezier(0.2, 0.8, 0.2, 1); }
+[dir='rtl'] .toc-drawer aside.toc { --from: -100%; box-shadow: 10px 0 30px rgb(0 0 0 / 0.3); }
+@keyframes tocIn { from { transform: translateX(var(--from)); } to { transform: none; } }
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+@media (max-width: 760px) { .editor-pane .toolbar .tb-scroll { flex: 1; } }

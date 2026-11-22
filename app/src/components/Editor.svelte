@@ -4,7 +4,8 @@
   import { findHeading, parseHeadings, splitTarget } from '../lib/headings.ts';
   import { onMount, untrack } from 'svelte';
   import { yUndoManagerKeymap } from 'y-codemirror.next';
-  import { cycleHeading, insertLink, insertSnippet, insertTable, SNIPPETS, toggleLinePrefix, toggleWrap } from '../editor/commands.ts';
+  import { cycleHeading, insertLink, insertRule, insertSnippet, insertTable, insertWikilink, shiftLines, SNIPPETS, toggleLinePrefix, toggleWrap } from '../editor/commands.ts';
+  import { cleanToolbar, TOOLS, type ToolId } from '../lib/toolbar.ts';
   import { createEditor, setTouchLabels, type Editor, type ViewMode } from '../editor/editor.ts';
   import type { TableLabels } from '../editor/tables.ts';
   import type { NoteMeta } from '../lib/server.ts';
@@ -423,6 +424,51 @@
     v.focus();
   }
 
+  // a mouse wheel over the bar scrolls it sideways
+  function sideWheel(node: HTMLElement) {
+    const on = (e: WheelEvent) => {
+      if (node.scrollWidth <= node.clientWidth || Math.abs(e.deltaY) <= Math.abs(e.deltaX)) return;
+      node.scrollLeft += e.deltaY;
+      e.preventDefault();
+    };
+    node.addEventListener('wheel', on, { passive: false });
+    return { destroy: () => node.removeEventListener('wheel', on) };
+  }
+  const toolList = $derived(cleanToolbar(store.s.toolbar));
+  const tool = (id: ToolId) => {
+    const v = editor.view;
+    switch (id) {
+      case 'undo': return history('Mod-z')();
+      case 'redo': return history('Mod-y')();
+      case 'bold': return run((x) => toggleWrap(x, '**'))();
+      case 'italic': return run((x) => toggleWrap(x, '*'))();
+      case 'strike': return run((x) => toggleWrap(x, '~~'))();
+      case 'code': return run((x) => toggleWrap(x, '`'))();
+      case 'heading': return run(cycleHeading)();
+      case 'bullet': return run((x) => toggleLinePrefix(x, '- '))();
+      case 'numbered': return run((x) => toggleLinePrefix(x, '1. '))();
+      case 'task': return run((x) => toggleLinePrefix(x, '- [ ] '))();
+      case 'quote': return run((x) => toggleLinePrefix(x, '> '))();
+      case 'indentMore': return run((x) => shiftLines(x, 1))();
+      case 'indentLess': return run((x) => shiftLines(x, -1))();
+      case 'link': return run(insertLink)();
+      case 'wikilink': return run(insertWikilink)();
+      case 'table': return run(insertTable)();
+      case 'codeBlock': return insertSnippet(v, SNIPPETS.codeBlock);
+      case 'rule': return run(insertRule)();
+      case 'help': help = true;
+    }
+  };
+  // the insert menu is fixed to the screen: the bar scrolls sideways and would cut a menu that hangs from it
+  let insPos = $state<{ left: number; top?: number; bottom?: number }>({ left: 0 });
+  function openInsert(e: MouseEvent) {
+    e.stopPropagation();
+    if (insMenu) { insMenu = false; return; }
+    const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const left = Math.max(8, Math.min(r.left, innerWidth - 232));
+    insPos = r.top > innerHeight / 2 ? { left, bottom: innerHeight - r.top + 6 } : { left, top: r.bottom + 6 };
+    insMenu = true;
+  }
   let insMenu = $state(false);
   let picInput: HTMLInputElement;
   const snippet = (s: string) => {
@@ -473,6 +519,15 @@
   const statusText = $derived(
     status === 'online' ? t('online') : status === 'connecting' ? t('connecting') : status === 'offline' ? t('offline') : t('saved'),
   );
+  // Swipe the contents drawer back toward the side it came from to put it away.
+  let dwX = 0, dwY = 0, dwDone = false;
+  function drawerStart(e: TouchEvent) { dwX = e.touches[0]!.clientX; dwY = e.touches[0]!.clientY; dwDone = false; }
+  function drawerMove(e: TouchEvent) {
+    if (dwDone) return;
+    const t0 = e.touches[0]!;
+    const dx = (document.documentElement.dir === 'rtl' ? -1 : 1) * (t0.clientX - dwX);
+    if (dx > 60 && dx > Math.abs(t0.clientY - dwY) * 1.5) { dwDone = true; store.sheet = null; }
+  }
   // Swipe up on the bottom bar brings the menu; a swipe down on the sheet puts it away again (see Sheet.svelte).
   let barY = 0, barX = 0, barDone = false;
   function barStart(e: TouchEvent) { barY = e.touches[0]!.clientY; barX = e.touches[0]!.clientX; barDone = false; }
@@ -487,7 +542,7 @@
   onpointerdown={(e) => {
     if (menu && !(e.target as Element).closest('.menu-wrap')) menu = false;
     if (showLinks && !(e.target as Element).closest('.links-wrap')) showLinks = false;
-    if (insMenu && !(e.target as Element).closest('.relative')) insMenu = false;
+    if (insMenu && !(e.target as Element).closest('.insmenu, .toolbar')) insMenu = false;
   }}
   onkeydown={(e) => { if (e.key === 'Escape') menu = false; else if (e.altKey && !e.ctrlKey && !e.metaKey && e.code === 'KeyB' && boardNote) { e.preventDefault(); setMode(mode === 'board' ? 'live' : 'board'); } else if (e.altKey && !e.ctrlKey && !e.metaKey && e.code === 'KeyO') { e.preventDefault(); toggleContents(); } }}
 />
@@ -498,35 +553,20 @@
 
     {#if !readOnly && mode !== 'read' && mode !== 'board'}
       <div class="toolbar" role="toolbar" onpointerdown={holdTools} onmousedown={(e) => { if ((e.target as HTMLElement).closest('button')) e.preventDefault(); }}>
-        <button title="{t('bold')} (Ctrl+B)" onclick={run((v) => toggleWrap(v, '**'))}><Icon name="bold" /></button>
-        <button title="{t('italic')} (Ctrl+I)" onclick={run((v) => toggleWrap(v, '*'))}><Icon name="italic" /></button>
-        <button title={t('strike')} onclick={run((v) => toggleWrap(v, '~~'))}><Icon name="strike" /></button>
-        <button title={t('code')} onclick={run((v) => toggleWrap(v, '`'))}><Icon name="code" /></button>
-        <span class="sep"></span>
-        <button title={t('heading')} onclick={run(cycleHeading)}><Icon name="heading" /></button>
-        <button title={t('bullet')} onclick={run((v) => toggleLinePrefix(v, '- '))}><Icon name="list" /></button>
-        <button title={t('task')} onclick={run((v) => toggleLinePrefix(v, '- [ ] '))}><Icon name="check" /></button>
-        <button title={t('quote')} onclick={run((v) => toggleLinePrefix(v, '> '))}><Icon name="quote" /></button>
-        <span class="sep"></span>
-        <button title={t('link')} onclick={run(insertLink)}><Icon name="link" /></button>
-        <button title={t('table')} onclick={run(insertTable)}><Icon name="table" /></button>
-        <span class="relative">
-          <button title={t('insert')} aria-haspopup="menu" onclick={(e) => { e.stopPropagation(); insMenu = !insMenu; }}><Icon name="plus" /><Icon name="chevron" size={12} /></button>
-          {#if insMenu}
-            <div class="menu insmenu" role="menu">
-              <button onclick={() => snippet(SNIPPETS.callout)}>{t('insCallout')}</button>
-              <button onclick={() => snippet(SNIPPETS.admonition)}>{t('insAdmonition')}</button>
-              <button onclick={() => snippet(SNIPPETS.collapsible)}>{t('insCollapsible')}</button>
-              <button onclick={() => snippet(SNIPPETS.tabs)}>{t('insTabs')}</button>
-              <button onclick={() => snippet(SNIPPETS.codeTitle)}>{t('insCodeTitle')}</button>
-              {#if store.mode === 'server'}
-                <button onclick={() => { insMenu = false; picInput.click(); }}>{t('insPicture')}</button>
-              {/if}
-            </div>
+        <div class="tb-scroll" use:sideWheel>
+        {#each toolList as id, i (i + id)}
+          {#if id === 'sep'}
+            <span class="sep"></span>
+          {:else if id === 'insert'}
+            <button title={t('insert')} aria-haspopup="menu" aria-expanded={insMenu} onclick={openInsert}><Icon name="plus" /><Icon name="chevron" size={12} /></button>
+          {:else}
+            {@const d = TOOLS.find((x) => x.id === id)}
+            {#if d}<button title={t(d.label as never) + (d.key ? ' (' + d.key + ')' : '')} aria-label={t(d.label as never)} onclick={() => tool(id as ToolId)}><Icon name={d.icon} /></button>{/if}
           {/if}
-        </span>
+        {/each}
+        </div>
+        <button class="tb-edit" title={t('toolbarEdit')} aria-label={t('toolbarEdit')} onclick={() => (store.toolbarOpen = true)}><Icon name="sliders" /></button>
         <input bind:this={picInput} type="file" accept="image/*" hidden onchange={pickPicture} />
-        <button title={t('help')} onclick={() => (help = true)}><Icon name="fx" /></button>
       </div>
     {/if}
 
@@ -575,6 +615,20 @@
       </div>
     </div>
   </header>
+  {#if insMenu}
+    <div class="menu insmenu" role="menu" onpointerdown={holdTools} onmousedown={(e) => e.preventDefault()} style:left={insPos.left + 'px'} style:top={insPos.top != null ? insPos.top + 'px' : undefined} style:bottom={insPos.bottom != null ? insPos.bottom + 'px' : undefined}>
+      <button onclick={() => snippet(SNIPPETS.callout)}>{t('insCallout')}</button>
+      <button onclick={() => snippet(SNIPPETS.admonition)}>{t('insAdmonition')}</button>
+      <button onclick={() => snippet(SNIPPETS.collapsible)}>{t('insCollapsible')}</button>
+      <button onclick={() => snippet(SNIPPETS.tabs)}>{t('insTabs')}</button>
+      <button onclick={() => snippet(SNIPPETS.codeTitle)}>{t('insCodeTitle')}</button>
+      <button onclick={() => snippet(SNIPPETS.codeBlock)}>{t('insCodeBlock')}</button>
+      <button onclick={() => { insMenu = false; run(insertRule)(); }}>{t('insRule')}</button>
+      {#if store.mode === 'server'}
+        <button onclick={() => { insMenu = false; picInput.click(); }}>{t('insPicture')}</button>
+      {/if}
+    </div>
+  {/if}
 
   {#if err}<p class="error banner" role="alert">{err} <button class="link" onclick={() => (err = '')}>×</button></p>{/if}
 
@@ -652,16 +706,12 @@
   </Sheet>
 {/if}
 
-{#if mobile && store.sheet === 'toc'}
-  <Sheet title={t('toc')} onClose={() => (store.sheet = null)}>
-    <div class="sheet-list toc-list">
-      {#each headings() as h (h.pos)}
-        <button style:--lv={h.level - 1} onclick={() => { store.sheet = null; jump(h.pos); }}><span>{h.text}</span></button>
-      {:else}
-        <span class="muted">{t('tocEmpty')}</span>
-      {/each}
-    </div>
-  </Sheet>
+{#if mobile && store.sheet === 'toc' && editorReady && mode !== 'board'}
+  <!-- the contents come in from the right (from the left in Arabic), where the swipe that opens them starts -->
+  <div class="toc-drawer" role="presentation" ontouchstart={drawerStart} ontouchmove={drawerMove}>
+    <button class="toc-scrim" aria-label={t('close')} onclick={() => (store.sheet = null)}></button>
+    <Toc view={editor.view} ytext={liveText!} title={note.title} {readOnly} tick={tocTick} onClose={() => (store.sheet = null)} onGo={() => (store.sheet = null)} />
+  </div>
 {/if}
 
 {#if mobile && store.sheet === 'more'}

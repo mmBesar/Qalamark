@@ -16,6 +16,7 @@ import { inShell, notePath, onAndroid, splitPath, tls, vault } from './vault.ts'
 import { setArabicFont } from './fonts.ts';
 import { applyText } from './ytext.ts';
 import { chooseBox, confirmBox } from './dialog.svelte.ts';
+import { cleanToolbar, DEFAULT_TOOLBAR } from './toolbar.ts';
 import { deleteStored, readStoredText, syncNoteNow, writeStoredText } from './session.ts';
 
 export type Mode = 'boot' | 'welcome' | 'login' | 'local' | 'server';
@@ -63,6 +64,8 @@ interface Settings {
   centerPage: boolean;
   /** Desktop: the sidebar can be hidden for a clean page. */
   hideSide: boolean;
+  /** The editor tool bar: tool ids in order ('sep' is a divider). */
+  toolbar: string[];
   /** Self-signed servers the user chose to trust (apps): address -> certificate fingerprint. */
   trust: Record<string, string>;
   /** Apps: accept a server's self-signed certificate (the first one seen is remembered). */
@@ -76,7 +79,7 @@ function defaultLang(): Lang {
 }
 
 class Store {
-  s = $state<Settings>({ lang: 'en', theme: onAndroid() ? 'system' : 'auto', accent: 'default', serverUrl: '', token: '', username: '', admin: false, wantsLocal: false, welcomed: false, fontSize: 17, editorWidth: 50, fontEn: '', fontAr: '', fontCode: '', sideWidth: 304, sourceSize: 15, fontSource: '', centerPage: false, hideSide: false, trust: {}, allowSelfSigned: false, allowHttp: false, ...read<Partial<Settings>>(SETTINGS, { lang: defaultLang() }) });
+  s = $state<Settings>({ lang: 'en', theme: onAndroid() ? 'system' : 'auto', accent: 'default', serverUrl: '', token: '', username: '', admin: false, wantsLocal: false, welcomed: false, fontSize: 17, editorWidth: 50, fontEn: '', fontAr: '', fontCode: '', sideWidth: 304, sourceSize: 15, fontSource: '', centerPage: false, hideSide: false, toolbar: [...DEFAULT_TOOLBAR], trust: {}, allowSelfSigned: false, allowHttp: false, ...read<Partial<Settings>>(SETTINGS, { lang: defaultLang() }) });
   mode = $state<Mode>('boot');
   serverReachable = $state(false);
   setupNeeded = $state(false);
@@ -153,6 +156,13 @@ class Store {
     this.save();
     this.applyLayout();
   }
+
+  setToolbar(list: string[]) {
+    this.s.toolbar = cleanToolbar(list);
+    this.save();
+  }
+  /** The tool bar editor (opened from Settings or from the bar itself). */
+  toolbarOpen = $state(false);
 
   setLang(l: Lang) {
     this.s.lang = l;

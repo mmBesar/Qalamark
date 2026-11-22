@@ -5,6 +5,15 @@
   let { name, size = 18 }: { name: string; size?: number } = $props();
   const P: Record<string, string> = {
     plus: 'M12 5v14M5 12h14',
+    redo: 'M15 14l5-5-5-5M20 9H10a6 6 0 0 0 0 12h3',
+    olist: 'M10 6h11M10 12h11M10 18h11M4 5l1-1v4M3.5 13.5c.3-.8 2.5-.8 2.5.3 0 1-2.5 1.5-2.5 2.7H6M3.5 19.2c.8-.5 2.5-.4 2.5.6 0 .9-1 1-1.5 1 .7 0 1.5.2 1.5 1 0 1-1.8 1.2-2.6.5',
+    indent: 'M3 6h18M11 10h10M11 14h10M3 18h18M3 9l3 3-3 3',
+    outdent: 'M3 6h18M11 10h10M11 14h10M3 18h18M6 9l-3 3 3 3',
+    codeblock: 'M4 5h16a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1zM9 10l-2 2 2 2M15 10l2 2-2 2',
+    hr: 'M4 12h16M8 7h8M8 17h8',
+    wikilink: 'M9 4H6v16h3M15 4h3v16h-3',
+    sliders: 'M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0M14 4v4M8 10v4M16 16v4',
+    sep: 'M12 4v16',
     folder: 'M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z',
     'folder-plus': 'M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2zM12 10v6M9 13h6',
     upload: 'M12 16V4M7 9l5-5 5 5M5 20h14',

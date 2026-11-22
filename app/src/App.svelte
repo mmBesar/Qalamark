@@ -8,6 +8,7 @@
   import SettingsDialog from './components/SettingsDialog.svelte';
   import Sidebar from './components/Sidebar.svelte';
   import DialogHost from './components/DialogHost.svelte';
+  import ToolbarDialog from './components/ToolbarDialog.svelte';
   import Palette from './components/Palette.svelte';
   import TabBar from './components/TabBar.svelte';
   import ContextMenu from './components/ContextMenu.svelte';
@@ -209,6 +210,7 @@
     <SettingsDialog onClose={() => (store.settingsOpen = false)} />
   {/if}
 {/if}
+{#if store.toolbarOpen}<ToolbarDialog />{/if}
 {#if store.palette}<Palette onSettings={() => (store.settingsOpen = true)} />{/if}
 <svelte:window ontouchstart={swStart} ontouchmove={swMove} ontouchend={swEnd} ontouchcancel={swEnd} oncontextmenu={onContext} onkeydown={(e) => { if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && (e.key === 'p' || e.key === 'k') && store.mode !== 'login' && store.mode !== 'welcome' && store.mode !== 'boot') { e.preventDefault(); store.palette = !store.palette; } else if (e.altKey && !e.ctrlKey && !e.metaKey && e.key === 'w' && store.currentId) { e.preventDefault(); store.closeTabs([store.currentId]); } else if ((e.ctrlKey || e.metaKey) && e.key === '\\' && store.mode !== 'login' && store.mode !== 'welcome') { e.preventDefault(); store.toggleSide(); } else if (e.altKey && !e.ctrlKey && !e.metaKey && e.key === 'z' && store.mode !== 'login' && store.mode !== 'welcome') { e.preventDefault(); store.toggleZen(); } else if (e.key === 'Escape' && store.zen && !store.palette) { store.zen = false; } else if (e.ctrlKey && e.key === 'Tab') { e.preventDefault(); store.nextTab(e.shiftKey ? -1 : 1); } }} />
 <DialogHost />

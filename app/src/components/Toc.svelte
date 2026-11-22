@@ -13,7 +13,7 @@
   import { applyText } from '../lib/ytext.ts';
   import { store } from '../lib/store.svelte.ts';
 
-  let { view, ytext, title, readOnly, tick, onClose }: { view: EditorView; ytext: YText; title: string; readOnly: boolean; tick: number; onClose: () => void } = $props();
+  let { view, ytext, title, readOnly, tick, onClose, onGo }: { view: EditorView; ytext: YText; title: string; readOnly: boolean; tick: number; onClose: () => void; onGo?: () => void } = $props();
   const t = store.t;
 
   const heads = $derived.by(() => {
@@ -82,6 +82,7 @@
   function go(h: Heading) {
     view.dispatch({ selection: { anchor: h.pos }, effects: EditorView.scrollIntoView(h.pos, { y: 'start', yMargin: 24 }) });
     if (!matchMedia('(pointer: coarse)').matches) view.focus();
+    onGo?.();
   }
   function edit(next: string | null) {
     if (next !== null && !readOnly) applyText(ytext, next);

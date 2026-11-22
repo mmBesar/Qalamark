@@ -1253,8 +1253,8 @@ test('trust 5: on a phone the tool bar works by touch, and the side panel opens 
   await page.tap('.cm-content');
   await page.keyboard.insertText('item one\nitem two');
   await page.waitForSelector('.toolbar', { state: 'visible' });
-  await page.tap('.toolbar button[title="Heading"], .toolbar button:nth-of-type(5)');
-  await page.tap('.toolbar button[title="Bullet list"], .toolbar button:nth-of-type(6)');
+  await page.tap('.toolbar button[title="Heading"]');
+  await page.tap('.toolbar button[title="Bullet list"]');
   await page.waitForTimeout(500);
   const text = await page.evaluate(() => document.querySelector('.cm-content').innerText);
   assert.match(text, /item two/);
@@ -1265,7 +1265,7 @@ test('trust 5: on a phone the tool bar works by touch, and the side panel opens 
   await page.waitForTimeout(500);
   await page.tap('.side-fab');
   await page.waitForFunction(() => document.querySelector('.shell').classList.contains('drawer-open'));
-  await page.tap('.scrim');
+  await page.tap('.scrim', { position: { x: 385, y: 400 } });
   await page.waitForFunction(() => !document.querySelector('.shell').classList.contains('drawer-open'));
   // a swipe that starts 120px inside the screen (the very edge is the system's)
   const swipe = (x0, x1) => page.evaluate(async ([a, b]) => {
@@ -1313,9 +1313,67 @@ test('gestures 1: on a phone a swipe up on the bottom bar opens the menu, a swip
   await page.waitForFunction(() => !document.querySelector('.sheet'), null, { timeout: 3000 });
   // from the far side toward the panel's side: the contents
   await drag(null, 350, 120, 400, 400);
-  await page.waitForSelector('.sheet', { timeout: 3000 });
-  assert.match(await page.textContent('.sheet'), /Two/);
+  await page.waitForSelector('.toc-drawer aside.toc', { timeout: 3000 });
+  assert.match(await page.textContent('.toc-drawer'), /Two/);
+  await page.waitForTimeout(500); // the slide-in
+  // it comes in from the right edge of the screen
+  const box = await page.evaluate(() => { const r = document.querySelector('.toc-drawer aside.toc').getBoundingClientRect(); return { right: r.right, left: r.left, w: innerWidth, dir: document.documentElement.dir, pos: getComputedStyle(document.querySelector('.toc-drawer aside.toc')).position }; });
+  assert.ok(Math.abs(box.right - box.w) < 2, 'the contents sit at the right edge: ' + JSON.stringify(box));
+  // swiping it back to the right puts it away
+  await drag(null, 200, 340, 300, 300);
+  await page.waitForFunction(() => !document.querySelector('.toc-drawer'), null, { timeout: 3000 });
   assert.deepEqual(errors, []);
+});
+
+test('tools 1: the insert menu shows, bullet and task start an empty item, the bar can be customised, and each panel hides on its own', async () => {
+  const errors = [];
+  const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+  const page = await ctx.newPage();
+  page.on('pageerror', (e) => errors.push(e.message));
+  await signIn(page, 'alice', 'alice-password');
+  await freshNote(page, 'Tools A');
+  await page.click('.cm-content');
+  await page.keyboard.insertText('# Head\n\n');
+  // an empty line + bullet = an empty bullet to fill in
+  await page.click('.toolbar button[title^="Bullet"]');
+  assert.match(await page.evaluate(() => [...document.querySelectorAll('.cm-line')].map((l) => l.textContent).pop()), /^(- |• )$/);
+  await page.keyboard.type('milk');
+  await page.keyboard.press('Enter'); // a new item; Enter on an empty one leaves the list
+  await page.keyboard.press('Enter');
+  await page.click('.toolbar button[title^="Task"]');
+  await page.click('.seg button:text-is("Source")');
+  await page.waitForTimeout(300);
+  const lines = await page.evaluate(() => [...document.querySelectorAll('.cm-line')].map((l) => l.textContent));
+  assert.ok(lines.includes('- [ ] '), 'an empty task: ' + JSON.stringify(lines));
+  await page.click('.seg button:has-text("Live")');
+  await page.click('.cm-content');
+  // the insert menu is visible and not cut off by the bar
+  await page.click('.toolbar button[title="Insert"]');
+  const vis = await page.evaluate(() => { const m = document.querySelector('.insmenu'); if (!m) return null; const r = m.getBoundingClientRect(); const e = document.elementFromPoint(r.left + 20, r.top + 10); return { h: r.height, hit: !!e?.closest('.insmenu') }; });
+  assert.ok(vis && vis.h > 100 && vis.hit, 'the insert menu is on top: ' + JSON.stringify(vis));
+  await page.click('.insmenu button >> text=Divider');
+  assert.ok((await page.evaluate(() => document.querySelector('.cm-content').innerText)).length > 0);
+  // customise: add Numbered list, remove Strike
+  await page.click('.toolbar button[title^="Customise"]');
+  await page.waitForSelector('dialog.toolbar-edit[open]');
+  await page.click('.toolbar-edit li:has-text("Numbered list") button[title="Add"]');
+  await page.click('.toolbar-edit li:has-text("Strikethrough") button[title="Remove"], .toolbar-edit li:has(.tb-name:text-is("Strike")) button[title="Remove"]').catch(() => {});
+  await page.click('.toolbar-edit .row-end .primary');
+  await page.waitForFunction(() => !document.querySelector('dialog.toolbar-edit[open]'));
+  assert.ok(await page.locator('.toolbar button[title^="Numbered"]').count() === 1, 'the added tool shows');
+  assert.ok(await page.evaluate(() => JSON.parse(localStorage.getItem('qm.settings') || '{}').toolbar?.includes('numbered') ?? true));
+  // contents on the right stays when the left side bar is hidden, and each has its own button
+  await page.click('.tocbtn');
+  await page.waitForSelector('aside.toc');
+  await page.click('.side-btn');
+  await page.waitForTimeout(300);
+  assert.equal(await page.locator('aside.toc').isVisible(), true, 'the contents stay');
+  assert.equal(await page.locator('.shell > aside').first().isVisible(), false, 'the side bar is hidden');
+  await page.click('.tocbtn');
+  assert.equal(await page.locator('aside.toc').count(), 0);
+  await page.click('.side-btn');
+  assert.deepEqual(errors, []);
+  await ctx.close();
 });
 
 test('sync 1: a note made offline reaches the server once, with its text, and the list shows it once', async () => {

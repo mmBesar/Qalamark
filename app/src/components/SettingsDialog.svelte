@@ -147,6 +147,7 @@
       <FontPicker value={store.s.fontSource} suggestions={["JetBrainsMono Nerd Font Mono","JetBrains Mono","Fira Code","Cascadia Code"]} placeholder={t('fontDefault')} onChange={(v) => store.setLayout({ fontSource: v })} />
     </div>
   </div>
+  <button class="ghost" onclick={() => (store.toolbarOpen = true)}><Icon name="sliders" size={16} /> {t('toolbarEdit')}</button>
   {#if !onAndroid()}<label class="check"><input type="checkbox" checked={store.s.centerPage} onchange={(e) => store.setLayout({ centerPage: e.currentTarget.checked })} /> {t('centerPage')}</label>{/if}
   <label class="filebtn ghost">
     {t('addFont')}

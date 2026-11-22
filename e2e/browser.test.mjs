@@ -1325,6 +1325,86 @@ test('gestures 1: on a phone a swipe up on the bottom bar opens the menu, a swip
   assert.deepEqual(errors, []);
 });
 
+test('gestures 2: the phone contents drawer follows the finger and slides out smoothly, like the sidebar', async () => {
+  const ctx = await browser.newContext({ viewport: { width: 400, height: 780 }, hasTouch: true, isMobile: true, deviceScaleFactor: 2 });
+  const page = await ctx.newPage();
+  await signIn(page, 'alice', 'alice-password');
+  await freshNote(page, 'Gestures B');
+  await page.tap('.cm-content');
+  await page.keyboard.insertText('# One\n\n## Two\n');
+  await page.evaluate(() => document.activeElement.blur());
+  await page.waitForTimeout(500);
+  const x = await page.evaluate(async () => {
+    const target = document.elementFromPoint(360, 400);
+    const mk = (x, y) => new Touch({ identifier: 1, target, clientX: x, clientY: y, pageX: x, pageY: y });
+    const fire = (type, x, y) => target.dispatchEvent(new TouchEvent(type, { touches: type === 'touchend' ? [] : [mk(x, y)], changedTouches: [mk(x, y)], bubbles: true, cancelable: true }));
+    fire('touchstart', 360, 400);
+    for (let i = 1; i <= 6; i++) { fire('touchmove', 360 - i * 20, 400); await new Promise((r) => setTimeout(r, 30)); }
+    await new Promise((r) => setTimeout(r, 50));
+    const a = document.querySelector('.toc-drawer aside.toc');
+    const mid = a ? Math.round(a.getBoundingClientRect().left) : null;
+    fire('touchend', 240, 400);
+    return mid;
+  });
+  // a 120px drag of a 320px panel: it is part-way in, not shut and not fully open
+  assert.ok(x !== null && x > 80 && x < 400, 'the drawer follows the finger: left=' + x);
+  await page.waitForTimeout(500);
+  assert.equal(await page.evaluate(() => Math.round(document.querySelector('.toc-drawer aside.toc').getBoundingClientRect().right)), 400, 'and settles open');
+  // closing from the button slides it out, then it is gone
+  await page.tap('.toc-scrim', { position: { x: 20, y: 400 } });
+  await page.waitForTimeout(120);
+  const mid = await page.evaluate(() => { const a = document.querySelector('.toc-drawer aside.toc'); return a ? Math.round(a.getBoundingClientRect().right) : null; });
+  assert.ok(mid !== null && mid > 400, 'it is still sliding out part-way: ' + mid);
+  await page.waitForFunction(() => !document.querySelector('.toc-drawer'), null, { timeout: 3000 });
+  await ctx.close();
+});
+
+test('checklist 1: a note with view: checklist becomes a checklist you can tick, add to, swipe away and undo', async () => {
+  const errors = [];
+  const ctx = await browser.newContext({ viewport: { width: 400, height: 780 }, hasTouch: true, isMobile: true, deviceScaleFactor: 2 });
+  const page = await ctx.newPage();
+  page.on('pageerror', (e) => errors.push(e.message));
+  await signIn(page, 'alice', 'alice-password');
+  await freshNote(page, 'Groceries');
+  await page.tap('.cm-content');
+  await page.keyboard.insertText('---\nview: checklist\n---\n\n## Fruit\n- [ ] apples\n- [ ] pears\n\n## Dairy\n- [ ] milk\n');
+  await page.waitForSelector('.checklist', { timeout: 5000 });
+  assert.equal(await page.locator('.ck-row').count(), 3);
+  assert.match(await page.textContent('.ck-sum'), /0 of 3/);
+  // tick by tapping the row text
+  await page.tap('.ck-label >> text=apples');
+  await page.waitForSelector('.ck-donehead');
+  assert.match(await page.textContent('.ck-sum'), /1 of 3/);
+  assert.equal(await page.locator('.ck-items.done .ck-label').first().textContent(), 'apples');
+  // quick add
+  await page.tap('.ck-add input >> nth=0');
+  await page.keyboard.insertText('plums');
+  await page.keyboard.press('Enter');
+  await page.waitForFunction(() => document.querySelectorAll('.ck-row').length === 4);
+  // swipe an item toward the end of the line: it goes, and Undo brings it back
+  const box = await page.locator('.ck-row:has-text("pears")').boundingBox();
+  await page.evaluate(async ([x, y]) => {
+    const el = document.elementFromPoint(x, y);
+    const fire = (type, cx) => el.dispatchEvent(new PointerEvent(type, { pointerId: 7, pointerType: 'touch', clientX: cx, clientY: y, bubbles: true, cancelable: true, isPrimary: true }));
+    fire('pointerdown', x);
+    for (let i = 1; i <= 8; i++) { fire('pointermove', x + i * 30); await new Promise((r) => setTimeout(r, 16)); }
+    fire('pointerup', x + 240);
+  }, [box.x + 120, box.y + box.height / 2]);
+  await page.waitForFunction(() => document.querySelectorAll('.ck-row').length === 3);
+  await page.tap('.ck-undo button');
+  await page.waitForFunction(() => document.querySelectorAll('.ck-row').length === 4);
+  // reset, then everything is open again
+  await page.tap('.ck-actions button >> text=Uncheck all');
+  await page.waitForFunction(() => !document.querySelector('.ck-donehead'));
+  assert.match(await page.textContent('.ck-sum'), /0 of 4/);
+  // the file stays plain Markdown: the text view shows the list lines
+  await page.tap('.ck-actions button >> text=Source');
+  await page.waitForSelector('.cm-content');
+  assert.match(await page.textContent('.cm-content'), /plums/);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
 test('tools 1: the insert menu shows, bullet and task start an empty item, the bar can be customised, and each panel hides on its own', async () => {
   const errors = [];
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });

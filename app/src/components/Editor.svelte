@@ -19,6 +19,8 @@
   import Board from './Board.svelte';
   import { EditorView } from '@codemirror/view';
   import { isBoard, makeBoard } from '../lib/kanban.ts';
+  import { isChecklist, makeChecklist } from '../lib/checklist.ts';
+  import Checklist from './Checklist.svelte';
   import { applyText } from '../lib/ytext.ts';
   import { confirmBox } from '../lib/dialog.svelte.ts';
   import HelpDialog from './HelpDialog.svelte';
@@ -125,7 +127,7 @@
   });
   function nextMode() {
     // on a board note the phone's mode button goes Board → List → Read → Source, so the board is one tap away
-    const modes: Array<ViewMode | 'board'> = boardNote ? ['board', 'live', 'read', 'source'] : ['live', 'read', 'source'];
+    const modes: Array<ViewMode | 'board'> = viewNote ? ['board', 'live', 'read', 'source'] : ['live', 'read', 'source'];
     setMode(modes[(modes.indexOf(mode) + 1) % modes.length]!);
   }
   let status = $state<LinkStatus>('local');
@@ -219,7 +221,15 @@
     setMode('board');
   }
   let boardNote = $state(false);
+  let taskNote = $state(false);
   let boardSeen = false;
+  /** A note with its own view (board or checklist): that view sits beside Live / Read / Source. */
+  const viewNote = $derived(boardNote || taskNote);
+  const viewName = $derived(taskNote ? t('modeTasks') : t('modeBoard'));
+  function makeChecklistNote() {
+    if (liveText) applyText(liveText, makeChecklist(liveText.toString()));
+    setMode('board');
+  }
   let menu = $state(false);
   let err = $state('');
   let session: NoteSession;
@@ -271,9 +281,12 @@
     );
     liveText = session.ytext;
     const watchBoard = () => {
-      const now = isBoard(session.ytext.toString());
-      if (now && !boardNote && !boardSeen) queueMicrotask(() => setMode('board')); // not inside the editor's own update
-      boardNote = now;
+      const txt = session.ytext.toString();
+      const board = isBoard(txt);
+      const now = board || isChecklist(txt);
+      if (now && !viewNote && !boardSeen) queueMicrotask(() => setMode('board')); // not inside the editor's own update
+      boardNote = board;
+      taskNote = !board && now;
       if (now) boardSeen = true;
     };
     session.ytext.observe(watchBoard);
@@ -519,14 +532,41 @@
   const statusText = $derived(
     status === 'online' ? t('online') : status === 'connecting' ? t('connecting') : status === 'offline' ? t('offline') : t('saved'),
   );
-  // Swipe the contents drawer back toward the side it came from to put it away.
-  let dwX = 0, dwY = 0, dwDone = false;
-  function drawerStart(e: TouchEvent) { dwX = e.touches[0]!.clientX; dwY = e.touches[0]!.clientY; dwDone = false; }
+  // The contents drawer: open (0–1) follows the finger, or the open/closed state; it is kept mounted while it slides out.
+  const dwW = () => Math.min(320, innerWidth * 0.86);
+  let dwLive = $state(false), dwProg = $state<number | null>(null);
+  let entered = $state(false); // a freshly mounted drawer starts shut for one frame, so it slides in
+  const tp = $derived(dwProg ?? store.tocProg ?? (store.sheet === 'toc' && entered ? 1 : 0));
+  $effect(() => {
+    if (store.tocProg !== null || dwLive) { entered = true; return; }
+    if (store.sheet !== 'toc') { entered = false; return; }
+    if (entered || !tocMounted) return;
+    requestAnimationFrame(() => requestAnimationFrame(() => (entered = true)));
+  });
+  let tocMounted = $state(false);
+  let tocTimer: ReturnType<typeof setTimeout> | undefined;
+  $effect(() => {
+    if (store.sheet === 'toc' || store.tocProg !== null || dwLive) { clearTimeout(tocTimer); tocMounted = true; }
+    else { clearTimeout(tocTimer); tocTimer = setTimeout(() => (tocMounted = false), 320); }
+  });
+  let dwX = 0, dwY = 0;
+  function drawerStart(e: TouchEvent) { dwX = e.touches[0]!.clientX; dwY = e.touches[0]!.clientY; dwLive = false; dwProg = null; }
   function drawerMove(e: TouchEvent) {
-    if (dwDone) return;
     const t0 = e.touches[0]!;
     const dx = (document.documentElement.dir === 'rtl' ? -1 : 1) * (t0.clientX - dwX);
-    if (dx > 60 && dx > Math.abs(t0.clientY - dwY) * 1.5) { dwDone = true; store.sheet = null; }
+    if (!dwLive) {
+      if (dx > 12 && dx > Math.abs(t0.clientY - dwY) * 1.5) dwLive = true;
+      else return;
+    }
+    dwProg = Math.max(0, Math.min(1, 1 - dx / dwW()));
+  }
+  function drawerEnd() {
+    if (dwLive) {
+      const close = (dwProg ?? 1) < 0.65;
+      dwLive = false;
+      dwProg = null;
+      if (close) store.sheet = null;
+    }
   }
   // Swipe up on the bottom bar brings the menu; a swipe down on the sheet puts it away again (see Sheet.svelte).
   let barY = 0, barX = 0, barDone = false;
@@ -544,7 +584,7 @@
     if (showLinks && !(e.target as Element).closest('.links-wrap')) showLinks = false;
     if (insMenu && !(e.target as Element).closest('.insmenu, .toolbar')) insMenu = false;
   }}
-  onkeydown={(e) => { if (e.key === 'Escape') menu = false; else if (e.altKey && !e.ctrlKey && !e.metaKey && e.code === 'KeyB' && boardNote) { e.preventDefault(); setMode(mode === 'board' ? 'live' : 'board'); } else if (e.altKey && !e.ctrlKey && !e.metaKey && e.code === 'KeyO') { e.preventDefault(); toggleContents(); } }}
+  onkeydown={(e) => { if (e.key === 'Escape') menu = false; else if (e.altKey && !e.ctrlKey && !e.metaKey && e.code === 'KeyB' && viewNote) { e.preventDefault(); setMode(mode === 'board' ? 'live' : 'board'); } else if (e.altKey && !e.ctrlKey && !e.metaKey && e.code === 'KeyO') { e.preventDefault(); toggleContents(); } }}
 />
 
 <section class="editor-pane" class:mobile class:hide-bars={mobile && !bars && !typing} class:typing={mobile && typing}>
@@ -573,10 +613,10 @@
     <div class="ctl">
       <span class="status {status}" title={statusText} role="img" aria-label={statusText}><i></i></span>
       {#if readOnly}<span class="pill">{t('readOnly')}</span>{/if}
-      {#if boardNote}
-        <!-- a board note: Board and its text are always one tap apart; tapping the text side again steps through Live, Read, Source -->
+      {#if viewNote}
+        <!-- a board or checklist note: Board and its text are always one tap apart; tapping the text side again steps through Live, Read, Source -->
         <div class="boardseg" role="group" aria-label={t('viewMode')}>
-          <button class:on={mode === 'board'} onclick={() => setMode('board')}>{t('modeBoard')}</button>
+          <button class:on={mode === 'board'} onclick={() => setMode('board')}>{viewName}</button>
           <button class:on={mode !== 'board'} aria-haspopup="menu" aria-expanded={modeMenu} onclick={() => { if (mode === 'board') setMode('live'); else modeMenu = !modeMenu; }}>{mode === 'read' ? t('modeRead') : mode === 'source' ? t('modeSource') : mode === 'live' ? t('modeLive') : t('boardList')}{#if mode !== 'board'} ▾{/if}</button>
           {#if modeMenu}
             <div class="modemenu" role="menu">
@@ -587,9 +627,9 @@
           {/if}
         </div>
       {/if}
-      <button class="ghost small modebtn" class:boardnote={boardNote} onclick={nextMode} aria-label={t('viewMode')}>{mode === 'board' ? t('modeBoard') : mode === 'read' ? t('modeRead') : mode === 'source' ? t('modeSource') : t('modeLive')}</button>
+      <button class="ghost small modebtn" class:boardnote={viewNote} onclick={nextMode} aria-label={t('viewMode')}>{mode === 'board' ? viewName : mode === 'read' ? t('modeRead') : mode === 'source' ? t('modeSource') : t('modeLive')}</button>
       <div class="seg" role="group" aria-label={t('viewMode')}>
-        {#if boardNote}<button class:on={mode === 'board'} onclick={() => setMode('board')}>{t('modeBoard')}</button>{/if}
+        {#if viewNote}<button class:on={mode === 'board'} onclick={() => setMode('board')}>{viewName}</button>{/if}
         <button class:on={mode === 'live'} onclick={() => setMode('live')}>{t('modeLive')}</button>
         <button class:on={mode === 'read'} onclick={() => setMode('read')}>{t('modeRead')}</button>
         <button class:on={mode === 'source'} onclick={() => setMode('source')}>{t('modeSource')}</button>
@@ -607,7 +647,7 @@
             <button role="menuitem" onclick={() => { menu = false; store.settingsOpen = true; }}>{t('settings')}</button>
             <button role="menuitem" onclick={() => { menu = false; store.toggleZen(); }}>{t('zen')} · Alt+Z</button>
             <button role="menuitem" onclick={() => ((help = true), (menu = false))}>{t('help')} · ƒ</button>
-            {#if !boardNote && !readOnly}<button role="menuitem" onclick={() => { menu = false; makeBoardNote(); }}>{t('boardUse')}</button>{/if}
+            {#if !viewNote && !readOnly}<button role="menuitem" onclick={() => { menu = false; makeBoardNote(); }}>{t('boardUse')}</button><button role="menuitem" onclick={() => { menu = false; makeChecklistNote(); }}>{t('checklistUse')}</button>{/if}
             <button role="menuitem" onclick={exportMd}>{t('export')}</button>
             <button role="menuitem" class="danger" onclick={remove}>{note.role === 'owner' || store.mode === 'local' ? t('delete') : t('leave')}</button>
           </div>
@@ -632,7 +672,7 @@
 
   {#if err}<p class="error banner" role="alert">{err} <button class="link" onclick={() => (err = '')}>×</button></p>{/if}
 
-  {#if liveText && mode === 'board'}<Board ytext={liveText} {readOnly} noteId={note.id} onList={() => setMode('live')} />{/if}
+  {#if liveText && mode === 'board' && taskNote}<Checklist ytext={liveText} {readOnly} noteId={note.id} onText={() => setMode('live')} />{:else if liveText && mode === 'board'}<Board ytext={liveText} {readOnly} noteId={note.id} onList={() => setMode('live')} />{/if}
 
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div class="editor-row" hidden={mode === 'board'}>
@@ -706,10 +746,10 @@
   </Sheet>
 {/if}
 
-{#if mobile && store.sheet === 'toc' && editorReady && mode !== 'board'}
-  <!-- the contents come in from the right (from the left in Arabic), where the swipe that opens them starts -->
-  <div class="toc-drawer" role="presentation" ontouchstart={drawerStart} ontouchmove={drawerMove}>
-    <button class="toc-scrim" aria-label={t('close')} onclick={() => (store.sheet = null)}></button>
+{#if mobile && tocMounted && editorReady && mode !== 'board'}
+  <!-- the contents slide in from the right (from the left in Arabic), following the finger like the sidebar does -->
+  <div class="toc-drawer" class:open={tp > 0} class:dragging={store.tocProg !== null || dwLive} style:--tp={tp} role="presentation" ontouchstart={drawerStart} ontouchmove={drawerMove} ontouchend={drawerEnd} ontouchcancel={drawerEnd}>
+    <button class="toc-scrim" aria-label={t('close')} tabindex={tp > 0 ? 0 : -1} onclick={() => (store.sheet = null)}></button>
     <Toc view={editor.view} ytext={liveText!} title={note.title} {readOnly} tick={tocTick} onClose={() => (store.sheet = null)} onGo={() => (store.sheet = null)} />
   </div>
 {/if}
@@ -721,7 +761,7 @@
       <button onclick={() => (store.sheet = 'toc')}><Icon name="outline" size={20} /> {t('toc')}</button>
       <button onclick={() => { loadLinks(); store.sheet = 'links'; }}><Icon name="link" size={20} /> {t('backlinks')}</button>
       {#if store.mode === 'server' && note.role === 'owner'}<button onclick={() => { store.sheet = null; sharing = true; }}><Icon name="share" size={20} /> {t('share')}</button>{/if}
-      {#if !boardNote && !readOnly}<button onclick={() => { store.sheet = null; makeBoardNote(); }}><Icon name="board" size={20} /> {t('boardUse')}</button>{/if}
+      {#if !viewNote && !readOnly}<button onclick={() => { store.sheet = null; makeBoardNote(); }}><Icon name="board" size={20} /> {t('boardUse')}</button><button onclick={() => { store.sheet = null; makeChecklistNote(); }}><Icon name="check" size={20} /> {t('checklistUse')}</button>{/if}
       <button onclick={() => { store.sheet = null; hist = true; }}><Icon name="clock" size={20} /> {t('history')}</button>
       <button onclick={() => { store.sheet = null; store.settingsOpen = true; }}><Icon name="settings" size={20} /> {t('settings')}</button>
       <button onclick={() => { store.sheet = null; help = true; }}><Icon name="fx" size={20} /> {t('help')}</button>

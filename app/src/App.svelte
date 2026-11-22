@@ -131,18 +131,22 @@
       if (sw.toc) {
         if (dx > 0) { sw = null; return; } // toward the panel's side from the far side: that is the contents gesture
         sw.live = true;
-        return;
+      } else {
+        if ((sw.opening && dx < 0) || (!sw.opening && dx > 0)) { sw = null; return; }
+        sw.live = true;
       }
-      if ((sw.opening && dx < 0) || (!sw.opening && dx > 0)) { sw = null; return; }
-      sw.live = true;
     }
-    if (sw.toc) return;
+    if (sw.toc) {
+      // the contents follow the finger, like the sidebar does
+      store.tocProg = Math.max(0, Math.min(1, -dx / Math.min(320, innerWidth * 0.86)));
+      return;
+    }
     prog = Math.max(0, Math.min(1, (sw.opening ? 0 : 1) + dx / sw.w));
   }
   function swEnd(e?: TouchEvent) {
-    if (sw?.toc && sw.live && e?.changedTouches[0]) {
-      const dx = (rtl() ? -1 : 1) * (e.changedTouches[0].clientX - sw.x);
-      if (dx < -70) store.sheet = 'toc'; // from the far side toward the panel's side: the note's contents come up
+    if (sw?.toc) {
+      if (sw.live && (store.tocProg ?? 0) > 0.3) store.sheet = 'toc'; // far side toward the panel's side: the note's contents
+      store.tocProg = null;
       sw = null;
       return;
     }

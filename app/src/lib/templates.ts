@@ -35,6 +35,24 @@ export function fill(text: string, title: string, now = new Date(), lang: Lang =
 
 export const BUILT_IN: BuiltIn[] = [
   {
+    id: 'shopping-list',
+    name: { en: 'Shopping list', ar: 'قائمة تسوّق' },
+    title: 'Shopping list',
+    body: {
+      en: `---\nview: checklist\n---\n\n## Fruit and vegetables\n\n- [ ] Tomatoes\n- [ ] Bananas\n\n## Dairy\n\n- [ ] Milk\n- [ ] Eggs\n\n## Home\n\n- [ ] Soap\n`,
+      ar: `---\nview: checklist\n---\n\n## خضار وفاكهة\n\n- [ ] طماطم\n- [ ] موز\n\n## ألبان\n\n- [ ] حليب\n- [ ] بيض\n\n## المنزل\n\n- [ ] صابون\n`,
+    },
+  },
+  {
+    id: 'checklist',
+    name: { en: 'Checklist', ar: 'قائمة مهام' },
+    title: 'Checklist',
+    body: {
+      en: `---\nview: checklist\n---\n\n## To do\n\n- [ ] First thing\n- [ ] Second thing\n`,
+      ar: `---\nview: checklist\n---\n\n## للتنفيذ\n\n- [ ] أول شيء\n- [ ] ثاني شيء\n`,
+    },
+  },
+  {
     id: 'video-board',
     name: { en: 'Video production board', ar: 'لوحة إنتاج الفيديو' },
     title: 'Videos board',

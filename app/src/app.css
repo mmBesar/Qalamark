@@ -2035,11 +2035,12 @@ dialog.toolbar-edit { width: min(30rem, 94vw); max-height: 88dvh; overflow: auto
 .tb-list button:disabled { opacity: 0.3; }
 .toolbar-edit .row-end { display: flex; gap: 0.5rem; justify-content: flex-end; margin-top: 1rem; }
 
-/* the contents drawer on phones */
-.toc-drawer { position: fixed; inset: 0; z-index: 60; }
-.toc-scrim { position: absolute; inset: 0; border: 0; border-radius: 0; background: rgb(0 0 0 / 0.38); animation: fadeIn 0.2s ease; }
-.toc-drawer aside.toc { position: absolute; inset-block: 0; inset-inline-end: 0; width: min(20rem, 86vw); z-index: 1; padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom); background: var(--surface); box-shadow: -10px 0 30px rgb(0 0 0 / 0.3); --from: 100%; animation: tocIn 0.24s cubic-bezier(0.2, 0.8, 0.2, 1); }
-[dir='rtl'] .toc-drawer aside.toc { --from: -100%; box-shadow: 10px 0 30px rgb(0 0 0 / 0.3); }
-@keyframes tocIn { from { transform: translateX(var(--from)); } to { transform: none; } }
-@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-@media (max-width: 760px) { .editor-pane .toolbar .tb-scroll { flex: 1; } }
+/* the contents drawer on phones: always laid out, slides by --tp (0 shut … 1 open) */
+.toc-drawer { position: fixed; inset: 0; z-index: 60; pointer-events: none; --dir: 1; }
+.toc-drawer.open { pointer-events: auto; }
+[dir='rtl'] .toc-drawer { --dir: -1; }
+.toc-scrim { position: absolute; inset: 0; border: 0; border-radius: 0; background: rgb(0 0 0 / 0.38); opacity: var(--tp); transition: opacity 0.26s ease; }
+.toc-drawer aside.toc { position: absolute; inset-block: 0; inset-inline-end: 0; inset-inline-start: auto; width: min(20rem, 86vw); z-index: 1; padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom); background: var(--surface); box-shadow: calc(var(--dir) * -10px) 0 30px rgb(0 0 0 / 0.3); transform: translateX(calc((1 - var(--tp)) * var(--dir) * 105%)); transition: transform 0.26s cubic-bezier(0.2, 0.8, 0.2, 1); will-change: transform; }
+.toc-drawer.dragging aside.toc, .toc-drawer.dragging .toc-scrim { transition: none; }
+.toc-drawer:not(.open) .toc-scrim { pointer-events: none; }
+.toc-drawer:not(.open) aside.toc { visibility: hidden; transition: transform 0.26s cubic-bezier(0.2, 0.8, 0.2, 1), visibility 0s 0.26s; }

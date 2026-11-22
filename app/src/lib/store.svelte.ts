@@ -163,6 +163,8 @@ class Store {
   }
   /** The tool bar editor (opened from Settings or from the bar itself). */
   toolbarOpen = $state(false);
+  /** While a finger drags the phone's contents drawer in or out: how far it is open (0–1); null when not dragging. */
+  tocProg = $state<number | null>(null);
 
   setLang(l: Lang) {
     this.s.lang = l;

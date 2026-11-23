@@ -139,15 +139,50 @@ export function withProps(doc: string, props: Prop[]): string {
   return head + (head && rest.startsWith('\n') ? rest : rest);
 }
 
-/** Properties people usually want; offered in the "add" list. */
-export const COMMON_PROPS: Array<{ key: string; type: PropType }> = [
+/** Properties people usually want; offered in the "add" list. `value` is what a new one starts with. */
+export const COMMON_PROPS: Array<{ key: string; type: PropType; value?: string }> = [
+  { key: 'view', type: 'text', value: 'checklist' },
   { key: 'title', type: 'text' },
   { key: 'tags', type: 'list' },
   { key: 'aliases', type: 'list' },
   { key: 'description', type: 'text' },
   { key: 'date', type: 'text' },
+  { key: 'status', type: 'text', value: 'todo' },
+  { key: 'priority', type: 'text', value: 'medium' },
+  { key: 'due', type: 'text' },
+  { key: 'start', type: 'text' },
+  { key: 'end', type: 'text' },
+  { key: 'created', type: 'text' },
+  { key: 'updated', type: 'text' },
+  { key: 'author', type: 'text' },
+  { key: 'project', type: 'text' },
+  { key: 'category', type: 'text' },
+  { key: 'type', type: 'text' },
+  { key: 'source', type: 'text' },
+  { key: 'url', type: 'text' },
+  { key: 'location', type: 'text' },
+  { key: 'rating', type: 'number' },
+  { key: 'progress', type: 'number' },
+  { key: 'cover', type: 'text' },
+  { key: 'related', type: 'list' },
   { key: 'draft', type: 'checkbox' },
+  { key: 'pinned', type: 'checkbox' },
 ];
+
+/** Properties the app understands the values of: they are chosen from a list instead of typed. */
+export const KEY_CHOICES: Record<string, string[]> = {
+  view: ['note', 'checklist', 'board', 'pipeline'],
+  tap: ['tick', 'box'],
+  status: ['todo', 'doing', 'blocked', 'done'],
+  priority: ['low', 'medium', 'high', 'urgent'],
+};
+
+/** Properties that only make sense for one view: offered once that view is set. */
+export const VIEW_PROPS: Record<string, Array<{ key: string; type: PropType; value?: string }>> = {
+  checklist: [{ key: 'tap', type: 'text', value: 'tick' }],
+  board: [{ key: 'status-prop', type: 'text', value: 'status' }, { key: 'card-folder', type: 'text' }],
+  pipeline: [{ key: 'status-prop', type: 'text', value: 'status' }, { key: 'card-folder', type: 'text' }, { key: 'card-props', type: 'text' }],
+};
 
 /** Tags of a note, from its properties. */
 export function tagsOf(doc: string): string[] {

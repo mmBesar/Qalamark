@@ -1,6 +1,7 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
 <!-- Copyright (C) 2026 mmBesar -->
 <script lang="ts">
+  import Avatar from './Avatar.svelte';
   import Icon from './Icon.svelte';
   import NetOptions from './NetOptions.svelte';
   import { inShell, onAndroid, vault } from '../lib/vault.ts';
@@ -14,6 +15,20 @@
 
   let { onClose }: { onClose: () => void } = $props();
   const t = store.t;
+  let avatarInput: HTMLInputElement;
+  let avatarError = $state('');
+  async function pickAvatar(e: Event) {
+    const input = e.currentTarget as HTMLInputElement;
+    const f = input.files?.[0];
+    input.value = '';
+    if (!f) return;
+    avatarError = '';
+    try { await store.setMyAvatar(f); } catch (err) { avatarError = err instanceof Error ? err.message : String(err); }
+  }
+  async function removeAvatar() {
+    avatarError = '';
+    try { await store.removeMyAvatar(); } catch (err) { avatarError = err instanceof Error ? err.message : String(err); }
+  }
   let dlg: HTMLDialogElement;
   let msg = $state('');
   let error = $state('');
@@ -185,7 +200,21 @@
   </div>
 
   {#if store.mode === 'server'}
-    <h3>{store.s.username}{store.s.admin ? ' · ' + t('admin') : ''}</h3>
+    <div class="me-card">
+      <button class="me-pic" type="button" aria-label={t('avatarChange')} title={t('avatarChange')} onclick={() => avatarInput.click()}>
+        <Avatar name={store.s.username} size={72} />
+        <span class="me-cam"><Icon name="camera" size={16} /></span>
+      </button>
+      <div class="me-info">
+        <h3>{store.s.username}{store.s.admin ? ' · ' + t('admin') : ''}</h3>
+        <div class="me-actions">
+          <button class="ghost small" type="button" onclick={() => avatarInput.click()}>{t('avatarChange')}</button>
+          {#if store.avatarUrl(store.s.username)}<button class="ghost small" type="button" onclick={removeAvatar}>{t('avatarRemove')}</button>{/if}
+        </div>
+        {#if avatarError}<p class="error" role="alert">{avatarError}</p>{/if}
+      </div>
+      <input bind:this={avatarInput} type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/avif" hidden onchange={pickAvatar} />
+    </div>
     <p class="muted" dir="ltr">{store.api.base || location.origin}</p>
     {#if inShell()}<NetOptions />{/if}
     {#if store.s.trust?.[store.s.serverUrl]}

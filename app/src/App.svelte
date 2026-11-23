@@ -108,6 +108,8 @@
     const dist = rtl() ? innerWidth - t0.clientX : t0.clientX; // from the side where the panel lives
     const fromEdge = dist <= innerWidth * 0.4;
     const fromFar = innerWidth - dist <= innerWidth * 0.4; // from the other side: the contents of the note
+    // on a checklist row the middle of the screen belongs to the row (swipe to tick / remove); the outer fifth on each side stays with the panels
+    if (!drawer && (e.target as Element).closest?.('.ck-row') && t0.clientX > innerWidth * 0.2 && t0.clientX < innerWidth * 0.8) return;
     const busy = !!store.sheet || store.palette || store.settingsOpen || !!document.querySelector('dialog[open]');
     if (!drawer && (getSelection()?.toString() ?? '') !== '') return; // dragging a text selection is not a swipe
     const w = document.querySelector('aside')?.getBoundingClientRect().width ?? 300;

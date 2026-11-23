@@ -32,6 +32,8 @@ pub fn app(state: Shared) -> Router {
         .route("/api/login", post(api::login))
         .route("/api/logout", post(api::logout))
         .route("/api/me", get(api::me))
+        .route("/api/me/avatar", axum::routing::put(api::set_avatar).delete(api::delete_avatar).layer(axum::extract::DefaultBodyLimit::max(512 * 1024)))
+        .route("/api/avatars/{name}", get(api::get_avatar))
         .route("/api/password", post(api::change_password))
         .route("/api/users", get(api::admin_list_users).post(api::admin_create_user))
         .route("/api/people", get(api::list_usernames))

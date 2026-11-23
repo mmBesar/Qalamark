@@ -5,6 +5,8 @@
   import { onMount, untrack } from 'svelte';
   import { yUndoManagerKeymap } from 'y-codemirror.next';
   import { cycleHeading, insertLink, insertRule, insertSnippet, insertTable, insertWikilink, shiftLines, SNIPPETS, toggleLinePrefix, toggleWrap } from '../editor/commands.ts';
+  import { pop } from '../lib/motion.ts';
+  import { BUILT_IN } from '../lib/templates.ts';
   import { cleanToolbar, TOOLS, type ToolId } from '../lib/toolbar.ts';
   import { createEditor, setTouchLabels, type Editor, type ViewMode } from '../editor/editor.ts';
   import type { TableLabels } from '../editor/tables.ts';
@@ -288,6 +290,7 @@
       boardNote = board;
       taskNote = !board && now;
       if (now) boardSeen = true;
+      else if (mode === 'board') queueMicrotask(() => setMode('live')); // the view property was taken away
     };
     session.ytext.observe(watchBoard);
     setTimeout(() => { try { snapshot(note.id, session.ytext.toString()); } catch { /* closed already */ } }, 2000);
@@ -568,13 +571,48 @@
       if (close) store.sheet = null;
     }
   }
-  // Swipe up on the bottom bar brings the menu; a swipe down on the sheet puts it away again (see Sheet.svelte).
-  let barY = 0, barX = 0, barDone = false;
-  function barStart(e: TouchEvent) { barY = e.touches[0]!.clientY; barX = e.touches[0]!.clientX; barDone = false; }
+  // New note: a tap makes an empty one; press and hold (or the row in the menu) offers the templates.
+  let plusTimer: ReturnType<typeof setTimeout> | undefined;
+  let plusLong = false;
+  function plusDown() { plusLong = false; clearTimeout(plusTimer); plusTimer = setTimeout(() => { plusLong = true; navigator.vibrate?.(10); store.sheet = 'templates'; }, 420); }
+  function plusCancel() { clearTimeout(plusTimer); }
+  function plusClick() { if (plusLong) { plusLong = false; return; } void store.createNote(); }
+  async function useTemplate(source: string) {
+    store.sheet = null;
+    try { await store.newFromTemplate(source); } catch (e) { store.message = e instanceof Error ? e.message : String(e); }
+  }
+
+  // Swipe up on the bottom bar: the menu comes up under the finger, and settles open or goes back down.
+  let barY = 0, barX = 0, barLive = false, barAnim = 0;
+  const SHEET_H = 380;
+  function tween(from: number, to: number, done: () => void) {
+    cancelAnimationFrame(barAnim);
+    const t0 = performance.now();
+    const step = (now: number) => {
+      const k = Math.min(1, (now - t0) / 240);
+      const e = 1 - Math.pow(1 - k, 3);
+      store.sheetDrag = from + (to - from) * e;
+      if (k < 1) barAnim = requestAnimationFrame(step);
+      else done();
+    };
+    barAnim = requestAnimationFrame(step);
+  }
+  function barStart(e: TouchEvent) { barY = e.touches[0]!.clientY; barX = e.touches[0]!.clientX; barLive = false; }
   function barMove(e: TouchEvent) {
-    if (barDone) return;
-    const t = e.touches[0]!;
-    if (barY - t.clientY > 28 && barY - t.clientY > Math.abs(t.clientX - barX)) { barDone = true; store.sheet = 'more'; }
+    const t0 = e.touches[0]!;
+    const up = barY - t0.clientY;
+    if (!barLive) {
+      if (up > 12 && up > Math.abs(t0.clientX - barX) * 1.2 && !store.sheet) { barLive = true; cancelAnimationFrame(barAnim); store.sheet = 'more'; }
+      else return;
+    }
+    store.sheetDrag = Math.max(0, Math.min(1, up / SHEET_H));
+  }
+  function barEnd() {
+    if (!barLive) return;
+    barLive = false;
+    const p = store.sheetDrag ?? 0;
+    if (p > 0.2) tween(p, 1, () => (store.sheetDrag = null));
+    else tween(p, 0, () => { store.sheetDrag = null; store.sheet = null; });
   }
 </script>
 
@@ -619,7 +657,7 @@
           <button class:on={mode === 'board'} onclick={() => setMode('board')}>{viewName}</button>
           <button class:on={mode !== 'board'} aria-haspopup="menu" aria-expanded={modeMenu} onclick={() => { if (mode === 'board') setMode('live'); else modeMenu = !modeMenu; }}>{mode === 'read' ? t('modeRead') : mode === 'source' ? t('modeSource') : mode === 'live' ? t('modeLive') : t('boardList')}{#if mode !== 'board'} ▾{/if}</button>
           {#if modeMenu}
-            <div class="modemenu" role="menu">
+            <div class="modemenu" role="menu" transition:pop|global>
               {#each [['live', t('modeLive')], ['read', t('modeRead')], ['source', t('modeSource')]] as [m, label]}
                 <button role="menuitem" class:on={mode === m} onclick={() => { modeMenu = false; setMode(m as ViewMode); }}>{label}</button>
               {/each}
@@ -641,7 +679,7 @@
       <div class="menu-wrap desk">
         <button class="icon" aria-label={t('menu')} aria-expanded={menu} onclick={() => (menu = !menu)}><Icon name="more" /></button>
         {#if menu}
-          <div class="menu" role="menu">
+          <div class="menu" role="menu" transition:pop|global>
             <button role="menuitem" onclick={() => { menu = false; setToc(!showToc); }}>{t('toc')}</button>
             <button role="menuitem" onclick={() => { menu = false; hist = true; }}>{t('history')}</button>
             <button role="menuitem" onclick={() => { menu = false; store.settingsOpen = true; }}>{t('settings')}</button>
@@ -656,7 +694,7 @@
     </div>
   </header>
   {#if insMenu}
-    <div class="menu insmenu" role="menu" onpointerdown={holdTools} onmousedown={(e) => e.preventDefault()} style:left={insPos.left + 'px'} style:top={insPos.top != null ? insPos.top + 'px' : undefined} style:bottom={insPos.bottom != null ? insPos.bottom + 'px' : undefined}>
+    <div class="menu insmenu" role="menu" transition:pop|global onpointerdown={holdTools} onmousedown={(e) => e.preventDefault()} style:left={insPos.left + 'px'} style:top={insPos.top != null ? insPos.top + 'px' : undefined} style:bottom={insPos.bottom != null ? insPos.bottom + 'px' : undefined}>
       <button onclick={() => snippet(SNIPPETS.callout)}>{t('insCallout')}</button>
       <button onclick={() => snippet(SNIPPETS.admonition)}>{t('insAdmonition')}</button>
       <button onclick={() => snippet(SNIPPETS.collapsible)}>{t('insCollapsible')}</button>
@@ -699,10 +737,10 @@
   <button class="side-fab" aria-label={t('menu')} title={t('menu')} onclick={onMenu}><Icon name="sidebar" size={20} /></button>
 
   <!-- phones: a floating bar instead of a fixed one -->
-  <div class="float-bar" role="toolbar" aria-label={t('menu')} ontouchstart={barStart} ontouchmove={barMove}>
+  <div class="float-bar" role="toolbar" aria-label={t('menu')} ontouchstart={barStart} ontouchmove={barMove} ontouchend={barEnd} ontouchcancel={barEnd}>
     <button class="icon" aria-label={t('menu')} onclick={onMenu}><Icon name="files" size={22} /></button>
     <button class="icon" aria-label={t('search')} onclick={() => (store.palette = true)}><Icon name="search" size={22} /></button>
-    <button class="icon plus" aria-label={t('newNote')} onclick={() => store.createNote()}><Icon name="plus" size={24} /></button>
+    <button class="icon plus" aria-label={t('newNote')} title={t('newFromTemplate')} onpointerdown={plusDown} onpointerup={plusCancel} onpointerleave={plusCancel} onpointercancel={plusCancel} oncontextmenu={(e) => e.preventDefault()} onclick={plusClick}><Icon name="plus" size={24} /></button>
     <button class="icon tabs" aria-label={t('tabs')} onclick={() => (store.sheet = 'tabs')}><Icon name="layers" size={22} />{#if store.tabs.length > 1}<b>{store.tabs.length}</b>{/if}</button>
     <button class="icon" aria-label={t('more')} onclick={() => (store.sheet = 'more')}><Icon name="more" size={22} /></button>
   </div>
@@ -714,7 +752,7 @@
     <div class="links-wrap">
       <button class="link" onclick={() => ((showLinks = !showLinks), loadLinks())} aria-expanded={showLinks}>↩ {t('backlinks')} ({links.length})</button>
       {#if showLinks}
-        <div class="menu up">
+        <div class="menu up" transition:pop|global>
           {#each links as l (l.id)}
             <button onclick={() => ((store.currentId = l.id), (showLinks = false))}>{l.title}</button>
           {:else}
@@ -733,7 +771,7 @@
       {#each store.tabs as id (id)}
         {@const n = store.notes.find((x) => x.id === id)}
         {#if n}
-          <div class="tab-card" class:on={id === store.currentId} role="button" tabindex="0" onclick={() => { store.currentId = id; store.sheet = null; }} onkeydown={(e) => { if (e.key === 'Enter') { store.currentId = id; store.sheet = null; } }}>
+          <div class="tab-card" dir="auto" class:on={id === store.currentId} role="button" tabindex="0" onclick={() => { store.currentId = id; store.sheet = null; }} onkeydown={(e) => { if (e.key === 'Enter') { store.currentId = id; store.sheet = null; } }}>
             <b>{n.title}</b>
             <small>{n.folder || t('personal')}</small>
             <p>{store.previews[id] ?? ''}</p>
@@ -754,9 +792,24 @@
   </div>
 {/if}
 
+{#if mobile && store.sheet === 'templates'}
+  <Sheet title={t('newFromTemplate')} onClose={() => (store.sheet = null)}>
+    <div class="sheet-list">
+      <button onclick={() => { store.sheet = null; void store.createNote(); }}><Icon name="note" size={20} /> {t('newNote')}</button>
+      {#each BUILT_IN as b (b.id)}
+        <button onclick={() => useTemplate('builtin:' + b.id)}><Icon name={b.id.includes('check') || b.id.includes('shopping') ? 'check' : b.id.includes('board') ? 'board' : 'note'} size={20} /> {b.name[store.lang]}</button>
+      {/each}
+      {#each store.templates as n (n.id)}
+        <button onclick={() => useTemplate('note:' + n.id)}><Icon name="star" size={20} /> {n.title}</button>
+      {/each}
+    </div>
+  </Sheet>
+{/if}
+
 {#if mobile && store.sheet === 'more'}
   <Sheet title={note.title} onClose={() => (store.sheet = null)}>
     <div class="sheet-list">
+      <button onclick={() => (store.sheet = 'templates')}><Icon name="plus" size={20} /> {t('newFromTemplate')}</button>
       <span class="muted">{t('words', { n: words })}{#if store.mode === 'server' && note.role !== 'owner'} · {t('sharedByOther', { name: note.owner })}{/if}</span>
       <button onclick={() => (store.sheet = 'toc')}><Icon name="outline" size={20} /> {t('toc')}</button>
       <button onclick={() => { loadLinks(); store.sheet = 'links'; }}><Icon name="link" size={20} /> {t('backlinks')}</button>

@@ -300,6 +300,29 @@ test('pictures: upload, read back, share rules, bad types refused', async () => 
   assert.ok(!(await api('GET', '/api/folders', alice)).body.includes('_images'));
 });
 
+test('profile pictures: set, show to others, replace, remove, bad ones refused', async () => {
+  const png = Buffer.from('89504e470d0a1a0a0000000d49484452', 'hex');
+  const put = (tok, body) => fetch(BASE + '/api/me/avatar', { method: 'PUT', headers: { authorization: `Bearer ${tok}` }, body });
+  const get = (tok, name) => fetch(`${BASE}/api/avatars/${name}`, { headers: tok ? { authorization: `Bearer ${tok}` } : {} });
+  assert.equal((await get(alice, 'alice')).status, 404, 'no picture yet: the app shows the initials');
+  assert.equal((await api('GET', '/api/me', alice)).body.avatar, null);
+  assert.equal((await put(alice, png)).status, 200);
+  assert.ok((await api('GET', '/api/me', alice)).body.avatar > 0);
+  const seen = await get(carol, 'alice'); // other people see it
+  assert.equal(seen.status, 200);
+  assert.equal(seen.headers.get('content-type'), 'image/png');
+  assert.deepEqual(Buffer.from(await seen.arrayBuffer()), png);
+  assert.equal((await get(null, 'alice')).status, 401, 'but only when signed in');
+  // the kind comes from the bytes, and the size is limited
+  assert.equal((await put(alice, '<script>alert(1)</script>')).status, 415);
+  assert.equal((await put(alice, Buffer.alloc(401 * 1024, 1))).status, 413);
+  assert.equal((await put(alice, Buffer.alloc(0))).status, 413);
+  // another person's picture is not changed by mine
+  assert.equal((await get(alice, 'carol')).status, 404);
+  assert.equal((await fetch(BASE + '/api/me/avatar', { method: 'DELETE', headers: { authorization: `Bearer ${alice}` } })).status, 204);
+  assert.equal((await get(carol, 'alice')).status, 404);
+});
+
 test('people list for sharing, and the title: property shows as display name', async () => {
   const people = (await api('GET', '/api/people', carol)).body;
   assert.ok(Array.isArray(people) && !people.includes('carol') && people.includes('alice'));

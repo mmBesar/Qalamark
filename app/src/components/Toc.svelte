@@ -122,7 +122,7 @@
   {:else}
     <ul>
       {#each rows as { h, i } (h.pos + ':' + i)}
-        <li class:on={i === current} style="--lv: {h.level - minLevel}">
+        <li dir="auto" class:on={i === current} style="--lv: {h.level - minLevel}">
           {#if hasKids(i)}
             <button class="caret" class:shut={shut.has(h.line)} aria-label={shut.has(h.line) ? t('expandAll') : t('collapseAll')}
               onclick={() => { const n = new Set(shut); n.has(h.line) ? n.delete(h.line) : n.add(h.line); shut = n; }}><Icon name="chevron" size={13} /></button>

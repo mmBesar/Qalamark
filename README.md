@@ -150,7 +150,11 @@ there becomes a note. More in **[docs/SELF-HOSTING.md](docs/SELF-HOSTING.md)**
 - **Works offline in full:** create, rename, move and edit notes without a connection; changes queue ("waiting to sync") and are sent when the server is back. Notes you have not opened are fetched in the background for offline use.
 - **Servers on your own network (apps):** two switches on the sign-in screen, never both: *Allow a self-signed certificate* (the first certificate is remembered and you are warned if it changes) and *Allow plain http* (unencrypted, for a trusted home network). All connections go through a small bridge inside the app, which also tells you why a server cannot be reached.
 - **Touch:** press and hold in the editor for a menu with cut, copy, paste, select all and formatting.
-- **English and Arabic** interface, right-to-left.
+- **Checklists with structure:** `view: checklist` turns a note into a task list. Headings nest (a higher heading contains the lower ones), tasks can have subtasks, and every level folds. A parent is done when all its subtasks are. Tap a task to tick it (or set `tap: box` to tick only on the box, so a tap edits); press and hold, or the pencil, to edit. On a phone, swipe a task toward the end to tick, toward the start to delete (with undo) in the middle of the screen; the edges stay with the side panels.
+- **Properties:** pick the icon of any property, choose `view` (note, checklist, board, pipeline) from a list, and add your own names from a themed suggestion list that also offers the names used in your other notes.
+- **Profile picture:** set it in Settings; it is stored on the server and shown with a coloured-letters fallback.
+- **Motion rule:** every menu, sheet and window enters from somewhere and leaves toward it. On Android the bottom menu and both side panels follow the finger.
+- **English and Arabic** interface, right-to-left; Arabic lines are always aligned to the right.
 
 ## Try the pieces from source
 

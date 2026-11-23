@@ -1,6 +1,7 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
 <!-- Copyright (C) 2026 mmBesar -->
 <script lang="ts">
+  import { fade, fly } from 'svelte/transition';
   // Ctrl+P / Ctrl+K: jump to any note or run a command from the keyboard.
   import Icon from './Icon.svelte';
   import { store } from '../lib/store.svelte.ts';
@@ -87,12 +88,12 @@
   $effect(() => { document.querySelector('.pal-list li.hi')?.scrollIntoView({ block: 'nearest' }); });
 </script>
 
-<div class="pal-back" role="presentation" onpointerdown={(e) => e.target === e.currentTarget && close()}>
-  <div class="pal" role="dialog" aria-label={t('palette')}>
+<div class="pal-back" role="presentation" transition:fade|global={{ duration: 150 }} onpointerdown={(e) => e.target === e.currentTarget && close()}>
+  <div class="pal" role="dialog" in:fly|global={{ y: -24, duration: 220 }} out:fly|global={{ y: -24, duration: 160 }} aria-label={t('palette')}>
     <div class="pal-in"><Icon name="search" size={18} /><input bind:this={input} bind:value={q} onkeydown={key} placeholder={t('palettePlaceholder')} spellcheck="false" autocomplete="off" /></div>
     <ul class="pal-list" role="listbox">
       {#each items as it, i (it.key)}
-        <li role="option" aria-selected={i === hi} class:hi={i === hi} onpointerenter={() => (hi = i)} onclick={() => go(it)} onkeydown={() => {}}>
+        <li dir="auto" role="option" aria-selected={i === hi} class:hi={i === hi} onpointerenter={() => (hi = i)} onclick={() => go(it)} onkeydown={() => {}}>
           <Icon name={it.icon} size={16} /><span class="lbl">{it.label}</span>{#if it.hint}<span class="hint">{it.hint}</span>{/if}
         </li>
       {:else}

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { addItem, addSection, clearDone, deleteItem, editItem, isChecklist, makeChecklist, moveItem, parseChecklist, renameSection, setAll, toggleItem } from '../app/src/lib/checklist.ts';
+import { addItem, addSub, indentItem, outdentItem, flatItems, addSection, clearDone, deleteItem, editItem, isChecklist, makeChecklist, moveItem, parseChecklist, renameSection, setAll, toggleItem } from '../app/src/lib/checklist.ts';
 
 const NOTE = '---\nview: checklist\n---\n\n## Fruit\n\n- [ ] apples\n- [x] pears\n  a note under it\n\n## Dairy\n\n- [ ] milk\n';
 
@@ -82,4 +82,54 @@ test('property: random operations never lose or invent items', () => {
       assert.equal(parseChecklist(t).total, expect, `round ${round} step ${k}`);
     }
   }
+});
+
+const NESTED = '---\nview: checklist\n---\n\n# Trip\n\n## Pack\n\n- [ ] clothes\n  - [x] shirts\n  - [ ] socks\n- [ ] charger\n\n### Bathroom\n\n- [ ] brush\n\n## Book\n\n- [ ] hotel\n';
+
+test('a higher heading holds the lower ones, and subtasks nest under their item', () => {
+  const c = parseChecklist(NESTED);
+  assert.deepEqual(c.roots.map((s) => s.title), ['Trip']);
+  assert.deepEqual(c.roots[0]!.children.map((s) => s.title), ['Pack', 'Book']);
+  assert.deepEqual(c.roots[0]!.children[0]!.children.map((s) => s.title), ['Bathroom']);
+  const clothes = c.sections.find((s) => s.title === 'Pack')!.items[0]!;
+  assert.deepEqual(clothes.children.map((k) => k.text), ['shirts', 'socks']);
+  assert.equal(clothes.end - clothes.line, 3);
+  // tasks to do are the items without subtasks: shirts, socks, charger, brush, hotel
+  assert.equal(c.total, 5);
+  assert.equal(c.done, 1);
+});
+
+test('subtasks: ticking all of them ticks the parent, ticking the parent ticks all of them', () => {
+  const c = parseChecklist(NESTED);
+  const clothes = c.sections.find((s) => s.title === 'Pack')!.items[0]!;
+  const socks = clothes.children[1]!;
+  const a = toggleItem(NESTED, socks.line);
+  assert.ok(a.includes('- [x] clothes'), 'parent follows the last subtask');
+  const b = toggleItem(a, socks.line);
+  assert.ok(b.includes('- [ ] clothes'), 'and goes back when one is undone');
+  const d = toggleItem(NESTED, clothes.line);
+  assert.ok(d.includes('  - [x] socks') && d.includes('  - [x] shirts'));
+  assert.equal(toggleItem(d, clothes.line), NESTED.replace('  - [x] shirts', '  - [ ] shirts').replace('- [x] shirts', '- [ ] shirts'));
+});
+
+test('add a subtask, indent and outdent keep every other line', () => {
+  const c = parseChecklist(NESTED);
+  const charger = c.sections.find((s) => s.title === 'Pack')!.items[1]!;
+  const sub = addSub(NESTED, charger.line, 'cable');
+  assert.ok(sub.includes('- [ ] charger\n  - [ ] cable\n'));
+  const out = outdentItem(sub, parseChecklist(sub).sections.find((s) => s.title === 'Pack')!.items[1]!.children[0]!.line);
+  assert.equal(out, NESTED.replace('- [ ] charger\n', '- [ ] charger\n- [ ] cable\n'));
+  const again = indentItem(out, flatItems(parseChecklist(out).sections.flatMap((s) => s.items)).find((i) => i.text === 'cable')!.line);
+  assert.equal(again, sub);
+  // a subtask added to a done item makes it undone
+  const d = toggleItem(NESTED, parseChecklist(NESTED).sections.find((s) => s.title === 'Pack')!.items[0]!.line);
+  const withNew = addSub(d, parseChecklist(d).sections.find((s) => s.title === 'Pack')!.items[0]!.line, 'hat');
+  assert.ok(withNew.includes('- [ ] clothes'));
+});
+
+test('a section can be added under another one, one level lower', () => {
+  const out = addSection(NESTED, 'Snacks', 1);
+  const c = parseChecklist(out);
+  assert.deepEqual(c.roots[0]!.children[0]!.children.map((s) => s.title), ['Bathroom', 'Snacks']);
+  assert.ok(out.includes('### Snacks'));
 });

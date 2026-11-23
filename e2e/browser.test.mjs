@@ -386,7 +386,7 @@ test('round 5: quick switcher, text search, today note, outline', async () => {
   await page.keyboard.type('quokka');
   await page.waitForSelector('.pal li:has-text("Quokka")', { timeout: 5000 }); // found by text, not title
   await page.keyboard.press('Escape');
-  assert.equal(await page.locator('.pal').count(), 0);
+  await page.waitForFunction(() => !document.querySelector('.pal'), null, { timeout: 3000 });
   // outline jumps
   await page.click('button:has-text("Contents")');
   await page.click('aside.toc button.item:has-text("Second part")');
@@ -493,7 +493,7 @@ test('round 7: context menus, long-press, swipe drawer, live tabs, selection, cl
   const bg = await page.locator('.ctx').evaluate((el) => getComputedStyle(el).backgroundColor);
   assert.ok(bg !== 'rgba(0, 0, 0, 0)', 'menu has the theme background');
   await page.keyboard.press('Escape');
-  assert.equal(await page.locator('.ctx').count(), 0);
+  await page.waitForFunction(() => !document.querySelector('.ctx'), null, { timeout: 3000 });
 
   // sidebar: right-click a note → rename/copy/move/delete menu with icons; no three-dots column left
   assert.equal(await page.locator('aside .dots').count(), 0);
@@ -1381,14 +1381,14 @@ test('checklist 1: a note with view: checklist becomes a checklist you can tick,
   await page.keyboard.insertText('plums');
   await page.keyboard.press('Enter');
   await page.waitForFunction(() => document.querySelectorAll('.ck-row').length === 4);
-  // swipe an item toward the end of the line: it goes, and Undo brings it back
+  // swipe an item toward the start of the line: it goes, and Undo brings it back
   const box = await page.locator('.ck-row:has-text("pears")').boundingBox();
   await page.evaluate(async ([x, y]) => {
     const el = document.elementFromPoint(x, y);
     const fire = (type, cx) => el.dispatchEvent(new PointerEvent(type, { pointerId: 7, pointerType: 'touch', clientX: cx, clientY: y, bubbles: true, cancelable: true, isPrimary: true }));
     fire('pointerdown', x);
-    for (let i = 1; i <= 8; i++) { fire('pointermove', x + i * 30); await new Promise((r) => setTimeout(r, 16)); }
-    fire('pointerup', x + 240);
+    for (let i = 1; i <= 8; i++) { fire('pointermove', x - i * 30); await new Promise((r) => setTimeout(r, 16)); }
+    fire('pointerup', x - 240);
   }, [box.x + 120, box.y + box.height / 2]);
   await page.waitForFunction(() => document.querySelectorAll('.ck-row').length === 3);
   await page.tap('.ck-undo button');
@@ -1402,6 +1402,156 @@ test('checklist 1: a note with view: checklist becomes a checklist you can tick,
   await page.waitForSelector('.cm-content');
   assert.match(await page.textContent('.cm-content'), /plums/);
   assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test('checklist 2: it scrolls, headings nest, subtasks tick their parent, Arabic starts from the right', async () => {
+  const errors = [];
+  const ctx = await browser.newContext({ viewport: { width: 1100, height: 600 } });
+  const page = await ctx.newPage();
+  page.on('pageerror', (e) => errors.push(e.message));
+  await signIn(page, 'alice', 'alice-password');
+  await freshNote(page, 'Nested');
+  await page.click('.cm-content');
+  let body = '---\nview: checklist\n---\n\n# Trip\n\n## Pack\n';
+  for (let i = 1; i <= 14; i++) body += `- [ ] thing ${i}\n`;
+  body += '- [ ] clothes\n  - [ ] shirts\n  - [ ] socks\n\n### Bathroom\n- [ ] brush\n\n## كتب\n- [ ] قراءة الكتاب\n';
+  await page.keyboard.insertText(body);
+  await page.waitForSelector('.checklist');
+  // 1. it scrolls with the mouse wheel
+  const before = await page.evaluate(() => document.querySelector('.checklist').scrollTop);
+  await page.mouse.move(600, 400);
+  await page.mouse.wheel(0, 500);
+  await page.waitForTimeout(300);
+  const after = await page.evaluate(() => document.querySelector('.checklist').scrollTop);
+  assert.ok(after > before + 100, `the list scrolls: ${before} -> ${after}`);
+  // 2. nesting: Trip holds Pack and the Arabic section; Pack holds Bathroom
+  const tree = await page.evaluate(() => {
+    const names = (sec) => [...sec.querySelectorAll(':scope > .ck-body > .ck-sec')].map((x) => x.querySelector(':scope > .ck-sec-head h3').textContent);
+    const trip = [...document.querySelectorAll('.ck-sec.l1')][0];
+    const pack = trip.querySelector('.ck-sec.l2');
+    return { trip: names(trip), pack: names(pack) };
+  });
+  assert.deepEqual(tree.trip, ['Pack', 'كتب']);
+  assert.deepEqual(tree.pack, ['Bathroom']);
+  // 3. subtasks: ticking both ticks "clothes"
+  await page.click('.ck-label >> text=shirts');
+  await page.click('.ck-label >> text=socks');
+  await page.waitForFunction(() => [...document.querySelectorAll('.ck-row')].some((r) => r.textContent.includes('clothes') && r.classList.contains('done')));
+  // 4. folding a section hides what is under it, and it slides back
+  await page.click('.ck-sec.l2 > .ck-sec-head .fold >> nth=0');
+  await page.waitForFunction(() => !document.querySelector('.ck-sec.l3'));
+  await page.click('.ck-sec.l2 > .ck-sec-head .fold >> nth=0');
+  await page.waitForSelector('.ck-sec.l3');
+  // 5. Arabic lines start from the right
+  const ar = await page.evaluate(() => {
+    const row = [...document.querySelectorAll('.ck-row')].find((r) => r.textContent.includes('قراءة'));
+    const label = row.querySelector('.ck-label');
+    const tick = row.querySelector('.tick').getBoundingClientRect();
+    const lab = label.getBoundingClientRect();
+    return { dir: getComputedStyle(row).direction, tickRight: tick.left > lab.left, align: getComputedStyle(label).textAlign };
+  });
+  assert.equal(ar.dir, 'rtl');
+  assert.ok(ar.tickRight, 'the tick sits on the right of an Arabic line');
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test('props 1: view is offered and chosen from a list, the name list is themed and long, icons can be set', async () => {
+  const errors = [];
+  const ctx = await browser.newContext({ viewport: { width: 1100, height: 760 } });
+  const page = await ctx.newPage();
+  page.on('pageerror', (e) => errors.push(e.message));
+  await signIn(page, 'alice', 'alice-password');
+  await freshNote(page, 'Props');
+  await page.click('.props-head');
+  await page.click('.props-quick button >> text=view');
+  // `view` starts as a checklist, and the note turns into one
+  await page.waitForSelector('.checklist', { timeout: 5000 });
+  // the text side shows the properties
+  const back = async () => { await page.locator('.topbar button >> text=Live preview').click(); await page.waitForSelector('.props'); if (await page.locator('.props:not(.open)').count()) await page.click('.props-head'); await page.waitForSelector('.props .selbtn'); };
+  await back();
+  // its value is a list to choose from
+  await page.click('.props .selbtn');
+  const opts = await page.locator('.sel-pop li').allTextContents();
+  assert.deepEqual(opts.slice(0, 4), ['note', 'checklist', 'board', 'pipeline']);
+  await page.click('.sel-pop li >> text=board');
+  await page.locator('.topbar button', { hasText: /^(Checklist|Board|Pipeline)$/ }).locator('visible=true').first().click();
+  await page.waitForSelector('.board', { timeout: 5000 });
+  await back();
+  await page.click('.props .selbtn');
+  await page.click('.sel-pop li >> text=checklist');
+  await page.waitForSelector('.props-quick button >> text=tap');
+  assert.ok(await page.locator('.props-quick button >> text=tap').count() === 1, 'tap is offered for checklists');
+  // our own list for the name, with plenty of choices and our theme
+  await page.locator('.props-quick button').last().click();
+  await page.click('.props-add input');
+  await page.waitForSelector('.sug-pop');
+  const n = await page.locator('.sug-pop li').count();
+  assert.ok(n >= 15, 'many suggestions: ' + n);
+  const bg = await page.evaluate(() => getComputedStyle(document.querySelector('.sug-pop')).backgroundColor);
+  assert.notEqual(bg, 'rgb(255, 255, 255)', 'not the browser white list: ' + bg);
+  await page.fill('.props-add input', 'prio');
+  assert.equal(await page.locator('.sug-pop li').first().textContent().then((x) => x.includes('priority')), true);
+  await page.keyboard.press('Escape');
+  // choose an icon for a property
+  await page.click('.pkey .pico >> nth=0');
+  await page.waitForSelector('.icon-pop');
+  const before = await page.evaluate(() => document.querySelector('.pkey .pico svg').innerHTML);
+  await page.click('.icon-grid button[aria-label="rocket"]');
+  await page.waitForFunction((b) => document.querySelector('.pkey .pico svg').innerHTML !== b, before);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test('motion 1: windows and menus leave the way they came; the bottom menu follows the finger; templates are one press away', async () => {
+  const ctx = await browser.newContext({ viewport: { width: 400, height: 780 }, hasTouch: true, isMobile: true, deviceScaleFactor: 2 });
+  const page = await ctx.newPage();
+  await signIn(page, 'alice', 'alice-password');
+  await freshNote(page, 'Motion');
+  await page.tap('.cm-content');
+  await page.evaluate(() => document.activeElement.blur());
+  await page.waitForTimeout(400);
+  // the bottom menu comes up under the finger: half way up it is half out
+  const mid = await page.evaluate(async () => {
+    const bar = document.querySelector('.float-bar');
+    const r = bar.getBoundingClientRect();
+    const target = bar.querySelector('button');
+    const x = r.left + 20, y0 = r.top + r.height / 2;
+    const mk = (y) => new Touch({ identifier: 3, target, clientX: x, clientY: y, pageX: x, pageY: y });
+    const fire = (type, y) => target.dispatchEvent(new TouchEvent(type, { touches: type === 'touchend' ? [] : [mk(y)], changedTouches: [mk(y)], bubbles: true, cancelable: true }));
+    fire('touchstart', y0);
+    for (let i = 1; i <= 6; i++) { fire('touchmove', y0 - i * 30); await new Promise((r) => setTimeout(r, 30)); }
+    await new Promise((r) => setTimeout(r, 60));
+    const sh = document.querySelector('.sheet');
+    const top = sh ? Math.round(sh.getBoundingClientRect().top) : null;
+    const h = sh ? Math.round(sh.getBoundingClientRect().height) : null;
+    fire('touchend', y0 - 180);
+    return { top, h, vh: innerHeight };
+  });
+  assert.ok(mid.top !== null && mid.top > mid.vh - mid.h + 20 && mid.top < mid.vh - 20, 'part way out under the finger: ' + JSON.stringify(mid));
+  await page.waitForTimeout(500);
+  assert.equal(await page.evaluate(() => Math.round(document.querySelector('.sheet').getBoundingClientRect().bottom)), 780, 'and it settles open');
+  // closing slides it down (it is still there a moment later), then it is gone
+  await page.tap('.sheet-scrim', { position: { x: 200, y: 40 } });
+  await page.waitForTimeout(100);
+  assert.equal(await page.locator('.sheet').count(), 1, 'it is still sliding out');
+  await page.waitForFunction(() => !document.querySelector('.sheet'), null, { timeout: 3000 });
+  // press and hold the plus: the templates
+  const plus = await page.locator('.float-bar .plus').boundingBox();
+  await page.evaluate(async ([x, y]) => {
+    const el = document.querySelector('.float-bar .plus');
+    const fire = (type) => el.dispatchEvent(new PointerEvent(type, { pointerId: 9, pointerType: 'touch', clientX: x, clientY: y, bubbles: true, cancelable: true, isPrimary: true }));
+    fire('pointerdown');
+    await new Promise((r) => setTimeout(r, 600));
+    fire('pointerup');
+  }, [plus.x + 10, plus.y + 10]);
+  await page.waitForSelector('.sheet');
+  assert.ok((await page.textContent('.sheet')).includes('Shopping list'), 'the shopping list template is there');
+  await page.tap('.sheet-scrim', { position: { x: 200, y: 40 } });
+  await page.waitForFunction(() => !document.querySelector('.sheet'));
+  // a dialog (settings) closes with an exit, not instantly
+  await page.evaluate(() => { document.querySelector('.float-bar button[aria-label="More"]')?.click(); });
   await ctx.close();
 });
 

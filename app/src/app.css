@@ -1785,8 +1785,8 @@ aside .results .snip { color: var(--muted); font-size: 0.78rem; white-space: nor
 .diag { white-space: pre-wrap; font-size: 0.8rem; margin: 0.4rem 0 0; padding: 0.5rem; border-radius: 8px; background: var(--surface0, rgba(128,128,128,.15)); user-select: text; -webkit-user-select: text; }
 
 /* ---------- bottom sheets (phones) ---------- */
-.sheet-scrim { position: fixed; inset: 0; z-index: 60; background: rgba(10, 8, 20, 0.4); border: 0; border-radius: 0; padding: 0; animation: fade 0.18s ease; }
-.sheet { position: fixed; inset-inline: 0; bottom: 0; z-index: 61; max-height: 78dvh; display: flex; flex-direction: column; background: var(--surface); border-radius: 22px 22px 0 0; box-shadow: 0 -8px 30px rgba(0, 0, 0, 0.28); animation: rise 0.22s ease; padding-bottom: 0.4rem; }
+.sheet-scrim { position: fixed; inset: 0; z-index: 60; background: rgba(10, 8, 20, 0.4); border: 0; border-radius: 0; padding: 0; }
+.sheet { position: fixed; inset-inline: 0; bottom: 0; z-index: 61; max-height: 78dvh; display: flex; flex-direction: column; background: var(--surface); border-radius: 22px 22px 0 0; box-shadow: 0 -8px 30px rgba(0, 0, 0, 0.28); padding-bottom: 0.4rem; }
 .sheet .grab { padding: 0.55rem 0 0.2rem; display: grid; place-items: center; touch-action: none; cursor: grab; }
 .sheet .grab i { width: 2.4rem; height: 4px; border-radius: 4px; background: var(--line); }
 .sheet h3 { margin: 0.1rem 1.1rem 0.5rem; font-size: 1.02rem; }
@@ -2044,3 +2044,50 @@ dialog.toolbar-edit { width: min(30rem, 94vw); max-height: 88dvh; overflow: auto
 .toc-drawer.dragging aside.toc, .toc-drawer.dragging .toc-scrim { transition: none; }
 .toc-drawer:not(.open) .toc-scrim { pointer-events: none; }
 .toc-drawer:not(.open) aside.toc { visibility: hidden; transition: transform 0.26s cubic-bezier(0.2, 0.8, 0.2, 1), visibility 0s 0.26s; }
+
+/* ---- motion: everything comes from somewhere and goes somewhere ---- */
+dialog[open] { animation: dlgIn 0.26s cubic-bezier(0.2, 0.8, 0.2, 1); }
+dialog[open]::backdrop { animation: fade 0.26s ease; }
+dialog.closing { animation: dlgOut 0.2s ease forwards !important; }
+dialog.closing::backdrop { animation: fadeOut 0.2s ease forwards; }
+@keyframes dlgIn { from { opacity: 0; transform: translateY(18px) scale(0.97); } }
+@keyframes dlgOut { to { opacity: 0; transform: translateY(18px) scale(0.97); } }
+@keyframes fadeOut { to { opacity: 0; } }
+@media (max-width: 760px) {
+  dialog[open] { animation-name: dlgInUp; }
+  dialog.closing { animation-name: dlgOutDown !important; }
+}
+@keyframes dlgInUp { from { opacity: 0; transform: translateY(40%); } }
+@keyframes dlgOutDown { to { opacity: 0; transform: translateY(40%); } }
+.menu { animation: none; }
+@media (prefers-reduced-motion: reduce) { dialog[open], dialog.closing, .sheet, .sheet-scrim { animation: none !important; } }
+
+/* properties: the icon button, our own name list, the icon picker */
+.pkey { display: inline-flex; align-items: center; gap: 0.4rem; min-width: 0; }
+.pkey .pico { border: 0; background: transparent; padding: 0.25rem; border-radius: 8px; color: var(--accent); display: inline-grid; place-items: center; transition: background var(--ease), transform 0.1s; }
+.pkey .pico:hover:not(:disabled) { background: var(--accent-soft); }
+.pkey .pico:active { transform: scale(0.9); }
+.sug-pop { z-index: 80; max-height: 16rem; overflow-y: auto; }
+.sug-pop li { display: flex; align-items: center; gap: 0.55rem; }
+.sug-pop li svg { color: var(--accent); flex: none; }
+.sug-pop li em { margin-inline-start: auto; font-style: normal; font-size: 0.72rem; color: var(--muted); }
+.icon-scrim { position: fixed; inset: 0; z-index: 79; }
+.icon-pop { position: fixed; z-index: 80; width: 17.5rem; padding: 0.6rem; display: flex; flex-direction: column; gap: 0.5rem; transform-origin: top left; }
+.icon-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 0.2rem; }
+.icon-grid button { aspect-ratio: 1; display: grid; place-items: center; border-radius: 10px; border: 0; background: transparent; padding: 0; color: var(--ink); transition: background var(--ease), transform 0.1s; }
+.icon-grid button:hover { background: var(--accent-soft); }
+.icon-grid button.on { background: var(--accent); color: var(--on-accent); }
+.icon-grid button:active { transform: scale(0.88); }
+
+.me-card { display: flex; align-items: center; gap: 1rem; margin: 0.5rem 0; }
+.me-card h3 { margin: 0 0 0.35rem; }
+.me-pic { position: relative; border: 0; background: transparent; padding: 0; border-radius: 50%; line-height: 0; transition: transform 0.15s; }
+.me-pic:hover { transform: scale(1.04); }
+.me-cam { position: absolute; inset-inline-end: -2px; bottom: -2px; width: 1.7rem; height: 1.7rem; border-radius: 50%; display: grid; place-items: center; background: var(--accent); color: var(--on-accent, #fff); border: 2px solid var(--surface); }
+.me-actions { display: flex; gap: 0.4rem; flex-wrap: wrap; }
+
+/* the property-name suggestion list shares the look of the select list (those rules are scoped to Select) */
+.sug-pop { position: fixed; z-index: 1000; margin: 0; padding: 0.3rem; list-style: none; background: var(--surface); color: var(--ink); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 12px 32px -8px rgba(0, 0, 0, 0.35); }
+.sug-pop li { padding: 0.45rem 0.7rem; border-radius: 8px; cursor: pointer; white-space: nowrap; }
+.sug-pop li.hi { background: var(--accent-soft); }
+.sug-pop li[aria-selected='true'] { color: var(--accent); font-weight: 600; }

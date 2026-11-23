@@ -66,6 +66,8 @@ interface Settings {
   hideSide: boolean;
   /** The editor tool bar: tool ids in order ('sep' is a divider). */
   toolbar: string[];
+  /** Icons chosen for properties: property name -> icon. */
+  propIcons: Record<string, string>;
   /** Self-signed servers the user chose to trust (apps): address -> certificate fingerprint. */
   trust: Record<string, string>;
   /** Apps: accept a server's self-signed certificate (the first one seen is remembered). */
@@ -79,7 +81,7 @@ function defaultLang(): Lang {
 }
 
 class Store {
-  s = $state<Settings>({ lang: 'en', theme: onAndroid() ? 'system' : 'auto', accent: 'default', serverUrl: '', token: '', username: '', admin: false, wantsLocal: false, welcomed: false, fontSize: 17, editorWidth: 50, fontEn: '', fontAr: '', fontCode: '', sideWidth: 304, sourceSize: 15, fontSource: '', centerPage: false, hideSide: false, toolbar: [...DEFAULT_TOOLBAR], trust: {}, allowSelfSigned: false, allowHttp: false, ...read<Partial<Settings>>(SETTINGS, { lang: defaultLang() }) });
+  s = $state<Settings>({ lang: 'en', theme: onAndroid() ? 'system' : 'auto', accent: 'default', serverUrl: '', token: '', username: '', admin: false, wantsLocal: false, welcomed: false, fontSize: 17, editorWidth: 50, fontEn: '', fontAr: '', fontCode: '', sideWidth: 304, sourceSize: 15, fontSource: '', centerPage: false, hideSide: false, toolbar: [...DEFAULT_TOOLBAR], propIcons: {}, trust: {}, allowSelfSigned: false, allowHttp: false, ...read<Partial<Settings>>(SETTINGS, { lang: defaultLang() }) });
   mode = $state<Mode>('boot');
   serverReachable = $state(false);
   setupNeeded = $state(false);
@@ -157,6 +159,66 @@ class Store {
     this.applyLayout();
   }
 
+  // ── profile pictures (server mode): fetched with the sign-in header, kept as object URLs ──
+  /** name -> picture URL, or null when that person has none (the app shows their initials). */
+  avatars = $state<Record<string, string | null>>({});
+  private avatarAsked = new Set<string>();
+  /** The picture of a person, or null (and it will be fetched once if not known yet). */
+  avatarUrl(name: string): string | null {
+    const k = name.toLowerCase();
+    if (this.mode !== 'server' || !k) return null;
+    if (!this.avatarAsked.has(k)) {
+      this.avatarAsked.add(k);
+      this.api.avatarBlob(k).then((b) => (this.avatars[k] = b ? URL.createObjectURL(b) : null)).catch(() => (this.avatarAsked.delete(k)));
+    }
+    return this.avatars[k] ?? null;
+  }
+  /** Shrink the picture to a square (so the server and every phone handle a small file) and upload it. */
+  async setMyAvatar(file: File): Promise<void> {
+    const bmp = await createImageBitmap(file);
+    const side = Math.min(bmp.width, bmp.height);
+    const size = Math.min(256, side);
+    const c = document.createElement('canvas');
+    c.width = c.height = size;
+    c.getContext('2d')!.drawImage(bmp, (bmp.width - side) / 2, (bmp.height - side) / 2, side, side, 0, 0, size, size);
+    const blob: Blob = await new Promise((res, rej) => c.toBlob((b) => (b ? res(b) : rej(new Error('Could not read the picture'))), 'image/webp', 0.88));
+    await this.api.setAvatar(blob);
+    const k = this.s.username.toLowerCase();
+    const old = this.avatars[k];
+    if (old) URL.revokeObjectURL(old);
+    this.avatars[k] = URL.createObjectURL(blob);
+    this.avatarAsked.add(k);
+  }
+  async removeMyAvatar(): Promise<void> {
+    await this.api.deleteAvatar();
+    const k = this.s.username.toLowerCase();
+    const old = this.avatars[k];
+    if (old) URL.revokeObjectURL(old);
+    this.avatars[k] = null;
+  }
+
+  setPropIcon(key: string, icon: string | null) {
+    const k = key.toLowerCase();
+    const next = { ...(this.s.propIcons ?? {}) };
+    if (icon) next[k] = icon;
+    else delete next[k];
+    this.s.propIcons = next;
+    this.save();
+  }
+  /** Property names used in the user's notes (for suggestions); read once, on first use. */
+  knownPropKeys = $state<string[]>([]);
+  private knownLoaded = false;
+  async loadKnownPropKeys() {
+    if (this.knownLoaded) return;
+    this.knownLoaded = true;
+    const seen = new Set<string>();
+    for (const n of this.notes.slice(0, 250)) {
+      const text = await this.exportText(n.id).catch(() => '');
+      for (const p of readFrontMatter(text)?.props ?? []) seen.add(p.key);
+    }
+    this.knownPropKeys = [...seen].sort((a, b) => a.localeCompare(b));
+  }
+
   setToolbar(list: string[]) {
     this.s.toolbar = cleanToolbar(list);
     this.save();
@@ -165,6 +227,8 @@ class Store {
   toolbarOpen = $state(false);
   /** While a finger drags the phone's contents drawer in or out: how far it is open (0–1); null when not dragging. */
   tocProg = $state<number | null>(null);
+  /** While a finger pulls the bottom menu up: how far it is out (0–1); null when not dragging. */
+  sheetDrag = $state<number | null>(null);
 
   setLang(l: Lang) {
     this.s.lang = l;
@@ -1048,7 +1112,7 @@ class Store {
 
   /** Recently opened notes, newest first. */
   /** Phones: which bottom sheet is open. */
-  sheet = $state<null | 'tabs' | 'toc' | 'more' | 'links'>(null);
+  sheet = $state<null | 'tabs' | 'toc' | 'more' | 'links' | 'templates'>(null);
   /** The first lines of notes opened here, for the tab thumbnails. */
   previews = $state<Record<string, string>>(read<Record<string, string>>('qm.previews', {}));
   private previewTimer = 0;

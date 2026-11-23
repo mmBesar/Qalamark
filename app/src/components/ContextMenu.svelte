@@ -1,6 +1,8 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
 <!-- Copyright (C) 2026 mmBesar -->
 <script lang="ts">
+  import { fade } from 'svelte/transition';
+  import { pop } from '../lib/motion.ts';
   import { tick } from 'svelte';
   import Icon from './Icon.svelte';
   import { ctxmenu, type MenuItem } from '../lib/ctxmenu.svelte.ts';
@@ -73,8 +75,8 @@
 
 {#if ctxmenu.open}
   <!-- svelte-ignore a11y_no_static_element_interactions -->
-  <div class="ctx-scrim" onpointerdown={() => ctxmenu.close()} oncontextmenu={(e) => { e.preventDefault(); ctxmenu.close(); }}></div>
-  <div class="ctx" role="menu" bind:this={el} style:left="{pos.x}px" style:top="{pos.y}px">
+  <div class="ctx-scrim" transition:fade|global={{ duration: 120 }} onpointerdown={() => ctxmenu.close()} oncontextmenu={(e) => { e.preventDefault(); ctxmenu.close(); }}></div>
+  <div class="ctx" role="menu" transition:pop|global bind:this={el} style:left="{pos.x}px" style:top="{pos.y}px">
     {#if stack.length}
       <button class="ctx-item back" onclick={() => (stack = stack.slice(0, -1))}>
         <span class="ci"><Icon name="chevron-left" size={16} /></span><span class="cl">{store.t('back')}</span>

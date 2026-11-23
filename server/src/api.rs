@@ -164,10 +164,74 @@ pub async fn logout(State(s): State<Shared>, headers: axum::http::HeaderMap) -> 
 pub struct Me {
     username: String,
     admin: bool,
+    /// When the profile picture was last set (None: no picture, show the initials).
+    avatar: Option<i64>,
 }
 
-pub async fn me(user: User) -> Json<Me> {
-    Json(Me { username: user.username, admin: user.is_admin })
+pub async fn me(State(s): State<Shared>, user: User) -> Json<Me> {
+    let avatar = s.db.lock().unwrap().query_row("SELECT updated FROM avatars WHERE user_id = ?1", [user.id], |r| r.get(0)).ok();
+    Json(Me { username: user.username, admin: user.is_admin, avatar })
+}
+
+const MAX_AVATAR: usize = 400 * 1024;
+
+fn avatar_mime(bytes: &[u8]) -> Option<&'static str> {
+    if bytes.starts_with(&[0x89, b'P', b'N', b'G']) {
+        Some("image/png")
+    } else if bytes.starts_with(&[0xFF, 0xD8, 0xFF]) {
+        Some("image/jpeg")
+    } else if bytes.len() > 12 && &bytes[0..4] == b"RIFF" && &bytes[8..12] == b"WEBP" {
+        Some("image/webp")
+    } else {
+        None
+    }
+}
+
+/// Set my profile picture. The kind is read from the bytes themselves, not from what the request claims.
+pub async fn set_avatar(State(s): State<Shared>, user: User, body: axum::body::Bytes) -> ApiResult<Me> {
+    if body.is_empty() || body.len() > MAX_AVATAR {
+        return err(StatusCode::PAYLOAD_TOO_LARGE, "The picture must be under 400 KB");
+    }
+    let Some(mime) = avatar_mime(&body) else {
+        return err(StatusCode::UNSUPPORTED_MEDIA_TYPE, "Use a png, jpg or webp picture");
+    };
+    let now = crate::db::now();
+    s.db.lock()
+        .unwrap()
+        .execute(
+            "INSERT INTO avatars (user_id, mime, data, updated) VALUES (?1, ?2, ?3, ?4)
+             ON CONFLICT(user_id) DO UPDATE SET mime = ?2, data = ?3, updated = ?4",
+            params![user.id, mime, body.to_vec(), now],
+        )
+        .map_err(internal)?;
+    Ok(Json(Me { username: user.username, admin: user.is_admin, avatar: Some(now) }))
+}
+
+pub async fn delete_avatar(State(s): State<Shared>, user: User) -> StatusCode {
+    let _ = s.db.lock().unwrap().execute("DELETE FROM avatars WHERE user_id = ?1", [user.id]);
+    StatusCode::NO_CONTENT
+}
+
+/// Anyone signed in can see anyone's picture (they can already see the names on the server).
+pub async fn get_avatar(State(s): State<Shared>, _user: User, Path(name): Path<String>) -> Result<axum::response::Response, StatusCode> {
+    let row: Option<(String, Vec<u8>, i64)> = s
+        .db
+        .lock()
+        .unwrap()
+        .query_row(
+            "SELECT a.mime, a.data, a.updated FROM avatars a JOIN users u ON u.id = a.user_id WHERE u.username = ?1",
+            [&name],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )
+        .ok();
+    let Some((mime, data, updated)) = row else { return Err(StatusCode::NOT_FOUND) };
+    Ok(axum::response::Response::builder()
+        .header("content-type", mime)
+        .header("x-content-type-options", "nosniff")
+        .header("cache-control", "private, max-age=3600")
+        .header("etag", format!("\"{updated}\""))
+        .body(axum::body::Body::from(data))
+        .unwrap())
 }
 
 #[derive(Deserialize)]
@@ -183,7 +247,7 @@ pub async fn admin_create_user(State(s): State<Shared>, user: User, Json(n): Jso
         return err(StatusCode::FORBIDDEN, "Only the admin can add users");
     }
     create_user(&s, &n.username, &n.password, n.admin)?;
-    Ok(Json(Me { username: n.username.trim().to_lowercase(), admin: n.admin }))
+    Ok(Json(Me { username: n.username.trim().to_lowercase(), admin: n.admin, avatar: None }))
 }
 
 pub async fn admin_list_users(State(s): State<Shared>, user: User) -> ApiResult<Vec<Me>> {
@@ -193,7 +257,7 @@ pub async fn admin_list_users(State(s): State<Shared>, user: User) -> ApiResult<
     let db = s.db.lock().unwrap();
     let mut st = db.prepare("SELECT username, is_admin FROM users ORDER BY username").map_err(internal)?;
     let rows = st
-        .query_map([], |r| Ok(Me { username: r.get(0)?, admin: r.get::<_, i64>(1)? != 0 }))
+        .query_map([], |r| Ok(Me { username: r.get(0)?, admin: r.get::<_, i64>(1)? != 0, avatar: None }))
         .map_err(internal)?
         .filter_map(Result::ok)
         .collect();

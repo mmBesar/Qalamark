@@ -5,6 +5,7 @@
   import { store } from '../lib/store.svelte.ts';
   import type { NoteMeta } from '../lib/server.ts';
   import { BUILT_IN } from '../lib/templates.ts';
+  import Avatar from './Avatar.svelte';
   import { ctxmenu, type MenuItem } from '../lib/ctxmenu.svelte.ts';
   import { inShell, onAndroid, vault } from '../lib/vault.ts';
 
@@ -354,7 +355,7 @@
     >
       {#each rows as r (r.kind === 'folder' ? 'f:' + r.path : 'n:' + r.note.id)}
         {#if r.kind === 'folder'}
-          <li class="row folder" style:--depth={r.depth} class:dropping={dropOn === r.path}>
+          <li class="row folder" dir="auto" style:--depth={r.depth} class:dropping={dropOn === r.path}>
             <button
               class="main"
               onclick={tap(() => toggle(r.path))}
@@ -373,7 +374,7 @@
           </li>
         {:else}
           {@const n = r.note}
-          <li class="row" style:--depth={r.depth}>
+          <li class="row" dir="auto" style:--depth={r.depth}>
             <button
               class="main"
               class:active={n.id === store.currentId}
@@ -439,7 +440,7 @@
 
   <footer>
     {#if store.mode === 'server'}
-      <button class="who" onclick={accountMenu} aria-haspopup="menu"><span class="avatar">{(store.s.username || '?').slice(0, 1).toUpperCase()}</span><span class="uname">{store.s.username}</span><Icon name="chevron" size={14} /></button>
+      <button class="who" onclick={accountMenu} aria-haspopup="menu"><Avatar name={store.s.username || '?'} size={28} /><span class="uname">{store.s.username}</span><Icon name="chevron" size={14} /></button>
       {#if !store.serverReachable}<small class="muted">· {t('offline')}</small><button class="link retry" onclick={() => store.reconnect()}>{t('reconnect')}</button>{/if}
       {#if store.pending}<small class="muted pendingbadge" title={t('waitingSync', { n: store.pending })}>· {t('waitingSync', { n: store.pending })}</small>{/if}
     {:else}

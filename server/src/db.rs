@@ -50,6 +50,13 @@ pub fn open(path: &Path) -> rusqlite::Result<Connection> {
            note_id    TEXT NOT NULL REFERENCES notes(id) ON DELETE CASCADE,
            PRIMARY KEY (owner_id, request_id)
          );
+         -- a profile picture per person (the app sends it already shrunk)
+         CREATE TABLE IF NOT EXISTS avatars (
+           user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+           mime    TEXT NOT NULL,
+           data    BLOB NOT NULL,
+           updated INTEGER NOT NULL
+         );
          CREATE TABLE IF NOT EXISTS ydocs (
            note_id TEXT PRIMARY KEY REFERENCES notes(id) ON DELETE CASCADE,
            state   BLOB NOT NULL

@@ -137,6 +137,20 @@ export class Api {
     if (!r.ok) throw new ApiError(r.status, 'No such picture');
     return r.blob();
   }
+  /** Someone's profile picture as a blob, or null when they have none. */
+  async avatarBlob(name: string): Promise<Blob | null> {
+    const r = await fetch(`${this.transport}/api/avatars/${encodeURIComponent(name)}`, { headers: { authorization: `Bearer ${this.token}` } });
+    if (r.status === 404) return null;
+    if (!r.ok) throw new ApiError(r.status, 'No picture');
+    return r.blob();
+  }
+  async setAvatar(blob: Blob): Promise<void> {
+    const r = await fetch(this.transport + '/api/me/avatar', { method: 'PUT', headers: { authorization: `Bearer ${this.token}`, 'content-type': blob.type }, body: blob });
+    if (!r.ok) throw new ApiError(r.status, await r.text());
+  }
+  deleteAvatar() {
+    return this.call<void>('DELETE', '/api/me/avatar');
+  }
   getNote(id: string) {
     return this.call<NoteMeta & { content: string }>('GET', `/api/notes/${id}`);
   }

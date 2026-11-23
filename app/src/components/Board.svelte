@@ -208,7 +208,7 @@
       <ul>
         {#each col.cards as card, i (card.start + ':' + card.text)}
           {#if shown(card.text)}
-          <li class="card" class:done={card.done} class:dragging={drag?.c === c && drag.i === i} class:before={over?.c === c && over.i === i && drag}
+          <li class="card" dir="auto" class:done={card.done} class:dragging={drag?.c === c && drag.i === i} class:before={over?.c === c && over.i === i && drag}
             onkeydown={(e) => cardKeys(e, c, i)}
             draggable={!readOnly && editing === null}
             ondragstart={(e) => { drag = { c, i }; e.dataTransfer?.setData('text/plain', card.text); }}

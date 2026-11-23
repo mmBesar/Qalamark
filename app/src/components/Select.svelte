@@ -1,6 +1,7 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
 <!-- Copyright (C) 2026 mmBesar -->
 <script lang="ts">
+  import { pop } from '../lib/motion.ts';
   // A drop-down drawn by the app, so it follows the app theme on every platform
   // (the native one is drawn by the system and ignores our colours on Linux).
   import Icon from './Icon.svelte';
@@ -50,7 +51,7 @@
   <span class="cur">{current}</span><Icon name="chevron" size={14} />
 </button>
 {#if open}
-  <ul class="sel-pop" role="listbox" {dir} style="left:{pos.x}px; min-width:{pos.w}px; {pos.up ? `bottom:${window.innerHeight - pos.y + 4}px` : `top:${pos.y}px`}">
+  <ul class="sel-pop" role="listbox" {dir} transition:pop|global style="left:{pos.x}px; min-width:{pos.w}px; {pos.up ? `bottom:${window.innerHeight - pos.y + 4}px` : `top:${pos.y}px`}">
     {#each options as o, i (o.value)}
       <li role="option" aria-selected={o.value === value} class:hi={i === hi} onpointerenter={() => (hi = i)} onclick={() => pick(o.value)} onkeydown={() => {}}>{o.label}</li>
     {/each}

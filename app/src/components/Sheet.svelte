@@ -3,6 +3,8 @@
 <script lang="ts">
   // A bottom sheet for phones: slides up over the note, closes with a tap outside, a swipe down or the back button.
   import type { Snippet } from 'svelte';
+  import { fade, fly } from 'svelte/transition';
+  import { cubicOut } from 'svelte/easing';
   import { store } from '../lib/store.svelte.ts';
   let { title, onClose, children }: { title: string; onClose: () => void; children: Snippet } = $props();
   let startY = 0;
@@ -44,8 +46,8 @@
 </script>
 
 <svelte:window onkeydown={(e) => e.key === 'Escape' && onClose()} />
-<button class="sheet-scrim" aria-label={store.t('close')} onclick={onClose} ontouchstart={tstart} ontouchmove={tmove} ontouchend={tend}></button>
-<div class="sheet" role="dialog" aria-label={title} bind:this={sheet} ontouchstart={tstart} ontouchmove={tmove} ontouchend={tend} ontouchcancel={tend} style:transform={dy ? `translateY(${dy}px)` : undefined}>
+<button class="sheet-scrim" style:opacity={store.sheetDrag !== null ? store.sheetDrag : undefined} transition:fade|global={{ duration: store.sheetDrag !== null ? 0 : 200 }} aria-label={store.t('close')} onclick={onClose} ontouchstart={tstart} ontouchmove={tmove} ontouchend={tend}></button>
+<div class="sheet" role="dialog" transition:fly|global={{ y: 600, duration: store.sheetDrag !== null ? 0 : 260, opacity: 1, easing: cubicOut }} aria-label={title} bind:this={sheet} ontouchstart={tstart} ontouchmove={tmove} ontouchend={tend} ontouchcancel={tend} style:transform={store.sheetDrag !== null ? `translateY(${(1 - store.sheetDrag) * 100}%)` : dy ? `translateY(${dy}px)` : undefined}>
   <div class="grab" onpointerdown={down} onpointermove={move} onpointerup={up} onpointercancel={up} role="presentation"><i></i></div>
   <h3>{title}</h3>
   <div class="sheet-body">{@render children()}</div>

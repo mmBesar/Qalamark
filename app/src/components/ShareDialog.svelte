@@ -1,6 +1,7 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
 <!-- Copyright (C) 2026 mmBesar -->
 <script lang="ts">
+  import Avatar from './Avatar.svelte';
   import Select from './Select.svelte';
   import { onMount } from 'svelte';
   import type { NoteMeta, Share } from '../lib/server.ts';
@@ -60,6 +61,7 @@
   <ul class="plain">
     {#each shares as s (s.username)}
       <li>
+        <Avatar name={s.username} size={26} />
         <span>{s.username}</span>
         <small class="muted">{s.role === 'edit' ? t('canEdit') : t('canView')}</small>
         <span class="grow"></span>

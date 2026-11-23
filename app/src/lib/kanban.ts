@@ -46,7 +46,7 @@ function frontMatterEnd(lines: string[]): number {
 export function isBoard(text: string): boolean {
   const lines = text.split('\n', 60);
   const end = frontMatterEnd(lines);
-  for (let i = 1; i < end - 1; i++) if (/^kanban(-plugin)?\s*:/i.test(lines[i]!)) return true;
+  for (let i = 1; i < end - 1; i++) if (/^kanban(-plugin)?\s*:/i.test(lines[i]!) || /^view\s*:\s*["']?(board|kanban|pipeline)["']?\s*$/i.test(lines[i]!)) return true;
   return false;
 }
 
@@ -255,6 +255,7 @@ export function boardKind(text: string): BoardKind {
   for (let i = 1; i < end - 1; i++) {
     const m = /^kanban(?:-plugin)?\s*:\s*(.*)$/i.exec(lines[i]!);
     if (m) return /^["']?pipeline["']?$/i.test(m[1]!.trim()) ? 'pipeline' : 'board';
+    if (/^view\s*:\s*["']?pipeline["']?\s*$/i.test(lines[i]!)) return 'pipeline';
   }
   return 'board';
 }
@@ -263,7 +264,7 @@ export function setBoardKind(text: string, kind: BoardKind): string {
   const lines = text.split('\n');
   const end = frontMatterEnd(lines);
   for (let i = 1; i < end - 1; i++) {
-    if (/^kanban(-plugin)?\s*:/i.test(lines[i]!)) {
+    if (/^kanban(-plugin)?\s*:/i.test(lines[i]!) || /^view\s*:\s*["']?(board|kanban|pipeline)["']?\s*$/i.test(lines[i]!)) {
       lines[i] = lines[i]!.replace(/:.*$/, `: ${kind}`);
       return lines.join('\n');
     }

@@ -13,6 +13,7 @@ import './fonts/fonts.css';
 import './app.css';
 
 import { loadUserFonts } from './lib/fonts';
+import { animateDialogs } from './lib/motion';
 import { store } from './lib/store.svelte';
 
 void loadUserFonts().then((names) => { store.userFonts = names; store.applyLayout(); });
@@ -24,3 +25,4 @@ if ('serviceWorker' in navigator && location.protocol !== 'file:' && import.meta
     /* the app works fine without it */
   });
 }
+animateDialogs();

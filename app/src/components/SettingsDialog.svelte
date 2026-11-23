@@ -5,6 +5,7 @@
   import Icon from './Icon.svelte';
   import NetOptions from './NetOptions.svelte';
   import { inShell, onAndroid, vault } from '../lib/vault.ts';
+  import { hasWidgets } from '../lib/widgets.ts';
   import Select from './Select.svelte';
   import { askBox, confirmBox } from '../lib/dialog.svelte.ts';
   import { addUserFont, removeUserFont } from '../lib/fonts';
@@ -13,17 +14,30 @@
   import { store, type Theme } from '../lib/store.svelte.ts';
   import { ACCENTS, PALETTES, THEME_LIST, themeName } from '../lib/theme.ts';
 
+  import type { TaskAction } from '../lib/gestures.ts';
   let { onClose }: { onClose: () => void } = $props();
+  const ACT: TaskAction[] = ['tick', 'edit', 'delete', 'menu', 'none'];
+  const tabs = $derived([
+    { id: 'look', icon: 'sun', label: 'setLook' },
+    { id: 'text', icon: 'type', label: 'setText' },
+    { id: 'tasks', icon: 'check-box', label: 'setTasks' },
+    ...(store.vaultPath ? [{ id: 'notes', icon: 'folder', label: 'notesFolder' }] : []),
+    { id: 'account', icon: 'user', label: 'setAccount' },
+    ...(store.mode === 'server' && store.s.admin ? [{ id: 'people', icon: 'users', label: 'users' }] : []),
+  ]);
+  let tab = $state('look');
+
   const t = store.t;
   let avatarInput: HTMLInputElement;
   let avatarError = $state('');
+  let avatarBusy = $state(false);
   async function pickAvatar(e: Event) {
     const input = e.currentTarget as HTMLInputElement;
     const f = input.files?.[0];
-    input.value = '';
     if (!f) return;
     avatarError = '';
-    try { await store.setMyAvatar(f); } catch (err) { avatarError = err instanceof Error ? err.message : String(err); }
+    avatarBusy = true;
+    try { await store.setMyAvatar(f); } catch (err) { avatarError = err instanceof Error ? err.message : String(err); } finally { avatarBusy = false; input.value = ''; }
   }
   async function removeAvatar() {
     avatarError = '';
@@ -115,11 +129,24 @@
 </script>
 
 <dialog class="settings" bind:this={dlg} onclose={onClose}>
-  <form method="dialog" class="dialog-head">
-    <h2>{t('settings')}</h2>
-    <button class="icon" aria-label={t('close')}>×</button>
-  </form>
+  <div class="set-shell">
+    <nav class="set-nav" aria-label={t('settings')}>
+      <form method="dialog" class="set-top">
+        <h2>{t('settings')}</h2>
+        <button class="icon" aria-label={t('close')}>×</button>
+      </form>
+      <div class="set-tabs" role="tablist">
+        {#each tabs as tb (tb.id)}
+          <button role="tab" type="button" aria-selected={tab === tb.id} class:on={tab === tb.id} onclick={() => (tab = tb.id)}><Icon name={tb.icon} size={18} /><span>{t(tb.label as never)}</span></button>
+        {/each}
+      </div>
+      <p class="muted tiny set-about">Qalamark · AGPL-3.0-or-later · <a href="https://github.com/mmBesar/Qalamark" target="_blank" rel="noopener">GitHub</a></p>
+    </nav>
 
+    <div class="set-main">
+      <div class="set-page">
+        {#if tab === 'look'}
+          <div class="set-card">
   <div class="grid2">
     <label>
       {t('language')}
@@ -131,7 +158,19 @@
     </label>
   </div>
 
-  <h3>{t('appearance')}</h3>
+          </div>
+          <div class="set-card">
+  <h3>{t('accent')}</h3>
+  <div class="swatches" role="group" aria-label={t('accent')}>
+    <button class:on={store.s.accent === 'default'} title={t('accentDefault')} aria-label={t('accentDefault')} style="background: conic-gradient(var(--accent), var(--gold), var(--accent))" onclick={() => store.setAccent('default')}></button>
+    {#each ACCENTS as a (a)}
+      <button class:on={store.s.accent === a} title={a} aria-label={a} style="background: {PALETTES.mocha.accents[a]}" onclick={() => store.setAccent(a)}></button>
+    {/each}
+  </div>
+
+          </div>
+        {:else if tab === 'text'}
+          <div class="set-card">
   <div class="grid2">
     <label>
       {t('fontSize')}: {store.s.fontSize}px
@@ -177,6 +216,21 @@
   {/if}
   <p class="muted tiny">{t('fontHint')}</p>
 
+          </div>
+        {:else if tab === 'tasks'}
+  <div class="set-card">
+    <h3>{t('gestures')}</h3>
+    <p class="muted small">{t('gesturesHelp')}</p>
+    <div class="grid2">
+      <label>{t('gSwipeRight')}<Select value={store.s.gestures.swipeRight} options={ACT.map((a) => ({ value: a, label: t(('act_' + a) as never) }))} onchange={(v) => store.setGestures({ swipeRight: v as TaskAction })} /></label>
+      <label>{t('gSwipeLeft')}<Select value={store.s.gestures.swipeLeft} options={ACT.map((a) => ({ value: a, label: t(('act_' + a) as never) }))} onchange={(v) => store.setGestures({ swipeLeft: v as TaskAction })} /></label>
+      <label>{t('gTap')}<Select value={store.s.gestures.tap} options={ACT.filter((a) => a !== 'delete').map((a) => ({ value: a, label: t(('act_' + a) as never) }))} onchange={(v) => store.setGestures({ tap: v as TaskAction })} /></label>
+      <label>{t('gLong')}<Select value={store.s.gestures.longPress} options={ACT.map((a) => ({ value: a, label: t(('act_' + a) as never) }))} onchange={(v) => store.setGestures({ longPress: v as TaskAction })} /></label>
+    </div>
+    <p class="muted tiny">{t('gesturesRtl')}</p>
+  </div>
+        {:else if tab === 'notes'}
+          <div class="set-card">
   {#if store.vaultPath}
     <h3>{t('notesFolder')}</h3>
     <p class="muted small">{t('notesFolderHelp')}</p>
@@ -191,49 +245,9 @@
     {#if store.vaultError}<p class="err">{store.vaultError}</p>{/if}
   {/if}
 
-  <h3>{t('accent')}</h3>
-  <div class="swatches" role="group" aria-label={t('accent')}>
-    <button class:on={store.s.accent === 'default'} title={t('accentDefault')} aria-label={t('accentDefault')} style="background: conic-gradient(var(--accent), var(--gold), var(--accent))" onclick={() => store.setAccent('default')}></button>
-    {#each ACCENTS as a (a)}
-      <button class:on={store.s.accent === a} title={a} aria-label={a} style="background: {PALETTES.mocha.accents[a]}" onclick={() => store.setAccent(a)}></button>
-    {/each}
-  </div>
-
-  {#if store.mode === 'server'}
-    <div class="me-card">
-      <button class="me-pic" type="button" aria-label={t('avatarChange')} title={t('avatarChange')} onclick={() => avatarInput.click()}>
-        <Avatar name={store.s.username} size={72} />
-        <span class="me-cam"><Icon name="camera" size={16} /></span>
-      </button>
-      <div class="me-info">
-        <h3>{store.s.username}{store.s.admin ? ' · ' + t('admin') : ''}</h3>
-        <div class="me-actions">
-          <button class="ghost small" type="button" onclick={() => avatarInput.click()}>{t('avatarChange')}</button>
-          {#if store.avatarUrl(store.s.username)}<button class="ghost small" type="button" onclick={removeAvatar}>{t('avatarRemove')}</button>{/if}
-        </div>
-        {#if avatarError}<p class="error" role="alert">{avatarError}</p>{/if}
-      </div>
-      <input bind:this={avatarInput} type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/avif" hidden onchange={pickAvatar} />
-    </div>
-    <p class="muted" dir="ltr">{store.api.base || location.origin}</p>
-    {#if inShell()}<NetOptions />{/if}
-    {#if store.s.trust?.[store.s.serverUrl]}
-      <p class="muted"><Icon name="check-small" size={14} /> {t('trustedCert')} <code dir="ltr" style="font-size:0.72rem;word-break:break-all">{store.s.trust[store.s.serverUrl]}</code></p>
-      <div class="row"><button onclick={() => store.forgetCertificate()}>{t('forgetCert')}</button></div>
-    {/if}
-    <div class="row">
-      <button onclick={() => store.signOut().then(onClose)}>{t('signOut')}</button>
-      {#if store.hasLocalNotes()}<button onclick={upload}>{t('uploadLocal')}</button>{/if}
-    </div>
-
-    <h3>{t('changePassword')}</h3>
-    <form class="row" onsubmit={changePw}>
-      <input type="password" bind:value={oldPw} placeholder={t('oldPassword')} required autocomplete="current-password" dir="ltr" />
-      <input type="password" bind:value={newPw} placeholder={t('newPassword')} required minlength="8" autocomplete="new-password" dir="ltr" />
-      <button>{t('save')}</button>
-    </form>
-
-    {#if store.s.admin}
+          </div>
+        {:else if tab === 'people'}
+          <div class="set-card">
       <h3>{t('users')}</h3>
       <label class="check"><input type="checkbox" checked={signup} onchange={(e) => toggleSignup(e.currentTarget.checked)} /> {t('allowSignup')}</label>
       <ul class="userlist">
@@ -255,14 +269,60 @@
         <label class="check"><input type="checkbox" bind:checked={uAdmin} /> {t('admin')}</label>
         <button>{t('save')}</button>
       </form>
+          </div>
+        {:else}
+          {#if hasWidgets() && store.mode === 'server'}
+            <div class="set-card">
+              <h3>{t('background')}</h3>
+              <label class="check"><input type="checkbox" checked={store.s.keepAlive} onchange={(e) => store.setKeepAlive(e.currentTarget.checked)} /> {t('keepAlive')}</label>
+              <p class="muted small">{t('keepAliveHelp')}</p>
+            </div>
+          {/if}
+          <div class="set-card">
+  {#if store.mode === 'server'}
+    <div class="me-card">
+      <button class="me-pic" type="button" aria-label={t('avatarChange')} title={t('avatarChange')} onclick={() => avatarInput.click()}>
+        <Avatar name={store.s.username} size={72} />
+        <span class="me-cam"><Icon name="camera" size={16} /></span>
+      </button>
+      <div class="me-info">
+        <h3>{store.s.username}{store.s.admin ? ' · ' + t('admin') : ''}</h3>
+        <div class="me-actions">
+          <button class="ghost small" type="button" onclick={() => avatarInput.click()}>{t('avatarChange')}</button>
+          {#if store.avatarUrl(store.s.username)}<button class="ghost small" type="button" onclick={removeAvatar}>{t('avatarRemove')}</button>{/if}
+        </div>
+        {#if avatarBusy}<p class="muted tiny">…</p>{/if}{#if avatarError}<p class="error" role="alert">{avatarError}</p>{/if}
+      </div>
+      <input bind:this={avatarInput} type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/avif" hidden onchange={pickAvatar} />
+    </div>
+    <p class="muted" dir="ltr">{store.api.base || location.origin}</p>
+    {#if inShell()}<NetOptions />{/if}
+    {#if store.s.trust?.[store.s.serverUrl]}
+      <p class="muted"><Icon name="check-small" size={14} /> {t('trustedCert')} <code dir="ltr" style="font-size:0.72rem;word-break:break-all">{store.s.trust[store.s.serverUrl]}</code></p>
+      <div class="row"><button onclick={() => store.forgetCertificate()}>{t('forgetCert')}</button></div>
     {/if}
+    <div class="row">
+      <button onclick={() => store.signOut().then(onClose)}>{t('signOut')}</button>
+      {#if store.hasLocalNotes()}<button onclick={upload}>{t('uploadLocal')}</button>{/if}
+    </div>
+
+    <h3>{t('changePassword')}</h3>
+    <form class="row" onsubmit={changePw}>
+      <input type="password" bind:value={oldPw} placeholder={t('oldPassword')} required autocomplete="current-password" dir="ltr" />
+      <input type="password" bind:value={newPw} placeholder={t('newPassword')} required minlength="8" autocomplete="new-password" dir="ltr" />
+      <button>{t('save')}</button>
+    </form>
+
   {:else}
     <p class="muted">{t('localMode')}</p>
     <button onclick={() => (store.showLogin(), onClose())}>{t('signIn')} / {t('server')}</button>
   {/if}
 
-  {#if msg}<p class="ok">{msg}</p>{/if}
-  {#if error}<p class="error" role="alert">{error}</p>{/if}
-
-  <p class="muted tiny">Qalamark {''}· AGPL-3.0-or-later · <a href="https://github.com/mmBesar/Qalamark" target="_blank" rel="noopener">GitHub</a></p>
+          </div>
+        {/if}
+        {#if msg}<p class="ok">{msg}</p>{/if}
+        {#if error}<p class="error" role="alert">{error}</p>{/if}
+      </div>
+    </div>
+  </div>
 </dialog>

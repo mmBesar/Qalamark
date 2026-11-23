@@ -10,8 +10,9 @@ import { codeStyle } from './codestyle.ts';
 import { findLanguage } from './langs.ts';
 import { bracketMatching, codeFolding, foldGutter, foldKeymap, HighlightStyle, indentOnInput, syntaxHighlighting } from '@codemirror/language';
 import { highlightSelectionMatches, searchKeymap, selectNextOccurrence, selectSelectionMatches } from '@codemirror/search';
-import { Compartment, EditorSelection, EditorState, type Extension, type Range } from '@codemirror/state';
-import { Decoration, type DecorationSet, ViewPlugin, type ViewUpdate, crosshairCursor, drawSelection, dropCursor, EditorView, highlightActiveLine, highlightActiveLineGutter, keymap, lineNumbers, placeholder, rectangularSelection, type Command } from '@codemirror/view';
+import { Compartment, EditorSelection, Prec, EditorState, type Extension, type Range } from '@codemirror/state';
+import { Decoration, type DecorationSet, ViewPlugin, type ViewUpdate, crosshairCursor, drawSelection, dropCursor, EditorView, highlightActiveLine, highlightActiveLineGutter, keymap, lineNumbers, placeholder, rectangularSelection, runScopeHandlers, type Command } from '@codemirror/view';
+import { latinKey } from '../lib/keys.ts';
 import { tags as t } from '@lezer/highlight';
 import { yCollab, yUndoManagerKeymap } from 'y-codemirror.next';
 import { UndoManager } from 'yjs';
@@ -26,6 +27,23 @@ import { type BaseHooks, baseExtension } from './base.ts';
 import { type TableLabels, tablesExtension } from './tables.ts';
 
 // Colours for Source mode (plain Markdown text, nicely coloured).
+/** Move (or extend) each cursor to the first or last character of its line, unless the line is wrapped over several rows. */
+function lineEdge(end: boolean, extend: boolean): Command {
+  return (view) => {
+    let wrapped = false;
+    const sel = EditorSelection.create(view.state.selection.ranges.map((r) => {
+      const line = view.state.doc.lineAt(r.head);
+      const a = view.coordsAtPos(line.from, 1), b = view.coordsAtPos(line.to, -1);
+      if (a && b && Math.abs(a.top - b.top) > 4) wrapped = true;
+      const to = end ? line.to : line.from;
+      return extend ? EditorSelection.range(r.anchor, to) : EditorSelection.cursor(to);
+    }), view.state.selection.mainIndex);
+    if (wrapped) return false;
+    view.dispatch({ selection: sel, scrollIntoView: true, userEvent: 'select' });
+    return true;
+  };
+}
+
 const sourceStyle = HighlightStyle.define([
   { tag: t.heading, color: 'var(--accent)', fontWeight: '700' },
   { tag: t.strong, fontWeight: '700' },
@@ -451,6 +469,9 @@ export function createEditor(o: EditorOptions): Editor {
     if (mode === 'source') return [common, syntaxHighlighting(sourceStyle), plainFrontMatter, vscodeEditing, EditorView.editorAttributes.of({ class: 'cm-source' })];
     return [common, livePreview, mkdocsBlocks, codeTitles, tables, ...bases, readingMode.of(mode === 'read'), ...(o.images ? [pictures(o.images)] : [])];
   };
+  const selDraw = new Compartment();
+  const fine = typeof matchMedia === 'function' && matchMedia('(pointer: fine)').matches && !/Android/i.test(navigator.userAgent);
+  let drawn = false;
   const extensions = [
     modeSlot.of(forMode(o.mode)),
     yCollab(o.ytext, o.awareness, { undoManager: undo }),
@@ -458,7 +479,20 @@ export function createEditor(o: EditorOptions): Editor {
     syntaxHighlighting(codeStyle),
     autoCalc(o.awareness),
     EditorState.allowMultipleSelections.of(true),
-    drawSelection(),
+    // The drawn selection (needed for several cursors and for touch handles) misses numbers inside Arabic lines, so on a computer
+    // with a mouse a single selection is shown by the browser itself, which gets mixed directions right. Several cursors switch the
+    // drawn one back on.
+    selDraw.of(fine ? [] : drawSelection()),
+    ViewPlugin.fromClass(class {
+      constructor(readonly view: EditorView) {}
+      update(u: ViewUpdate) {
+        if (!fine || !u.selectionSet) return;
+        const multi = u.state.selection.ranges.length > 1;
+        if (multi === drawn) return;
+        drawn = multi;
+        queueMicrotask(() => this.view.dispatch({ effects: selDraw.reconfigure(multi ? [drawSelection()] : []) }));
+      }
+    }),
     edgeClicks,
     touchHandles,
     dropCursor(),
@@ -469,7 +503,22 @@ export function createEditor(o: EditorOptions): Editor {
     wikiConfig.of({ titles: o.titles, open: o.openLink }),
     highlightSelectionMatches({ minSelectionLength: 3, wholeWords: true, highlightWordAroundCursor: false }),
     // Triple-click selects the line itself, not the line break (which dragged the cursor onto the next line).
+    // Home and End go to the start and end of the line as it is written (the first and last character), also on lines that mix
+    // Arabic and numbers or Latin words, where the default visual rule stopped in the middle. Wrapped lines keep the default.
+    Prec.high(keymap.of([
+      { key: 'Home', shift: lineEdge(false, true), run: lineEdge(false, false) },
+      { key: 'End', shift: lineEdge(true, true), run: lineEdge(true, false) },
+    ])),
     EditorView.domEventHandlers({
+      // shortcuts follow the physical key, so Ctrl+Z, Ctrl+B ... work with an Arabic (or any other) keyboard layout on
+      keydown(e, view) {
+        if (!(e.ctrlKey || e.metaKey || e.altKey) || e.key.length !== 1 && !/^[^\x00-\x7f]/.test(e.key)) return false;
+        const k = latinKey(e);
+        if (k === e.key || k === e.key.toLowerCase()) return false;
+        const ne = new KeyboardEvent('keydown', { key: e.shiftKey ? k.toUpperCase() : k, code: e.code, keyCode: e.keyCode, ctrlKey: e.ctrlKey, metaKey: e.metaKey, altKey: e.altKey, shiftKey: e.shiftKey, cancelable: true });
+        if (runScopeHandlers(view, ne, 'editor')) { e.preventDefault(); return true; }
+        return false;
+      },
       mousedown(e, view) {
         if (e.detail !== 3 || e.button !== 0) return false;
         const pos = view.posAtCoords({ x: e.clientX, y: e.clientY });

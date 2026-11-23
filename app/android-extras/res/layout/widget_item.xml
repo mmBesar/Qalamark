@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+  android:id="@+id/i_root" android:layout_width="match_parent" android:layout_height="wrap_content"
+  android:orientation="horizontal" android:gravity="center_vertical" android:layoutDirection="ltr" android:minHeight="44dp">
+  <ImageView android:id="@+id/i_box" android:layout_width="26dp" android:layout_height="26dp" android:layout_marginLeft="4dp" android:layout_marginRight="4dp" android:src="@drawable/qm_box_off" />
+  <TextView android:id="@+id/i_text" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:layout_marginLeft="6dp" android:layout_marginRight="6dp"
+    android:textSize="16sp" android:textColor="#CDD6F4" android:maxLines="3" android:ellipsize="end" android:textDirection="firstStrong" android:textAlignment="viewStart" />
+</LinearLayout>

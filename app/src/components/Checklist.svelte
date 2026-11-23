@@ -8,12 +8,13 @@
   import { onMount, tick } from 'svelte';
   import { fade, fly, slide } from 'svelte/transition';
   import Icon from './Icon.svelte';
+  import { cleanGestures, type TaskAction } from '../lib/gestures.ts';
   import { store } from '../lib/store.svelte.ts';
   import { applyText } from '../lib/ytext.ts';
   import { pieces } from '../lib/headings.ts';
   import { readFrontMatter } from '../lib/frontmatter.ts';
   import { pop } from '../lib/motion.ts';
-  import { addItem, addSection, addSub, clearDone, deleteItem, editItem, indentItem, moveItem, outdentItem, parseChecklist, renameSection, sectionLeaves, setAll, toggleItem, type Item, type Section } from '../lib/checklist.ts';
+  import { addItem, addSection, flatItems, addSub, clearDone, deleteItem, editItem, indentItem, moveItem, outdentItem, parseChecklist, renameSection, sectionLeaves, setAll, toggleItem, type Item, type Section } from '../lib/checklist.ts';
 
   let { ytext, readOnly, noteId, onText }: { ytext: YText; readOnly: boolean; noteId?: string; onText?: () => void } = $props();
   const t = store.t;
@@ -101,13 +102,24 @@
   let st = { x: 0, y: 0, live: false, w: 1, line: -1, dir: 1 };
   let pressTimer: ReturnType<typeof setTimeout> | undefined;
   let pressed = false;
+  const title = $derived(store.notes.find((n) => n.id === noteId)?.title ?? '');
+  const g = $derived(cleanGestures(store.s.gestures));
+  /** do what the person chose for a gesture */
+  function run(a: TaskAction, it: Item) {
+    if (a === 'tick') change(toggleItem(text, it.line));
+    else if (a === 'delete') change(deleteItem(text, it.line), t('taskRemoved'));
+    else if (a === 'edit') editing = it.line;
+    else if (a === 'menu') menuFor = { line: it.line, moving: false };
+  }
+  const actIcon = (a: TaskAction) => (a === 'tick' ? 'check-small' : a === 'delete' ? 'trash' : a === 'edit' ? 'edit' : 'more');
+  const actColor = (a: TaskAction) => (a === 'tick' ? 'var(--ok)' : a === 'delete' ? 'var(--danger)' : 'var(--accent)');
   function down(e: PointerEvent, it: Item) {
     if (readOnly || e.pointerType === 'mouse' || (e.target as Element).closest('button, input, a')) return;
     const el = e.currentTarget as HTMLElement;
-    st = { x: e.clientX, y: e.clientY, live: false, w: el.getBoundingClientRect().width, line: it.line, dir: getComputedStyle(el).direction === 'rtl' ? -1 : 1 };
+    st = { x: e.clientX, y: e.clientY, live: false, w: el.getBoundingClientRect().width, line: it.line, dir: 1 };
     pressed = false;
     clearTimeout(pressTimer);
-    pressTimer = setTimeout(() => { if (!st.live && st.line === it.line) { pressed = true; editing = it.line; navigator.vibrate?.(8); } }, 480);
+    pressTimer = setTimeout(() => { if (!st.live && st.line === it.line && g.longPress !== 'none') { pressed = true; run(g.longPress, it); navigator.vibrate?.(8); } }, 480);
   }
   function move(e: PointerEvent) {
     if (st.line < 0) return;
@@ -129,8 +141,9 @@
       const line = sw.line;
       const dx = sw.dx;
       sw = null;
-      if (dx > need) change(toggleItem(text, line));
-      else if (dx < -need) change(deleteItem(text, line), t('taskRemoved'));
+      const item = list.sections.flatMap((x) => flatItems(x.items)).find((x) => x.line === line);
+      if (item && dx > need) run(g.swipeRight, item);
+      else if (item && dx < -need) run(g.swipeLeft, item);
     } else sw = null;
     st.line = -1;
     st.live = false;
@@ -146,8 +159,7 @@
       return;
     }
     if (readOnly) return;
-    if (boxOnly) editing = it.line;
-    else change(toggleItem(text, it.line));
+    run(boxOnly ? 'edit' : g.tap, it);
   }
   const kids = (it: Item) => it.children.length;
   const kidsDone = (it: Item) => it.children.filter((k) => k.done).length;
@@ -158,7 +170,7 @@
 
 <div class="checklist">
   <div class="ck-inner" class:complete>
-    <header class="ck-head">
+    <header class="ck-head" dir="auto">
       <div class="ring" role="img" aria-label={t('taskOf', { done: list.done, n: list.total })}>
         <svg viewBox="0 0 80 80" width="76" height="76">
           <circle class="track" cx="40" cy="40" r={R} />
@@ -167,6 +179,7 @@
         <span class="ring-n">{#if complete}<Icon name="check-small" size={30} />{:else}{Math.round(pct * 100)}%{/if}</span>
       </div>
       <div class="ck-sum">
+        {#if title}<h2 class="ck-title" dir="auto">{title}</h2>{/if}
         <strong>{complete ? t('taskAllDone') : t('taskOf', { done: list.done, n: list.total })}</strong>
       </div>
       {#if !readOnly}
@@ -282,11 +295,11 @@
 
 {#snippet row(it: Item, sec: Section)}
   {@const closed = !!folded[itemKey(it)]}
-  <li class="ck-row-wrap" class:swiping={sw?.line === it.line} class:tick-side={sw?.line === it.line && sw.dx > 0} class:del-side={sw?.line === it.line && sw.dx < 0} transition:slide|global={{ duration: 180 }}>
-    <span class="ck-sw ck-sw-tick" aria-hidden="true"><Icon name="check-small" size={24} /></span>
-    <span class="ck-sw ck-sw-del" aria-hidden="true"><Icon name="trash" size={20} /></span>
+  <li class="ck-row-wrap" class:swiping={sw?.line === it.line} class:r-side={sw?.line === it.line && sw.dx > 0} class:l-side={sw?.line === it.line && sw.dx < 0} transition:slide|global={{ duration: 180 }}>
+    <span class="ck-sw ck-sw-r" style:background={actColor(g.swipeRight)} aria-hidden="true">{#if g.swipeRight !== 'none'}<Icon name={actIcon(g.swipeRight)} size={22} />{/if}</span>
+    <span class="ck-sw ck-sw-l" style:background={actColor(g.swipeLeft)} aria-hidden="true">{#if g.swipeLeft !== 'none'}<Icon name={actIcon(g.swipeLeft)} size={22} />{/if}</span>
     <!-- svelte-ignore a11y_no_static_element_interactions -->
-    <div class="ck-row" dir="auto" class:done={it.done} class:has-kids={kids(it) > 0} style:transform={sw?.line === it.line ? `translateX(${sw.dx * (document.documentElement.dir === 'rtl' ? -1 : 1) * 1}px)` : undefined}
+    <div class="ck-row" dir="auto" class:done={it.done} class:has-kids={kids(it) > 0} style:transform={sw?.line === it.line ? `translateX(${sw.dx}px)` : undefined}
       onpointerdown={(e) => down(e, it)} onpointermove={move} onpointerup={up} onpointercancel={up} onclickcapture={swallow}>
       {#if kids(it)}
         <button class="fold" aria-expanded={!closed} aria-label={it.text} onclick={() => fold(itemKey(it))}><span class="caret" class:open={!closed}><Icon name="chevron" size={16} /></span></button>
@@ -301,7 +314,7 @@
         }} />
       {:else}
         <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-        <span class="ck-label" onclick={(e) => onLabel(e, it)} ondblclick={() => { if (!readOnly && !boxOnly) editing = it.line; }}>{#each pieces(it.text) as p}{#if p.kind === 'text'}{p.text}{:else}<a href={p.kind === 'url' ? p.target : '#'} class="clink" data-kind={p.kind} data-target={p.target}>{p.text}</a>{/if}{/each}</span>
+        <span class="ck-label" onclick={(e) => onLabel(e, it)} ondblclick={() => { if (!readOnly && !boxOnly && g.tap !== 'edit') editing = it.line; }}>{#each pieces(it.text) as p}{#if p.kind === 'text'}{p.text}{:else}<a href={p.kind === 'url' ? p.target : '#'} class="clink" data-kind={p.kind} data-target={p.target}>{p.text}</a>{/if}{/each}</span>
         {#if kids(it)}<span class="ck-kids">{kidsDone(it)}/{kids(it)}</span>{/if}
         {#if !readOnly}
           <span class="ck-tools">
@@ -364,6 +377,8 @@
   .complete .ring-n { color: var(--ok); animation: pop 0.4s cubic-bezier(0.2, 1.6, 0.4, 1); }
   .ck-sum { display: flex; flex-direction: column; gap: 0.1rem; flex: 1; min-width: 8rem; }
   .ck-sum strong { font-size: 1.2rem; }
+  .ck-title { align-self: stretch; margin: 0 0 0.1rem; font-size: 1.5rem; line-height: 1.25; overflow-wrap: anywhere; text-align: start; }
+  .ck-sum strong { font-size: 0.95rem; font-weight: 500; color: var(--muted); }
   .ck-actions { display: flex; gap: 0.35rem; flex-wrap: wrap; }
   @media (max-width: 760px) { .ck-inner { padding-top: 4.6rem; } }
   .ck-sec { margin-top: 1.1rem; }
@@ -383,9 +398,10 @@
   .ck-items { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.35rem; }
   .ck-row-wrap { position: relative; border-radius: 16px; }
   .ck-sw { position: absolute; inset-block: 0; display: grid; place-items: center; width: 100%; opacity: 0; transition: opacity 0.15s; border-radius: 16px; color: #fff; }
-  .ck-sw-tick { background: var(--ok); justify-content: start; padding-inline-start: 1.1rem; }
-  .ck-sw-del { background: var(--danger); justify-content: end; padding-inline-end: 1.1rem; }
-  .tick-side > .ck-sw-tick, .del-side > .ck-sw-del { opacity: 1; }
+  .ck-sw { direction: ltr; }
+  .ck-sw-r { justify-content: start; padding-left: 1.1rem; }
+  .ck-sw-l { justify-content: end; padding-right: 1.1rem; }
+  .r-side > .ck-sw-r, .l-side > .ck-sw-l { opacity: 1; }
   .ck-row { position: relative; display: flex; align-items: center; gap: 0.7rem; min-height: 3.4rem; padding: 0.35rem 0.6rem 0.35rem 0.9rem; padding-inline: 0.7rem 0.6rem; border-radius: 16px; background: var(--surface); border: 1px solid var(--hairline); touch-action: pan-y; transition: transform 0.22s cubic-bezier(0.2, 0.8, 0.2, 1), background 0.15s, border-color 0.15s; }
   .swiping .ck-row { transition: none; }
   .ck-row:hover { border-color: var(--accent); }

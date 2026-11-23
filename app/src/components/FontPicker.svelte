@@ -82,5 +82,8 @@
       {/each}
     </div>
   {/if}
-  <div class="fp-sample" dir="ltr" style:--pick={draft ? `'${draft.replace(/['"\\]/g, '')}'` : ''}><span class="fp-en">Aa Bb ·</span> <span class="fp-ar" dir="rtl">أبجد · سَيِّدُ الِاسْتِغْفَارِ</span></div>
+  <div class="fp-sample" style:--pick={draft ? `'${draft.replace(/['"\\]/g, '')}'` : ''}>
+    <div class="fp-en" dir="ltr">Quiet notes, bright ideas — 2026</div>
+    <div class="fp-ar" dir="rtl">أفكار هادئة، وكلمات تنبض بالحياة ١٢٣٤</div>
+  </div>
 </div>

@@ -1,6 +1,7 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
 <!-- Copyright (C) 2026 mmBesar -->
 <script lang="ts">
+  import { latinKey } from './lib/keys.ts';
   import { onMount, untrack } from 'svelte';
   import Editor from './components/Editor.svelte';
   import Login from './components/Login.svelte';
@@ -19,7 +20,13 @@
 
   let drawer = $state(false);
 
+  // the home-screen widget follows the notes: one refresh after a burst of changes, never on a timer
+  $effect(() => {
+    store.notes.map((n) => n.updated).join(',');
+    untrack(() => store.widgetKick());
+  });
   onMount(() => {
+    store.startWidgets();
     void store.boot();
   });
 
@@ -218,6 +225,6 @@
 {/if}
 {#if store.toolbarOpen}<ToolbarDialog />{/if}
 {#if store.palette}<Palette onSettings={() => (store.settingsOpen = true)} />{/if}
-<svelte:window ontouchstart={swStart} ontouchmove={swMove} ontouchend={swEnd} ontouchcancel={swEnd} oncontextmenu={onContext} onkeydown={(e) => { if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && (e.key === 'p' || e.key === 'k') && store.mode !== 'login' && store.mode !== 'welcome' && store.mode !== 'boot') { e.preventDefault(); store.palette = !store.palette; } else if (e.altKey && !e.ctrlKey && !e.metaKey && e.key === 'w' && store.currentId) { e.preventDefault(); store.closeTabs([store.currentId]); } else if ((e.ctrlKey || e.metaKey) && e.key === '\\' && store.mode !== 'login' && store.mode !== 'welcome') { e.preventDefault(); store.toggleSide(); } else if (e.altKey && !e.ctrlKey && !e.metaKey && e.key === 'z' && store.mode !== 'login' && store.mode !== 'welcome') { e.preventDefault(); store.toggleZen(); } else if (e.key === 'Escape' && store.zen && !store.palette) { store.zen = false; } else if (e.ctrlKey && e.key === 'Tab') { e.preventDefault(); store.nextTab(e.shiftKey ? -1 : 1); } }} />
+<svelte:window ontouchstart={swStart} ontouchmove={swMove} ontouchend={swEnd} ontouchcancel={swEnd} oncontextmenu={onContext} onkeydown={(e) => { if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && (latinKey(e) === 'p' || latinKey(e) === 'k') && store.mode !== 'login' && store.mode !== 'welcome' && store.mode !== 'boot') { e.preventDefault(); store.palette = !store.palette; } else if (e.altKey && !e.ctrlKey && !e.metaKey && latinKey(e) === 'w' && store.currentId) { e.preventDefault(); store.closeTabs([store.currentId]); } else if ((e.ctrlKey || e.metaKey) && latinKey(e) === '\\' && store.mode !== 'login' && store.mode !== 'welcome') { e.preventDefault(); store.toggleSide(); } else if (e.altKey && !e.ctrlKey && !e.metaKey && latinKey(e) === 'z' && store.mode !== 'login' && store.mode !== 'welcome') { e.preventDefault(); store.toggleZen(); } else if (e.key === 'Escape' && store.zen && !store.palette) { store.zen = false; } else if (e.ctrlKey && e.key === 'Tab') { e.preventDefault(); store.nextTab(e.shiftKey ? -1 : 1); } }} />
 <DialogHost />
 <ContextMenu />

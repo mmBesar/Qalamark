@@ -99,9 +99,17 @@ jobs:
           grep -q 'ACCESS_LOCAL_NETWORK' "$M" || sed -i 's|<application|<uses-permission android:name="android.permission.ACCESS_LOCAL_NETWORK" />\n    <application|' "$M"
           # Documents/Qalamark is outside the app's own space: Android asks for "all files" access (Settings, once)
           grep -q 'MANAGE_EXTERNAL_STORAGE' "$M" || sed -i 's|<application|<uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />\n    <application|' "$M"
+          # background running (a quiet notification) and the home-screen checklist widget
+          for P in FOREGROUND_SERVICE FOREGROUND_SERVICE_SPECIAL_USE POST_NOTIFICATIONS; do
+            grep -q "android.permission.$P" "$M" || sed -i "s|<application|<uses-permission android:name=\"android.permission.$P\" />\n    <application|" "$M"
+          done
+          python3 android-extras/patch_manifest.py "$M"
           python3 -c "import xml.dom.minidom,sys; xml.dom.minidom.parse(sys.argv[1])" "$M"
           # our launcher icon (the generated project starts with a placeholder one)
           cp -r src-tauri/icons/android/. src-tauri/gen/android/app/src/main/res/
+          # the home-screen widget and the background service (native code and resources kept in android-extras)
+          cp -r android-extras/res/. src-tauri/gen/android/app/src/main/res/
+          cp android-extras/kotlin/*.kt src-tauri/gen/android/app/src/main/java/io/github/mmbesar/qalamark/
           # Android 15+ draws apps under the status and navigation bars: keep the page clear of them
           cat > src-tauri/gen/android/app/src/main/java/io/github/mmbesar/qalamark/MainActivity.kt <<'KOTLIN'
           package io.github.mmbesar.qalamark
@@ -129,6 +137,17 @@ jobs:
             // true while the page asked for full screen: the bars that come back with a swipe then float over the note
             // instead of pushing it down (which made the page jump, and jump back when they hid again)
             @Volatile private var hiding = false
+            // true while "keep notes up to date in the background" is on: the page keeps running when the app is not in front
+            @Volatile private var keep = false
+            private var web: WebView? = null
+
+            override fun onPause() {
+              super.onPause()
+              if (keep) {
+                web?.onResume()
+                web?.resumeTimers()
+              }
+            }
 
             override fun onCreate(savedInstanceState: Bundle?) {
               super.onCreate(savedInstanceState)
@@ -162,7 +181,40 @@ jobs:
 
             // lets the page hide the status and navigation bars while reading (they come back with a swipe from the edge)
             override fun onWebViewCreate(webView: WebView) {
+              web = webView
+              QmPrefs.web = webView
               webView.addJavascriptInterface(object {
+                // the home-screen widget: the page hands over its checklists and takes back what was ticked
+                @JavascriptInterface
+                fun widgetData(json: String) {
+                  QmPrefs.setLists(applicationContext, json)
+                  ChecklistWidget.refreshAll(applicationContext)
+                }
+                @JavascriptInterface
+                fun takeTicks(): String = QmPrefs.takeTicks(applicationContext)
+                @JavascriptInterface
+                fun pushTick(json: String) {
+                  QmPrefs.pushTick(applicationContext, json)
+                }
+                // keep running in the background with a quiet notification
+                @JavascriptInterface
+                fun keepAlive(on: Boolean) {
+                  runOnUiThread {
+                    keep = on
+                    val svc = Intent(this@MainActivity, KeepAliveService::class.java)
+                    try {
+                      if (on) {
+                        if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission("android.permission.POST_NOTIFICATIONS") != PackageManager.PERMISSION_GRANTED) {
+                          requestPermissions(arrayOf("android.permission.POST_NOTIFICATIONS"), 8)
+                        }
+                        if (Build.VERSION.SDK_INT >= 26) startForegroundService(svc) else startService(svc)
+                      } else {
+                        stopService(svc)
+                      }
+                    } catch (e: Exception) {
+                    }
+                  }
+                }
                 @JavascriptInterface
                 fun immersive(on: Boolean) {
                   runOnUiThread {

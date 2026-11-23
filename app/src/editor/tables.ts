@@ -6,6 +6,7 @@
 // writes the new text (and recalculates the formulas).
 
 import { themed } from './dropdown.ts';
+import { latinKey } from '../lib/keys.ts';
 import { describeTables, editCell, setFormulas, tableOp, type TableOp, type TableView } from '@qalamark/tables';
 import { type EditorState, type Range, StateField } from '@codemirror/state';
 import { Decoration, type DecorationSet, EditorView, WidgetType } from '@codemirror/view';
@@ -215,11 +216,11 @@ class TableWidget extends WidgetType {
         });
         input.addEventListener('keydown', (e) => {
           const mod = e.ctrlKey || e.metaKey;
-          if (mod && !e.altKey && (e.key.toLowerCase() === 'z' || e.key.toLowerCase() === 'y')) {
+          if (mod && !e.altKey && (latinKey(e) === 'z' || latinKey(e) === 'y')) {
             // Undo / redo work for the whole note, also from inside a table.
             e.preventDefault();
             input.value = start; // drop what is half typed
-            const redo = e.key.toLowerCase() === 'y' || e.shiftKey;
+            const redo = latinKey(e) === 'y' || e.shiftKey;
             history(redo ? 'Mod-y' : 'Mod-z')?.(view);
             return;
           }

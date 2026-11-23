@@ -7,14 +7,25 @@
   import type { Text as YText } from 'yjs';
   import { COMMON_PROPS, KEY_CHOICES, readFrontMatter, type Prop, type PropType, VIEW_PROPS, withProps } from '../lib/frontmatter.ts';
   import { pop } from '../lib/motion.ts';
-  import { fade } from 'svelte/transition';
+  import { fade, slide } from 'svelte/transition';
   import { store } from '../lib/store.svelte.ts';
 
   let { ytext, readOnly, noteId }: { ytext: YText; readOnly: boolean; noteId: string } = $props();
   const t = store.t;
 
   let doc = $state(ytext.toString());
-  let openPanel = $state(false);
+  // open by default; the choice is remembered for each note
+  const PANEL = (id: string) => 'qm.props.' + id;
+  const loadPanel = (id: string) => { try { return localStorage.getItem(PANEL(id)) !== '0'; } catch { return true; } };
+  let openPanel = $state(loadPanel(noteId));
+  let panelFor = noteId;
+  $effect(() => { if (noteId !== panelFor) { panelFor = noteId; openPanel = loadPanel(noteId); picking = false; adding = false; } });
+  function togglePanel() {
+    openPanel = !openPanel;
+    try { localStorage.setItem(PANEL(noteId), openPanel ? '1' : '0'); } catch { /* private window */ }
+  }
+  // the ready-made names only show while you are choosing one to add
+  let picking = $state(false);
   let adding = $state(false);
   let newKey = $state('');
   let newType = $state<PropType>('text');
@@ -60,6 +71,7 @@
     const known = COMMON_PROPS.find((c) => c.key === k.toLowerCase());
     commit([...plist, { key: k, type: known?.type ?? type, text: value ?? known?.value ?? (type === 'checkbox' ? 'false' : ''), items: [] }]);
     adding = false;
+    picking = false;
     newKey = '';
     openPanel = true;
   }
@@ -135,7 +147,7 @@
 
 {#if fm || !readOnly}
   <div class="props" class:open={openPanel}>
-    <button class="props-head" onclick={() => (openPanel = !openPanel)} aria-expanded={openPanel}>
+    <button class="props-head" onclick={togglePanel} aria-expanded={openPanel}>
       <span class="caret">{openPanel ? '▾' : store.lang === 'ar' ? '◂' : '▸'}</span>
       <strong>{t('properties')}</strong>
       {#if !openPanel}
@@ -147,6 +159,7 @@
     </button>
 
     {#if openPanel}
+     <div class="props-box" transition:slide={{ duration: 160 }}>
       {#if fm && !fm.editable}
         <p class="muted tiny">{t('propsComplex')}</p>
       {:else}
@@ -176,16 +189,20 @@
               <button class="primary small" type="submit">{t('add')}</button>
               <button class="ghost small" type="button" onclick={() => (adding = false)}>✕</button>
             </form>
-          {:else}
-            <div class="props-quick">
+          {:else if picking}
+            <div class="props-quick" transition:slide={{ duration: 140 }}>
               {#each unused as c (c.key)}
                 <button class="ghost small" onclick={() => addProp(c.key, c.type)}>＋ {c.key}</button>
               {/each}
-              <button class="ghost small" onclick={() => (adding = true)}>＋ {t('propsCustom')}</button>
+              <button class="ghost small" onclick={() => { picking = false; adding = true; }}>＋ {t('propsCustom')}</button>
+              <button class="ghost small" aria-label={t('close')} onclick={() => (picking = false)}>✕</button>
             </div>
+          {:else}
+            <div class="props-foot"><button class="ghost small props-addbtn" onclick={() => (picking = true)}>＋ {t('propsAdd')}</button></div>
           {/if}
         {/if}
       {/if}
+     </div>
     {/if}
   </div>
 {/if}

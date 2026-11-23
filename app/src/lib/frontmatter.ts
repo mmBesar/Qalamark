@@ -141,7 +141,7 @@ export function withProps(doc: string, props: Prop[]): string {
 
 /** Properties people usually want; offered in the "add" list. `value` is what a new one starts with. */
 export const COMMON_PROPS: Array<{ key: string; type: PropType; value?: string }> = [
-  { key: 'view', type: 'text', value: 'checklist' },
+  { key: 'view', type: 'text', value: 'note' },
   { key: 'title', type: 'text' },
   { key: 'tags', type: 'list' },
   { key: 'aliases', type: 'list' },

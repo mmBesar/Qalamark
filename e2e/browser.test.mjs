@@ -248,7 +248,7 @@ test('round 2: folders, templates, properties, MkDocs blocks, pictures, builder,
   assert.match(await page.locator('.qt-builder .qt-preview').innerText(), /^[A-Z] = /);
 
   // Properties: add tags from the panel; the note text gets the front matter.
-  await page.click('.props-head');
+  await page.click('.props-addbtn');
   await page.click('.props-quick >> text=tags');
   await page.fill('.props-grid input', 'work, plan');
   await page.keyboard.press('Tab');
@@ -258,7 +258,7 @@ test('round 2: folders, templates, properties, MkDocs blocks, pictures, builder,
   assert.equal(await page.locator('.props-head').count(), 0);
   await page.click('button:has-text("Live preview")');
   assert.ok(!/tags:/.test(await page.locator('.cm-content').innerText()), 'front matter is hidden in live preview');
-  assert.match(await page.locator('.props-summary').innerText(), /#work/);
+  assert.match(await page.locator('.props-grid').evaluate((g) => [...g.querySelectorAll('input')].map((i) => i.value).join(' ') + g.innerText), /work/);
 
   // MkDocs blocks render as boxes and tabs.
   await page.click('.cm-line >> nth=-1');
@@ -292,6 +292,7 @@ test('round 2: folders, templates, properties, MkDocs blocks, pictures, builder,
   // Layout settings: text size reaches the table, the page can be centered.
   await page.click('aside header button[aria-label="Settings"]');
   await page.waitForSelector('dialog[open]');
+  await page.click('.set-tabs button:has-text("Text and fonts")');
   await page.locator('dialog input[type=range]').first().fill('24');
   const tableFont = await page.evaluate(() => getComputedStyle(document.querySelector('.qt-cell')).fontSize);
   assert.equal(tableFont, '22.8px');
@@ -483,13 +484,13 @@ test('round 7: context menus, long-press, swipe drawer, live tabs, selection, cl
   assert.equal(sel.trim(), 'some plain words here');
   // double-click selects a word and the selection layer is visible
   await page.locator('.cm-line:has-text("some plain words")').click({ clickCount: 2, position: { x: 60, y: 8 } });
-  await page.waitForSelector('.cm-selectionBackground', { state: 'attached', timeout: 4000 });
+  await page.waitForFunction(() => !!document.querySelector('.cm-selectionBackground') || (getSelection().rangeCount > 0 && !getSelection().isCollapsed), null, { timeout: 4000 });
 
   // right-click in the editor: themed app menu, inside the window
   await page.locator('.cm-line:has-text("second line")').click({ button: 'right' });
   await page.waitForSelector('.ctx');
   const cb = await page.locator('.ctx').boundingBox();
-  assert.ok(cb.x >= 0 && cb.y >= 0 && cb.x + cb.width <= 1100 && cb.y + cb.height <= 760, 'menu stays on screen');
+  assert.ok(cb.x >= 0 && cb.y >= 0 && cb.x + cb.width <= 1100 && cb.y + cb.height <= 760, 'menu stays on screen ' + JSON.stringify(cb));
   const bg = await page.locator('.ctx').evaluate((el) => getComputedStyle(el).backgroundColor);
   assert.ok(bg !== 'rgba(0, 0, 0, 0)', 'menu has the theme background');
   await page.keyboard.press('Escape');
@@ -700,7 +701,7 @@ test('round 10: selection is drawn on the text, and pressing beside the page sti
   await page.keyboard.insertText('The quick brown fox jumps over the lazy dog and keeps running through the long green field until evening, then rests.\n\nSecond paragraph.');
   await page.click('body');
   const line = await page.locator('.cm-line').first().boundingBox();
-  const rects = () => page.evaluate(() => [...document.querySelectorAll('.cm-selectionBackground')].map((e) => e.getBoundingClientRect()).map((r) => [r.left, r.right]));
+  const rects = () => page.evaluate(() => { const d = [...document.querySelectorAll('.cm-selectionBackground')].map((e) => e.getBoundingClientRect()); const rs = d.length ? d : (getSelection().rangeCount ? [...getSelection().getRangeAt(0).getClientRects()] : []); return rs.map((r) => [r.left, r.right]); });
   const textLeft = await page.evaluate(() => { const l = document.querySelector('.cm-line'); return l.getBoundingClientRect().left + parseFloat(getComputedStyle(l).paddingLeft); });
   // drag across a wrapped line
   await page.mouse.move(line.x + 80, line.y + 12);
@@ -1464,12 +1465,17 @@ test('props 1: view is offered and chosen from a list, the name list is themed a
   page.on('pageerror', (e) => errors.push(e.message));
   await signIn(page, 'alice', 'alice-password');
   await freshNote(page, 'Props');
-  await page.click('.props-head');
+  // open by default, and the ready-made names only show when adding
+  assert.equal(await page.locator('.props-quick').count(), 0);
+  await page.click('.props-addbtn');
   await page.click('.props-quick button >> text=view');
-  // `view` starts as a checklist, and the note turns into one
+  // `view` starts as a plain note; choosing checklist turns the note into one
+  assert.equal(await page.locator('.checklist').count(), 0);
+  await page.click('.props .selbtn');
+  await page.click('.sel-pop li >> text=checklist');
   await page.waitForSelector('.checklist', { timeout: 5000 });
   // the text side shows the properties
-  const back = async () => { await page.locator('.topbar button >> text=Live preview').click(); await page.waitForSelector('.props'); if (await page.locator('.props:not(.open)').count()) await page.click('.props-head'); await page.waitForSelector('.props .selbtn'); };
+  const back = async () => { await page.locator('.topbar button >> text=Live preview').click(); await page.waitForSelector('.props'); await page.waitForSelector('.props .selbtn'); };
   await back();
   // its value is a list to choose from
   await page.click('.props .selbtn');
@@ -1481,10 +1487,11 @@ test('props 1: view is offered and chosen from a list, the name list is themed a
   await back();
   await page.click('.props .selbtn');
   await page.click('.sel-pop li >> text=checklist');
+  await page.click('.props-addbtn');
   await page.waitForSelector('.props-quick button >> text=tap');
   assert.ok(await page.locator('.props-quick button >> text=tap').count() === 1, 'tap is offered for checklists');
   // our own list for the name, with plenty of choices and our theme
-  await page.locator('.props-quick button').last().click();
+  await page.locator('.props-quick button', { hasText: 'your own' }).click();
   await page.click('.props-add input');
   await page.waitForSelector('.sug-pop');
   const n = await page.locator('.sug-pop li').count();
@@ -1552,6 +1559,72 @@ test('motion 1: windows and menus leave the way they came; the bottom menu follo
   await page.waitForFunction(() => !document.querySelector('.sheet'));
   // a dialog (settings) closes with an exit, not instantly
   await page.evaluate(() => { document.querySelector('.float-bar button[aria-label="More"]')?.click(); });
+  await ctx.close();
+});
+
+test('rtl 2: English menus stay left-to-right even in an Arabic note', async () => {
+  const ctx = await browser.newContext({ viewport: { width: 1100, height: 760 } });
+  const page = await ctx.newPage();
+  await signIn(page, 'alice', 'alice-password');
+  await freshNote(page, 'مرحبا');
+  await page.keyboard.type('أوبونتو 20.10');
+  await page.click('.menu-wrap.desk button.icon');
+  await page.waitForSelector('.menu-wrap .menu');
+  const r = await page.evaluate(() => { const m = document.querySelector('.menu-wrap .menu'); const b = m.querySelector('button'); const c = getComputedStyle(m); return { dir: c.direction, ta: getComputedStyle(b).textAlign, html: document.documentElement.dir, rect: m.getBoundingClientRect().toJSON(), bt: b.getBoundingClientRect().toJSON(), txt: b.textContent }; });
+  console.log(JSON.stringify(r));
+  assert.equal(r.dir, 'ltr');
+  await ctx.close();
+});
+
+test('bidi 1: Home and Shift+End select mixed Arabic and numbers, and shortcuts work on an Arabic keyboard', async () => {
+  const ctx = await browser.newContext({ viewport: { width: 1100, height: 760 } });
+  const page = await ctx.newPage();
+  await signIn(page, 'alice', 'alice-password');
+  page.on('console', (m) => { if (m.text().startsWith('LINEEDGE')) console.log(m.text()); });
+  await freshNote(page, 'bidi');
+  await page.keyboard.insertText('أوبونتو 20.10\n26.10 أوبونتو');
+  for (const [line, want] of [[1, '26.10 أوبونتو'], [0, 'أوبونتو 20.10']]) {
+    await page.locator('.cm-line').nth(line).click();
+    await page.keyboard.press('Home');
+    console.log('HOME', await page.evaluate(() => { const g = getSelection(); return g.anchorNode?.textContent + '|' + g.anchorOffset; }));
+    await page.keyboard.press('Shift+End');
+    console.log('END', await page.evaluate(() => { const g = getSelection(); return g.anchorNode?.textContent + '|' + g.anchorOffset + ' -> ' + g.focusNode?.textContent + '|' + g.focusOffset; }));
+    const got = await page.evaluate(() => { const v = document.querySelector('.cm-editor'); const sel = getSelection().toString(); const rects = document.querySelectorAll('.cm-selectionBackground').length; return { sel, rects }; });
+    console.log('SEL', line, JSON.stringify(got));
+    await page.screenshot({ path: '/tmp/bidi' + line + '.png', clip: { x: 300, y: 250, width: 800, height: 140 } });
+    assert.equal(got.sel.replace(/[\u200e\u200f]/g, '').trim(), want, 'Home then Shift+End selects the whole line ' + line);
+  }
+  // double click on the number
+  await page.locator('.cm-line').nth(0).dblclick({ position: { x: 20, y: 8 } });
+  // Ctrl+Z with an Arabic layout (the key says ئ, the physical key is Z)
+  await page.keyboard.press('Control+End');
+  await page.keyboard.insertText(' xyz');
+  await page.waitForTimeout(100);
+  await page.evaluate(() => { const el = document.querySelector('.cm-content'); el.dispatchEvent(new KeyboardEvent('keydown', { key: 'ئ', code: 'KeyZ', ctrlKey: true, bubbles: true, cancelable: true })); });
+  await page.waitForTimeout(200);
+  const txt = await page.evaluate(() => document.querySelector('.cm-content').innerText);
+  assert.ok(!txt.includes('xyz'), 'undo worked: ' + JSON.stringify(txt));
+  await ctx.close();
+});
+
+test('settings 1: a full page with tabs on a computer; the properties box remembers open or closed for each note', async () => {
+  const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+  const page = await ctx.newPage();
+  await signIn(page, 'alice', 'alice-password');
+  await freshNote(page, 'Remember');
+  assert.equal(await page.locator('.props-box').count(), 1, 'open by default');
+  await page.click('.props-head');
+  await page.waitForFunction(() => !document.querySelector('.props-box'));
+  await page.reload();
+  await page.waitForSelector('.cm-content');
+  assert.equal(await page.locator('.props-box').count(), 0, 'closed stays closed for this note');
+  await page.click('aside header button[aria-label="Settings"]');
+  await page.waitForSelector('dialog.settings[open] .set-nav');
+  await page.waitForTimeout(500);
+  const r = await page.evaluate(() => { const d = document.querySelector('dialog.settings').getBoundingClientRect(); return { w: d.width, h: d.height }; });
+  assert.ok(r.w >= 1279 && r.h >= 799, 'fills the window ' + JSON.stringify(r));
+  await page.click('.set-tabs button:has-text("Tasks")');
+  await page.waitForSelector('text=Swipe right');
   await ctx.close();
 });
 

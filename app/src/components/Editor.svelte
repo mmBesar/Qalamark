@@ -15,6 +15,7 @@
   import HistoryDialog from './HistoryDialog.svelte';
   import { snapshot } from '../lib/history.ts';
   import { store } from '../lib/store.svelte.ts';
+  import { latinKey } from '../lib/keys.ts';
   import Properties from './Properties.svelte';
   import Icon from './Icon.svelte';
   import Toc from './Toc.svelte';
@@ -173,7 +174,7 @@
   // select-all (when the focus is outside the text, or in Reading mode) would take only those; this selects the note itself.
   $effect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (!(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey || e.key.toLowerCase() !== 'a') return;
+      if (!(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey || latinKey(e) !== 'a') return;
       if (!editorReady || mode === 'board') return;
       const t = e.target as HTMLElement | null;
       if (t?.closest?.('input, textarea, select, dialog, [contenteditable="true"]:not(.cm-content)')) return;

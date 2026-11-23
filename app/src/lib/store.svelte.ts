@@ -17,6 +17,8 @@ import { setArabicFont } from './fonts.ts';
 import { applyText } from './ytext.ts';
 import { chooseBox, confirmBox } from './dialog.svelte.ts';
 import { cleanToolbar, DEFAULT_TOOLBAR } from './toolbar.ts';
+import { DEFAULT_GESTURES, type Gestures } from './gestures.ts';
+import { hasWidgets, isChecklist, keepAlive, publishLists, putBackTick, takeTicks, toggleItem, widgetItems } from './widgets.ts';
 import { deleteStored, readStoredText, syncNoteNow, writeStoredText } from './session.ts';
 
 export type Mode = 'boot' | 'welcome' | 'login' | 'local' | 'server';
@@ -66,6 +68,10 @@ interface Settings {
   hideSide: boolean;
   /** The editor tool bar: tool ids in order ('sep' is a divider). */
   toolbar: string[];
+  /** what a swipe, a tap and a long press do on a task */
+  gestures: Gestures;
+  /** Android: keep running in the background so the notes are already up to date when you look */
+  keepAlive: boolean;
   /** Icons chosen for properties: property name -> icon. */
   propIcons: Record<string, string>;
   /** Self-signed servers the user chose to trust (apps): address -> certificate fingerprint. */
@@ -81,7 +87,7 @@ function defaultLang(): Lang {
 }
 
 class Store {
-  s = $state<Settings>({ lang: 'en', theme: onAndroid() ? 'system' : 'auto', accent: 'default', serverUrl: '', token: '', username: '', admin: false, wantsLocal: false, welcomed: false, fontSize: 17, editorWidth: 50, fontEn: '', fontAr: '', fontCode: '', sideWidth: 304, sourceSize: 15, fontSource: '', centerPage: false, hideSide: false, toolbar: [...DEFAULT_TOOLBAR], propIcons: {}, trust: {}, allowSelfSigned: false, allowHttp: false, ...read<Partial<Settings>>(SETTINGS, { lang: defaultLang() }) });
+  s = $state<Settings>({ lang: 'en', theme: onAndroid() ? 'system' : 'auto', accent: 'default', serverUrl: '', token: '', username: '', admin: false, wantsLocal: false, welcomed: false, fontSize: 17, editorWidth: 50, fontEn: '', fontAr: '', fontCode: '', sideWidth: 304, sourceSize: 15, fontSource: '', centerPage: false, hideSide: false, toolbar: [...DEFAULT_TOOLBAR], gestures: { ...DEFAULT_GESTURES }, keepAlive: true, propIcons: {}, trust: {}, allowSelfSigned: false, allowHttp: false, ...read<Partial<Settings>>(SETTINGS, { lang: defaultLang() }) });
   mode = $state<Mode>('boot');
   serverReachable = $state(false);
   setupNeeded = $state(false);
@@ -111,6 +117,7 @@ class Store {
     const root = document.documentElement;
     root.lang = this.s.lang;
     root.dir = this.s.lang === 'ar' ? 'rtl' : 'ltr';
+    root.style.setProperty('--ui-dir', root.dir);
     // Older versions stored 'light' and 'dark'.
     const legacy: Record<string, Theme> = { light: 'paper', dark: 'mocha' };
     if (legacy[this.s.theme as string]) this.s.theme = legacy[this.s.theme as string]!;
@@ -175,13 +182,27 @@ class Store {
   }
   /** Shrink the picture to a square (so the server and every phone handle a small file) and upload it. */
   async setMyAvatar(file: File): Promise<void> {
-    const bmp = await createImageBitmap(file);
-    const side = Math.min(bmp.width, bmp.height);
+    // decode through an <img>: it works in every web view (createImageBitmap is missing or picky in some)
+    const url = URL.createObjectURL(file);
+    let img: HTMLImageElement;
+    try {
+      img = new Image();
+      img.src = url;
+      await img.decode();
+    } catch {
+      throw new Error('This picture could not be read. Try a PNG or JPEG.');
+    } finally {
+      URL.revokeObjectURL(url);
+    }
+    const w = img.naturalWidth, h = img.naturalHeight;
+    if (!w || !h) throw new Error('This picture could not be read. Try a PNG or JPEG.');
+    const side = Math.min(w, h);
     const size = Math.min(256, side);
     const c = document.createElement('canvas');
     c.width = c.height = size;
-    c.getContext('2d')!.drawImage(bmp, (bmp.width - side) / 2, (bmp.height - side) / 2, side, side, 0, 0, size, size);
-    const blob: Blob = await new Promise((res, rej) => c.toBlob((b) => (b ? res(b) : rej(new Error('Could not read the picture'))), 'image/webp', 0.88));
+    c.getContext('2d')!.drawImage(img, (w - side) / 2, (h - side) / 2, side, side, 0, 0, size, size);
+    // some web views cannot write webp and quietly give a png instead: both are accepted by the server
+    const blob: Blob = await new Promise((res, rej) => c.toBlob((b) => (b ? res(b) : rej(new Error('Could not prepare the picture'))), 'image/webp', 0.88));
     await this.api.setAvatar(blob);
     const k = this.s.username.toLowerCase();
     const old = this.avatars[k];
@@ -195,6 +216,11 @@ class Store {
     const old = this.avatars[k];
     if (old) URL.revokeObjectURL(old);
     this.avatars[k] = null;
+  }
+
+  setGestures(g: Partial<Gestures>) {
+    this.s.gestures = { ...DEFAULT_GESTURES, ...this.s.gestures, ...g };
+    this.save();
   }
 
   setPropIcon(key: string, icon: string | null) {
@@ -1354,6 +1380,71 @@ class Store {
     if (!id) return [];
     const text = id === here && live !== undefined ? live : await this.exportText(id).catch(() => '');
     return parseHeadings(text).map((h) => h.text);
+  }
+
+  // ── Android home-screen widgets and background running ──
+  // Nothing here runs on a timer: the widget and the note list tell us when something changed, so a phone with the app in
+  // the background sits idle (like Syncthing) and only wakes for a real event.
+  private widgetOn = false;
+  private widgetKickTimer: ReturnType<typeof setTimeout> | undefined;
+  private widgetCache = new Map<string, { updated: number; items: ReturnType<typeof widgetItems> | null }>();
+  /** Start the two-way bridge to the widgets (Android app only). */
+  startWidgets() {
+    if (!hasWidgets() || this.widgetOn) return;
+    this.widgetOn = true;
+    const w = window as unknown as { __qmTicks?: () => void };
+    w.__qmTicks = () => void this.syncWidgets(); // the widget calls this the moment something is ticked on the home screen
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') this.widgetKick(0); });
+    this.widgetKick(0);
+  }
+  /** Ask for a widget refresh soon (many changes in a row make one refresh). */
+  widgetKick(ms = 1500) {
+    if (!this.widgetOn) return;
+    clearTimeout(this.widgetKickTimer);
+    this.widgetKickTimer = setTimeout(() => void this.syncWidgets(), ms);
+  }
+  private keepWanted: boolean | null = null;
+  setKeepAlive(on: boolean) {
+    this.s.keepAlive = on;
+    this.save();
+    this.widgetKick(0);
+  }
+  private widgetBusy = false;
+  private widgetAgain = false;
+  private async syncWidgets() {
+    const want = this.s.keepAlive && this.mode === 'server';
+    if (hasWidgets() && want !== this.keepWanted) { this.keepWanted = want; keepAlive(want); }
+    if (this.widgetBusy) { this.widgetAgain = true; return; }
+    if (!hasWidgets() || (this.mode !== 'server' && this.mode !== 'local')) return;
+    this.widgetBusy = true;
+    try {
+      // 1. ticks made on the home screen become real edits of the notes
+      for (const t of takeTicks()) {
+        const n = this.notes.find((x) => x.id === t.id);
+        if (!n) continue;
+        if (!this.canEditRow(t.id)) { putBackTick(t); continue; } // open right now: it is tried again on the next change
+        const text = await this.exportText(t.id);
+        const next = toggleItem(text, t.line);
+        if (next !== text) await this.importText(n, next);
+        this.widgetCache.delete(t.id);
+      }
+      // 2. the checklists as they are now (a note is only read again when it changed)
+      const lists = [];
+      for (const n of [...this.notes].sort((a, b) => b.updated - a.updated).slice(0, 40)) {
+        let c = this.widgetCache.get(n.id);
+        if (!c || c.updated !== n.updated) {
+          const text = await this.exportText(n.id).catch(() => '');
+          c = { updated: n.updated, items: text && isChecklist(text) ? widgetItems(text) : null };
+          this.widgetCache.set(n.id, c);
+        }
+        if (c.items) lists.push({ id: n.id, title: n.title, items: c.items, updated: n.updated });
+        if (lists.length >= 12) break;
+      }
+      publishLists(lists);
+    } finally {
+      this.widgetBusy = false;
+      if (this.widgetAgain) { this.widgetAgain = false; this.widgetKick(300); }
+    }
   }
 
   /** What a ```base block lists: every note you can read, with its properties. */

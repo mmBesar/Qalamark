@@ -28,7 +28,8 @@
   async function place() {
     await tick();
     if (!el) return;
-    const r = el.getBoundingClientRect();
+    // the real size, not the one while it is still growing in (the entrance scales it)
+    const r = { width: el.offsetWidth, height: el.offsetHeight };
     const rtl = document.documentElement.dir === 'rtl';
     let x = ctxmenu.x;
     let y = ctxmenu.y;

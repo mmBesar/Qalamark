@@ -1616,7 +1616,10 @@ test('settings 1: a full page with tabs on a computer; the properties box rememb
   await page.click('.props-head');
   await page.waitForFunction(() => !document.querySelector('.props-box'));
   await page.reload();
+  await page.waitForSelector('aside >> text=Remember');
+  await page.click('aside >> text=Remember');
   await page.waitForSelector('.cm-content');
+  await page.waitForTimeout(400);
   assert.equal(await page.locator('.props-box').count(), 0, 'closed stays closed for this note');
   await page.click('aside header button[aria-label="Settings"]');
   await page.waitForSelector('dialog.settings[open] .set-nav');
@@ -1625,6 +1628,35 @@ test('settings 1: a full page with tabs on a computer; the properties box rememb
   assert.ok(r.w >= 1279 && r.h >= 799, 'fills the window ' + JSON.stringify(r));
   await page.click('.set-tabs button:has-text("Tasks")');
   await page.waitForSelector('text=Swipe right');
+  await ctx.close();
+});
+
+test('phone 1: settings fit the screen as a list that slides to a page; properties start folded and remember', async () => {
+  const ctx = await browser.newContext({ viewport: { width: 393, height: 800 }, hasTouch: true, isMobile: true, deviceScaleFactor: 2 });
+  const page = await ctx.newPage();
+  await signIn(page, 'alice', 'alice-password');
+  await freshNote(page, 'Phone props');
+  assert.equal(await page.locator('.props-box').count(), 0, 'folded by default on a phone');
+  await page.tap('.props-head');
+  await page.waitForSelector('.props-box');
+  await page.tap('.props-addbtn');
+  await page.tap('.props-quick button >> text=tags');
+  await page.fill('.props-grid input', 'work, home');
+  await page.tap('.props-addbtn');
+  await page.tap('.props-quick button >> text=status');
+  await page.waitForTimeout(400);
+  await page.screenshot({ path: '/tmp/phprops.png' });
+  const saved = await page.evaluate(() => Object.entries(localStorage).filter(([k]) => k.startsWith('qm.props.')).map(([, v]) => v));
+  assert.deepEqual(saved, ['1'], 'the choice is remembered for this note');
+  await page.evaluate(() => { document.querySelector('button[aria-label="Settings"]')?.click(); });
+  await page.waitForSelector('dialog.settings[open]');
+  await page.waitForTimeout(500);
+  const fit = await page.evaluate(() => { const d = document.querySelector('dialog.settings').getBoundingClientRect(); return { l: d.left, w: d.width, iw: innerWidth, sw: document.documentElement.scrollWidth }; });
+  assert.ok(fit.l >= -1 && fit.w <= fit.iw + 1 && fit.sw <= fit.iw + 1, 'fits the screen ' + JSON.stringify(fit));
+  await page.tap('.set-tabs button:has-text("Look")');
+  await page.waitForTimeout(500);
+  const after = await page.evaluate(() => { const m = document.querySelector('.set-main').getBoundingClientRect(); return { l: m.left, r: m.right, iw: innerWidth }; });
+  assert.ok(after.l >= -1 && after.r <= after.iw + 1, 'the page is on screen ' + JSON.stringify(after));
   await ctx.close();
 });
 

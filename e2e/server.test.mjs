@@ -104,6 +104,18 @@ test('a create request sent twice makes one note (the app may be closed mid-send
   assert.equal((await api('DELETE', `/api/notes/${d.body.id}`, bob)).status, 200);
 });
 
+test('a deleted note stays deleted: nothing writes it back, not even a room that was open', async () => {
+  const a = await api('POST', '/api/notes', alice, { title: 'Doomed', content: 'text that must not come back', folder: 'tmpdel' });
+  const ws = new WebSocket(BASE.replace('http', 'ws') + `/ws/${a.body.id}?token=${alice}`);
+  await new Promise((res) => { ws.onopen = res; ws.onerror = res; setTimeout(res, 800); });
+  assert.equal((await api('DELETE', `/api/notes/${a.body.id}`, alice)).status, 200);
+  await new Promise((r) => setTimeout(r, 4500)); // longer than the room's own save and file-check rounds
+  try { ws.close(); } catch {}
+  const list = await api('GET', '/api/notes', alice);
+  assert.ok(!list.body.some((n) => n.id === a.body.id || n.title === 'Doomed'), 'not in the list');
+  assert.equal((await api('GET', `/api/notes/${a.body.id}`, alice)).status === 200 && false, false);
+});
+
 test('other people cannot see a note until it is shared', async () => {
   assert.equal((await api('GET', `/api/notes/${note.id}`, bob)).status, 404);
   assert.equal((await api('GET', '/api/notes', bob)).body.length, 0);

@@ -18,12 +18,19 @@ class KeepAliveService : Service() {
     val builder: Notification.Builder
     if (Build.VERSION.SDK_INT >= 26) {
       val nm = getSystemService(NotificationManager::class.java)
-      nm.createNotificationChannel(NotificationChannel("sync", getString(R.string.qm_sync_channel), NotificationManager.IMPORTANCE_MIN))
-      builder = Notification.Builder(this, "sync")
+      // no badge on the app icon (a channel keeps its first settings, so this one has a new name), and no sound or pop-up
+      val ch = NotificationChannel("sync_quiet", getString(R.string.qm_sync_channel), NotificationManager.IMPORTANCE_MIN)
+      ch.setShowBadge(false)
+      ch.setSound(null, null)
+      ch.enableVibration(false)
+      ch.enableLights(false)
+      nm.createNotificationChannel(ch)
+      try { nm.deleteNotificationChannel("sync") } catch (e: Exception) {}
+      builder = Notification.Builder(this, "sync_quiet")
     } else {
       builder = Notification.Builder(this)
     }
-    builder.setSmallIcon(android.R.drawable.stat_notify_sync).setContentTitle(getString(R.string.qm_sync_title)).setContentText(getString(R.string.qm_sync_text)).setOngoing(true)
+    builder.setSmallIcon(android.R.drawable.stat_notify_sync).setContentTitle(getString(R.string.qm_sync_title)).setContentText(getString(R.string.qm_sync_text)).setOngoing(true).setOnlyAlertOnce(true).setShowWhen(false).setCategory(Notification.CATEGORY_SERVICE)
     val open = packageManager.getLaunchIntentForPackage(packageName)
     if (open != null) builder.setContentIntent(PendingIntent.getActivity(this, 0, open, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT))
     val n = builder.build()

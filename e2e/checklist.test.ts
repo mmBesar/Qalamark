@@ -133,3 +133,11 @@ test('a section can be added under another one, one level lower', () => {
   assert.deepEqual(c.roots[0]!.children[0]!.children.map((s) => s.title), ['Bathroom', 'Snacks']);
   assert.ok(out.includes('### Snacks'));
 });
+
+test('the widget gets sections as headings with their tasks (and subsections inside)', async () => {
+  const { widgetItems } = await import('../app/src/lib/widgets.ts');
+  const text = '---\nview: checklist\n---\n# Kitchen\n- [ ] bread\n  - [x] toast\n## Fridge\n- [ ] milk\n# Home\n- [x] soap\n';
+  const w = widgetItems(text);
+  assert.deepEqual(w.map((x) => [x.head ? 'H' : 'T', x.text, x.depth]), [['H', 'Kitchen', 0], ['T', 'bread', 0], ['T', 'toast', 1], ['H', 'Fridge', 1], ['T', 'milk', 0], ['H', 'Home', 0], ['T', 'soap', 0]]);
+  assert.equal(w.find((x) => x.text === 'bread').line, 4);
+});

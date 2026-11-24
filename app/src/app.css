@@ -2135,3 +2135,38 @@ dialog.settings[open] { display: block; }
 /* the browser's own selection (a single selection with a mouse): our colour, our caret */
 .cm-editor .cm-content { caret-color: var(--accent); }
 .cm-editor .cm-content ::selection, .cm-editor .cm-content::selection { background: color-mix(in srgb, var(--accent) 32%, transparent); color: inherit; }
+
+/* ───────── round 27: the phone's own settings (a list that slides to a page) ───────── */
+dialog.settings { overflow: hidden; }
+.set-shell, .set-nav, .set-main, .set-page, .set-card { min-width: 0; }
+.set-card input, .set-card select, .set-card textarea { max-width: 100%; }
+.set-card .swatches, .set-card .accents { flex-wrap: wrap; }
+@media (max-width: 760px) {
+  dialog.settings { width: 100%; max-width: 100%; }
+  .set-shell.phone { display: flex; grid-template-columns: none; width: 200%; height: 100dvh; transition: transform 0.28s cubic-bezier(0.2, 0.8, 0.2, 1); }
+  .set-shell.phone.in-page { transform: translateX(-50%); }
+  :root[dir='rtl'] .set-shell.phone.in-page { transform: translateX(50%); }
+  .set-shell.phone > .set-nav, .set-shell.phone > .set-main { flex: 0 0 50%; width: 50%; height: 100dvh; box-sizing: border-box; }
+  .set-shell.phone > .set-nav { display: flex; flex-direction: column; flex-wrap: nowrap; align-items: stretch; overflow-y: auto; padding: calc(0.8rem + env(safe-area-inset-top)) 0.9rem 1rem; background: var(--bg); border: 0; }
+  .set-shell.phone .set-top { flex: none; padding: 0.2rem 0.3rem 0.9rem; }
+  .set-shell.phone .set-top h2 { font-size: 1.8rem; }
+  .set-shell.phone .set-tabs { flex-direction: column; overflow: visible; gap: 0.5rem; }
+  .set-shell.phone .set-tabs button { width: 100%; padding: 1rem 1.1rem; min-height: 3.6rem; font-size: 1.05rem; background: var(--surface); border: 1px solid var(--hairline); border-radius: 18px; gap: 0.9rem; }
+  .set-shell.phone .set-tabs button span { flex: 1; }
+  .set-shell.phone .set-tabs button.on { background: var(--surface); color: inherit; font-weight: 500; }
+  .set-shell.phone .set-about { display: block; margin-top: 1.2rem; text-align: center; }
+  .set-shell.phone > .set-main { overflow-y: auto; padding: 0 0.8rem calc(1.4rem + env(safe-area-inset-bottom)); }
+  .set-back { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: 0.4rem; padding: calc(0.5rem + env(safe-area-inset-top)) 0 0.5rem; margin-bottom: 0.4rem; background: var(--bg); }
+  .set-back h2 { margin: 0; font-size: 1.3rem; }
+  :root[dir='rtl'] .set-back .icon svg { transform: scaleX(-1); }
+  :root[dir='rtl'] .set-shell.phone .set-tabs button > svg:last-child { transform: scaleX(-1); }
+}
+
+/* properties on a phone: tight box, each property is a label above its value */
+@media (max-width: 760px), (pointer: coarse) {
+  .props-box { padding: 0.3rem 0.65rem 0.35rem; border-radius: 16px; box-shadow: none; }
+  .props-box .props-foot { padding: 0; }
+  .props-box .props-addbtn { min-height: 2.4rem; }
+  .props-box .props-quick { gap: 0.4rem; padding: 0.3rem 0; }
+  .props-box .props-quick button { min-height: 2.3rem; }
+}

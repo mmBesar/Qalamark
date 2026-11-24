@@ -16,20 +16,26 @@ interface Bridge {
 const bridge = (): Bridge | undefined => (typeof window === 'undefined' ? undefined : (window as unknown as { QalamarkAndroid?: Bridge }).QalamarkAndroid);
 export const hasWidgets = (): boolean => !!bridge()?.widgetData;
 
-export interface WidgetItem { line: number; text: string; done: boolean; depth: number }
+export interface WidgetItem { line: number; text: string; done: boolean; depth: number; head?: boolean }
 export interface WidgetList { id: string; title: string; items: WidgetItem[]; updated: number }
 
 /** The items of a checklist as the widget shows them, parents before their subtasks. */
 export function widgetItems(text: string): WidgetItem[] {
   const out: WidgetItem[] = [];
-  const walk = (list: ReturnType<typeof parseChecklist>['sections'][number]['items'], depth: number) => {
+  const tasks = (list: ReturnType<typeof parseChecklist>['sections'][number]['items'], depth: number) => {
     for (const it of list) {
       out.push({ line: it.line, text: it.text, done: it.done, depth });
-      walk(it.children, depth + 1);
+      tasks(it.children, depth + 1);
     }
   };
-  for (const s of parseChecklist(text).sections) walk(s.items, 0);
-  return out.slice(0, 80);
+  // sections are shown as headings with their tasks under them, sub-sections nested inside
+  const section = (sec: ReturnType<typeof parseChecklist>['sections'][number], level: number) => {
+    if (sec.title) out.push({ line: -1, text: sec.title, done: false, depth: level, head: true });
+    tasks(sec.items, 0);
+    for (const c of sec.children) section(c, level + 1);
+  };
+  for (const r of parseChecklist(text).roots) section(r, 0);
+  return out.slice(0, 120);
 }
 
 let lastSent = '';

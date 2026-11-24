@@ -102,6 +102,8 @@
   let st = { x: 0, y: 0, live: false, w: 1, line: -1, dir: 1 };
   let pressTimer: ReturnType<typeof setTimeout> | undefined;
   let pressed = false;
+  // double-click to edit is a mouse habit; a phone edits with press-and-hold (or what you set in Settings)
+  const finePointer = typeof matchMedia === 'function' && matchMedia('(pointer: fine)').matches;
   const title = $derived(store.notes.find((n) => n.id === noteId)?.title ?? '');
   const g = $derived(cleanGestures(store.s.gestures));
   /** do what the person chose for a gesture */
@@ -314,12 +316,13 @@
         }} />
       {:else}
         <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-        <span class="ck-label" onclick={(e) => onLabel(e, it)} ondblclick={() => { if (!readOnly && !boxOnly && g.tap !== 'edit') editing = it.line; }}>{#each pieces(it.text) as p}{#if p.kind === 'text'}{p.text}{:else}<a href={p.kind === 'url' ? p.target : '#'} class="clink" data-kind={p.kind} data-target={p.target}>{p.text}</a>{/if}{/each}</span>
+        <span class="ck-label" onclick={(e) => onLabel(e, it)} ondblclick={() => { if (!readOnly && !boxOnly && g.tap !== 'edit' && finePointer) editing = it.line; }}>{#each pieces(it.text) as p}{#if p.kind === 'text'}{p.text}{:else}<a href={p.kind === 'url' ? p.target : '#'} class="clink" data-kind={p.kind} data-target={p.target}>{p.text}</a>{/if}{/each}</span>
         {#if kids(it)}<span class="ck-kids">{kidsDone(it)}/{kids(it)}</span>{/if}
         {#if !readOnly}
           <span class="ck-tools">
             <button class="icon sm" title={t('taskAddSub')} aria-label={t('taskAddSub')} onclick={() => { subOf = subOf === it.line ? null : it.line; subDraft = ''; }}><Icon name="plus" size={16} /></button>
             <button class="icon sm" title={t('taskEdit')} aria-label={t('taskEdit')} onclick={() => (editing = it.line)}><Icon name="edit" size={16} /></button>
+            <button class="icon sm ck-del" title={t('delete')} aria-label={t('delete')} onclick={() => change(deleteItem(text, it.line), t('taskRemoved'))}><Icon name="trash" size={16} /></button>
             <span class="ck-menu-wrap">
               <button class="icon sm ck-menu-btn" aria-label={t('more')} onclick={() => (menuFor = menuFor?.line === it.line ? null : { line: it.line, moving: false })}><Icon name="more" size={16} /></button>
               {#if menuFor?.line === it.line}
@@ -379,6 +382,7 @@
   .ck-sum strong { font-size: 1.2rem; }
   .ck-title { align-self: stretch; margin: 0 0 0.1rem; font-size: 1.5rem; line-height: 1.25; overflow-wrap: anywhere; text-align: start; }
   .ck-sum strong { font-size: 0.95rem; font-weight: 500; color: var(--muted); }
+  .ck-del:hover { color: var(--danger); background: color-mix(in srgb, var(--danger) 14%, transparent); }
   .ck-actions { display: flex; gap: 0.35rem; flex-wrap: wrap; }
   @media (max-width: 760px) { .ck-inner { padding-top: 4.6rem; } }
   .ck-sec { margin-top: 1.1rem; }
@@ -414,7 +418,8 @@
   .done > .ck-row-wrap > .ck-row .ck-label, .ck-row.done .ck-label { color: var(--muted); text-decoration: line-through; text-decoration-thickness: 1.5px; }
   .ck-tools { display: flex; opacity: 0; transition: opacity 0.15s; }
   .ck-row:hover .ck-tools, .ck-row:focus-within .ck-tools { opacity: 1; }
-  @media (pointer: coarse) { .ck-tools { opacity: 1; } .ck-tools > button:first-child { display: none; } }
+  /* a phone has swipes and the ⋯ menu; the hover tools are for a mouse */
+  @media (pointer: coarse) { .ck-tools { opacity: 1; } .ck-tools > button { display: none; } }
   .ck-sub { padding-inline-start: 1.6rem; margin-top: 0.3rem; }
   .ck-sub .ck-row { min-height: 3rem; }
   .ck-edit, .ck-add input, .ck-newsub input { flex: 1; min-width: 0; font: inherit; font-size: 1.05rem; }

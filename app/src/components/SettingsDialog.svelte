@@ -26,6 +26,12 @@
     ...(store.mode === 'server' && store.s.admin ? [{ id: 'people', icon: 'users', label: 'users' }] : []),
   ]);
   let tab = $state('look');
+  // a phone gets its own shape: a list of categories that slides over to the page you picked (back arrow to return)
+  const mq = typeof matchMedia === 'function' ? matchMedia('(max-width: 760px)') : null;
+  let phone = $state(mq?.matches ?? false);
+  let inPage = $state(false);
+  $effect(() => { const f = () => (phone = mq!.matches); mq?.addEventListener('change', f); return () => mq?.removeEventListener('change', f); });
+  const pick = (id: string) => { tab = id; inPage = true; };
 
   const t = store.t;
   let avatarInput: HTMLInputElement;
@@ -129,7 +135,7 @@
 </script>
 
 <dialog class="settings" bind:this={dlg} onclose={onClose}>
-  <div class="set-shell">
+  <div class="set-shell" class:phone class:in-page={phone && inPage}>
     <nav class="set-nav" aria-label={t('settings')}>
       <form method="dialog" class="set-top">
         <h2>{t('settings')}</h2>
@@ -137,13 +143,16 @@
       </form>
       <div class="set-tabs" role="tablist">
         {#each tabs as tb (tb.id)}
-          <button role="tab" type="button" aria-selected={tab === tb.id} class:on={tab === tb.id} onclick={() => (tab = tb.id)}><Icon name={tb.icon} size={18} /><span>{t(tb.label as never)}</span></button>
+          <button role="tab" type="button" aria-selected={tab === tb.id} class:on={tab === tb.id} onclick={() => pick(tb.id)}><Icon name={tb.icon} size={phone ? 22 : 18} /><span>{t(tb.label as never)}</span>{#if phone}<Icon name="chevron-right" size={18} />{/if}</button>
         {/each}
       </div>
       <p class="muted tiny set-about">Qalamark · AGPL-3.0-or-later · <a href="https://github.com/mmBesar/Qalamark" target="_blank" rel="noopener">GitHub</a></p>
     </nav>
 
     <div class="set-main">
+      {#if phone}
+        <div class="set-back"><button class="icon" type="button" aria-label={t('back')} onclick={() => (inPage = false)}><Icon name="chevron-left" size={22} /></button><h2>{t(tabs.find((x) => x.id === tab)?.label as never)}</h2></div>
+      {/if}
       <div class="set-page">
         {#if tab === 'look'}
           <div class="set-card">

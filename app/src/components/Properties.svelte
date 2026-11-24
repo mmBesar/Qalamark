@@ -16,7 +16,16 @@
   let doc = $state(ytext.toString());
   // open by default; the choice is remembered for each note
   const PANEL = (id: string) => 'qm.props.' + id;
-  const loadPanel = (id: string) => { try { return localStorage.getItem(PANEL(id)) !== '0'; } catch { return true; } };
+  // a phone starts with it folded (the screen is small, and the text is why you are here); a computer starts with it open
+  const smallScreen = () => typeof matchMedia === 'function' && (matchMedia('(max-width: 760px)').matches || matchMedia('(pointer: coarse)').matches);
+  const loadPanel = (id: string) => {
+    try {
+      const v = localStorage.getItem(PANEL(id));
+      if (v === '1') return true;
+      if (v === '0') return false;
+    } catch { /* private window */ }
+    return !smallScreen();
+  };
   let openPanel = $state(loadPanel(noteId));
   let panelFor = noteId;
   $effect(() => { if (noteId !== panelFor) { panelFor = noteId; openPanel = loadPanel(noteId); picking = false; adding = false; } });

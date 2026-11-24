@@ -22,6 +22,10 @@ class ChecklistWidget : AppWidgetProvider() {
     for (id in ids) update(context, manager, id)
   }
 
+  override fun onDeleted(context: Context, ids: IntArray) {
+    for (id in ids) QmPrefs.forget(context, id)
+  }
+
   override fun onReceive(context: Context, intent: Intent) {
     super.onReceive(context, intent)
     when (intent.action) {
@@ -68,9 +72,15 @@ class ChecklistWidget : AppWidgetProvider() {
         val l = lists.getJSONObject(sel)
         val items = l.getJSONArray("items")
         var done = 0
-        for (i in 0 until items.length()) if (items.getJSONObject(i).getBoolean("done")) done++
+        var total = 0
+        for (i in 0 until items.length()) {
+          val o = items.getJSONObject(i)
+          if (o.optBoolean("head", false)) continue
+          total++
+          if (o.getBoolean("done")) done++
+        }
         rv.setTextViewText(R.id.w_title, l.getString("title"))
-        rv.setTextViewText(R.id.w_count, "$done/${items.length()}")
+        rv.setTextViewText(R.id.w_count, "$done/$total")
         rv.setViewVisibility(R.id.w_list, View.VISIBLE)
         rv.setViewVisibility(R.id.w_empty, View.GONE)
         val svc = Intent(context, ChecklistService::class.java).putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, wid)
@@ -86,8 +96,12 @@ class ChecklistWidget : AppWidgetProvider() {
       }
       rv.setOnClickPendingIntent(R.id.w_prev, step(-1, 1))
       rv.setOnClickPendingIntent(R.id.w_next, step(1, 2))
+      // the title opens the list picker; the count opens the app
+      val pick = Intent(context, WidgetConfigActivity::class.java).putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, wid)
+      pick.data = Uri.parse("qalamark://pick/$wid")
+      rv.setOnClickPendingIntent(R.id.w_title, PendingIntent.getActivity(context, wid, pick, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE))
       val open = context.packageManager.getLaunchIntentForPackage(context.packageName)
-      if (open != null) rv.setOnClickPendingIntent(R.id.w_title, PendingIntent.getActivity(context, wid, open, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE))
+      if (open != null) rv.setOnClickPendingIntent(R.id.w_count, PendingIntent.getActivity(context, wid + 100000, open, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE))
       manager.updateAppWidget(wid, rv)
     }
   }
@@ -125,6 +139,12 @@ class ChecklistService : RemoteViewsService() {
       val it = rows.getJSONObject(position)
       val text = it.getString("text")
       val done = it.getBoolean("done")
+      if (it.optBoolean("head", false)) {
+        val h = RemoteViews(context.packageName, R.layout.widget_head)
+        h.setTextViewText(R.id.h_text, text)
+        h.setViewPadding(R.id.h_root, (it.getInt("depth") * 14 * context.resources.displayMetrics.density).toInt(), (6 * context.resources.displayMetrics.density).toInt(), (6 * context.resources.displayMetrics.density).toInt(), 0)
+        return h
+      }
       val rtl = isRtl(text)
       val rv = RemoteViews(context.packageName, if (rtl) R.layout.widget_item_rtl else R.layout.widget_item)
       val label: CharSequence = if (done) SpannableString(text).also { s -> s.setSpan(StrikethroughSpan(), 0, text.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE) } else text
@@ -138,7 +158,7 @@ class ChecklistService : RemoteViewsService() {
     }
 
     override fun getLoadingView(): RemoteViews? = null
-    override fun getViewTypeCount(): Int = 2
+    override fun getViewTypeCount(): Int = 3
     override fun getItemId(position: Int): Long = position.toLong()
     override fun hasStableIds(): Boolean = false
   }

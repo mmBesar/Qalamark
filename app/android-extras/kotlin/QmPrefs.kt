@@ -18,8 +18,19 @@ object QmPrefs {
 
   fun lists(c: Context): JSONArray = try { JSONArray(sp(c).getString("lists", "[]")) } catch (e: Exception) { JSONArray() }
 
-  fun selected(c: Context, widgetId: Int): Int = sp(c).getInt("sel_$widgetId", 0)
-  fun select(c: Context, widgetId: Int, index: Int) { sp(c).edit().putInt("sel_$widgetId", index).apply() }
+  /** Which list a widget shows is remembered by the note's id (the order of the lists changes), with the first one as the start. */
+  fun selected(c: Context, widgetId: Int): Int {
+    val id = sp(c).getString("note_$widgetId", null) ?: return 0
+    val l = lists(c)
+    for (i in 0 until l.length()) if (l.getJSONObject(i).getString("id") == id) return i
+    return 0
+  }
+  fun select(c: Context, widgetId: Int, index: Int) {
+    val l = lists(c)
+    if (index < 0 || index >= l.length()) return
+    sp(c).edit().putString("note_$widgetId", l.getJSONObject(index).getString("id")).apply()
+  }
+  fun forget(c: Context, widgetId: Int) { sp(c).edit().remove("note_$widgetId").apply() }
 
   private fun pending(c: Context): JSONArray = try { JSONArray(sp(c).getString("ticks", "[]")) } catch (e: Exception) { JSONArray() }
 
@@ -63,12 +74,12 @@ object QmPrefs {
       val items = l.getJSONArray("items")
       for (k in 0 until items.length()) {
         val it = items.getJSONObject(k)
-        if (it.getInt("line") != line) continue
+        if (it.optBoolean("head", false) || it.getInt("line") != line) continue
         val now = !it.getBoolean("done")
         val depth = it.getInt("depth")
         it.put("done", now)
         var j = k + 1
-        while (j < items.length() && items.getJSONObject(j).getInt("depth") > depth) {
+        while (j < items.length() && !items.getJSONObject(j).optBoolean("head", false) && items.getJSONObject(j).getInt("depth") > depth) {
           items.getJSONObject(j).put("done", now)
           j++
         }

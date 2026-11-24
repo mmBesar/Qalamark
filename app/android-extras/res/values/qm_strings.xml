@@ -3,6 +3,7 @@
   <string name="qm_widget_name">Qalamark checklist</string>
   <string name="qm_widget_desc">Your checklists on the home screen: tick things off without opening the app.</string>
   <string name="qm_widget_empty">Open Qalamark once so your checklists show here.</string>
+  <string name="qm_widget_pick">Choose a checklist</string>
   <string name="qm_sync_channel">Keeping notes up to date</string>
   <string name="qm_sync_title">Qalamark</string>
   <string name="qm_sync_text">Keeping your notes up to date</string>

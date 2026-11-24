@@ -4,4 +4,6 @@
   android:targetCellWidth="3" android:targetCellHeight="3"
   android:updatePeriodMillis="0" android:initialLayout="@layout/widget_checklist"
   android:resizeMode="horizontal|vertical" android:widgetCategory="home_screen"
-  android:description="@string/qm_widget_desc" />
+  android:description="@string/qm_widget_desc"
+  android:configure="io.github.mmbesar.qalamark.WidgetConfigActivity"
+  android:widgetFeatures="reconfigurable" />

@@ -732,7 +732,14 @@ pub async fn delete_note(State(s): State<Shared>, user: User, Path(id): Path<Str
     if a.role != "owner" {
         return err(StatusCode::FORBIDDEN, "Only the owner can delete a note");
     }
-    // Keep a copy in the trash folder instead of erasing it for good.
+    // The note stops existing first (no room can write its file back any more), then its file moves to the trash folder
+    // instead of being erased for good.
+    s.rooms.drop_room(&id);
+    {
+        let db = s.db.lock().unwrap();
+        db.execute("DELETE FROM ydocs WHERE note_id = ?1", [&id]).map_err(internal)?;
+        db.execute("DELETE FROM notes WHERE id = ?1", [&id]).map_err(internal)?;
+    }
     let from = s.cfg.notes_dir().join(&a.path);
     if from.exists() {
         let trash = s.cfg.data.join("trash");
@@ -740,8 +747,6 @@ pub async fn delete_note(State(s): State<Shared>, user: User, Path(id): Path<Str
         let name = format!("{}-{}-{}.md", now(), a.owner, title_of(&a.path));
         std::fs::rename(&from, trash.join(name)).map_err(internal)?;
     }
-    s.rooms.drop_room(&id);
-    s.db.lock().unwrap().execute("DELETE FROM notes WHERE id = ?1", [&id]).map_err(internal)?;
     Ok(Json(()))
 }
 

@@ -449,6 +449,7 @@ class Store {
       let changed = false;
       const keep: NoteMeta[] = [];
       for (const n0 of [...this.notes]) {
+        if (this.tomb.has(n0.id)) continue;
         let n = n0;
         if (!this.mirrored(n)) {
           keep.push(n);
@@ -465,6 +466,7 @@ class Store {
         }
         if (!f) {
           // (with a server the server is the truth: a file deleted outside is simply written again)
+          if (this.tomb.has(n.id)) continue;
           const vm = await vault.write(want, await readStoredText(this.storeName(n.id)));
           n = { ...n, vp: want, vm };
           changed = true;
@@ -530,7 +532,7 @@ class Store {
         changed = true;
       }
       if (changed) {
-        this.notes = keep;
+        this.notes = keep.filter(this.alive);
         if (this.mode === 'local') write(LOCAL_FOLDERS, this.folders);
         this.saveNotes();
         if (!this.notes.some((n) => n.id === this.currentId)) this.currentId = this.notes[0]?.id ?? null;
@@ -582,7 +584,7 @@ class Store {
       next.push(n);
     }
     if (changed) {
-      this.notes = next;
+      this.notes = next.filter(this.alive);
       this.saveNotes();
     }
     for (const f of this.folders) await vault.mkdir(f).catch(() => {});
@@ -994,10 +996,21 @@ class Store {
       const gone = new Set(this.readOutbox().filter((o): o is Extract<Op, { t: 'delete' }> => o.t === 'delete').map((o) => o.id));
       // a note made offline stays in the list until it has reached the server; then the real note (in `fresh`) replaces it.
       // Keeping the temporary entry too would show the note twice, the copy empty.
+      // a note deleted on another device or the server disappears here too: its copy in the folder goes to the folder's trash,
+      // it is never taken for a new file and sent back to the server
+      const inFresh = new Set(fresh.map((n) => n.id));
+      const sent = new Set(this.readOutbox().filter((o) => o.t === 'create').map((o) => (o as { tmp: string }).tmp));
+      for (const n of cached) {
+        if (n.role !== 'owner' || n.id.startsWith('tmp:') || inFresh.has(n.id) || sent.has(n.id) || this.tomb.has(n.id)) continue;
+        if (Date.now() / 1000 - n.updated < 180) continue; // made a moment ago: the list may simply be older than it
+        if (n.vp && this.vaultPath) void vault.trash(n.vp).catch(() => {});
+        deleteStored(this.storeName(n.id));
+        this.tomb.add(n.id);
+      }
       const seen = new Set<string>();
       this.notes = [
         ...this.notes.filter((n) => n.id.startsWith('tmp:') && !this.sentTmp.has(n.id)),
-        ...fresh.filter((n) => !gone.has(n.id)).map((n) => ({ ...n, vp: mine.get(n.id)?.vp ?? this.notes.find((x) => x.id === n.id)?.vp, vm: mine.get(n.id)?.vm ?? this.notes.find((x) => x.id === n.id)?.vm })),
+        ...fresh.filter((n) => !gone.has(n.id) && !this.tomb.has(n.id)).map((n) => ({ ...n, vp: mine.get(n.id)?.vp ?? this.notes.find((x) => x.id === n.id)?.vp, vm: mine.get(n.id)?.vm ?? this.notes.find((x) => x.id === n.id)?.vm })),
       ].filter((n) => !seen.has(n.id) && !!seen.add(n.id));
       this.folders = await this.api.folders().catch(() => read<string[]>(this.cacheKey() + '.f', []));
       this.serverReachable = true;
@@ -1333,8 +1346,18 @@ class Store {
     await this.createNote(`${note.title} ${this.t('copySuffix')}`, text, note.role === 'owner' ? (note.folder ?? '') : '');
   }
 
+  /** Notes deleted in this session: no sync pass may bring them back, however late it finishes. */
+  private tomb = new Set<string>();
+  private alive = (n: NoteMeta) => !this.tomb.has(n.id);
+
   async deleteNote(id: string) {
     const gone = this.notes.find((n) => n.id === id);
+    // the last action wins: the note leaves the list (and the folder) first, so a sync pass that is already running cannot write it back
+    this.tomb.add(id);
+    this.notes = this.notes.filter((n) => n.id !== id);
+    if (this.currentId === id) this.currentId = this.notes[0]?.id ?? null;
+    if ((this.mode === 'local' || this.mode === 'server') && gone?.vp && this.vaultPath) void vault.trash(gone.vp).catch(() => {});
+    deleteStored(this.storeName(id));
     if (this.mode === 'server') {
       const shared = !!gone && gone.role !== 'owner';
       if (this.serverReachable && !id.startsWith('tmp:')) {
@@ -1342,17 +1365,18 @@ class Store {
           if (shared) await this.api.removeShare(id, this.s.username);
           else await this.api.deleteNote(id);
         } catch (e) {
-          if (!this.away(e)) throw e;
+          if (!this.away(e)) {
+            // the server refused: the note stays, as it was
+            this.tomb.delete(id);
+            if (gone) this.notes = [gone, ...this.notes];
+            throw e;
+          }
           this.queueOp({ t: 'delete', id, shared });
         }
       } else this.queueOp({ t: 'delete', id, shared });
     }
-    deleteStored(this.storeName(id));
-    if ((this.mode === 'local' || this.mode === 'server') && gone?.vp && this.vaultPath) void vault.trash(gone.vp).catch(() => {});
-    this.notes = this.notes.filter((n) => n.id !== id);
     if (this.mode === 'server') write(this.cacheKey(), this.notes);
     else this.saveLocalList();
-    if (this.currentId === id) this.currentId = this.notes[0]?.id ?? null;
   }
 
   /** Open the note called `title`; make it if it does not exist yet (like Obsidian). */

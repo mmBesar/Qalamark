@@ -62,3 +62,16 @@ test('promote and demote a section with everything inside it', () => {
   assert.equal(shiftSection('###### six\n', 0, 1), null);
   assert.equal(shiftSection('# one\n', 0, -1), null);
 });
+
+import { deletedElsewhere, leftoverIsUnchanged } from '../app/src/lib/syncplan.ts';
+test('a note is deleted elsewhere only if an earlier server list had it and this one does not', () => {
+  const mine = [{ id: 'a', role: 'owner' }, { id: 'b', role: 'owner' }, { id: 'c', role: 'owner' }, { id: 'tmp:x', role: 'owner' }, { id: 'd', role: 'editor' }];
+  const gone = deletedElsewhere(mine, new Set(['a']), new Set(['a', 'b', 'd', 'tmp:x']), new Set());
+  assert.deepEqual(gone.map((n) => n.id), ['b'], 'c was never in a list (made a moment ago), tmp is local, d is not mine');
+  assert.deepEqual(deletedElsewhere(mine, new Set(['a']), new Set(['b']), new Set(['b'])), [], 'already handled');
+});
+test('a leftover file is trashed only while unchanged', () => {
+  assert.ok(leftoverIsUnchanged(1000, 1000));
+  assert.ok(leftoverIsUnchanged(900, 1000));
+  assert.ok(!leftoverIsUnchanged(9000, 1000), 'edited since: it is yours');
+});

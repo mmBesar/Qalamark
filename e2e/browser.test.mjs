@@ -1660,6 +1660,34 @@ test('phone 1: settings fit the screen as a list that slides to a page; properti
   await ctx.close();
 });
 
+test('sync 1: a note deleted on one device disappears on the other and does not come back', async () => {
+  const mk = async () => { const c = await browser.newContext({ viewport: { width: 1100, height: 760 } }); const p = await c.newPage(); await signIn(p, 'alice', 'alice-password'); return [c, p]; };
+  const [ca, a] = await mk();
+  await freshNote(a, 'Shared Doomed');
+  await a.keyboard.insertText('to be deleted');
+  await a.waitForTimeout(1500);
+  const [cb, b] = await mk();
+  await b.reload();
+  await b.waitForSelector('aside >> text=Shared Doomed', { timeout: 8000 });
+  await b.click('aside >> text=Shared Doomed'); // open there as well
+  // delete on A through the app
+  await a.click('aside >> text=Shared Doomed', { button: 'right' });
+  await a.click('.ctx >> text=Delete');
+  const ok = a.locator('dialog[open] button:has-text("Delete")');
+  if (await ok.count()) await ok.last().click();
+  await a.waitForFunction(() => !document.body.innerText.includes('Shared Doomed'), null, { timeout: 5000 });
+  // B looks again (it does this on focus and every half minute)
+  await b.evaluate(() => window.dispatchEvent(new Event('focus')));
+  await b.waitForFunction(() => !document.querySelector('aside')?.innerText.includes('Shared Doomed'), null, { timeout: 8000 });
+  // and nothing brings it back, on either side, even after both have had time to sync
+  await a.waitForTimeout(4500);
+  await a.evaluate(() => window.dispatchEvent(new Event('focus')));
+  await b.evaluate(() => window.dispatchEvent(new Event('focus')));
+  await a.waitForTimeout(1500);
+  for (const p of [a, b]) assert.ok(!(await p.locator('aside').innerText()).includes('Shared Doomed'), 'stays deleted');
+  await ca.close(); await cb.close();
+});
+
 test('tools 1: the insert menu shows, bullet and task start an empty item, the bar can be customised, and each panel hides on its own', async () => {
   const errors = [];
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });

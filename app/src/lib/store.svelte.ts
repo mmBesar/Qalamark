@@ -18,6 +18,7 @@ import { applyText } from './ytext.ts';
 import { chooseBox, confirmBox } from './dialog.svelte.ts';
 import { cleanToolbar, DEFAULT_TOOLBAR } from './toolbar.ts';
 import { DEFAULT_GESTURES, type Gestures } from './gestures.ts';
+import { deletedElsewhere, leftoverIsUnchanged } from './syncplan.ts';
 import { hasWidgets, isChecklist, keepAlive, publishLists, putBackTick, takeTicks, toggleItem, widgetItems } from './widgets.ts';
 import { deleteStored, readStoredText, syncNoteNow, writeStoredText } from './session.ts';
 
@@ -510,6 +511,12 @@ class Store {
       const known = new Set(keep.map((n) => n.vp));
       for (const f of files) {
         if (known.has(f.path)) continue;
+        // the file of a note that was deleted: trash it again if it is still unchanged, and never turn it into a new note
+        const left = this.tombPaths[f.path];
+        if (left !== undefined && leftoverIsUnchanged(f.mtime_ms, left)) {
+          void vault.trash(f.path).catch(() => {});
+          continue;
+        }
         const { folder, title } = splitPath(f.path);
         const c = await vault.read(f.path);
         let id: string = crypto.randomUUID();
@@ -999,14 +1006,15 @@ class Store {
       // a note deleted on another device or the server disappears here too: its copy in the folder goes to the folder's trash,
       // it is never taken for a new file and sent back to the server
       const inFresh = new Set(fresh.map((n) => n.id));
+      const seenKey = this.cacheKey() + '.seen';
       const sent = new Set(this.readOutbox().filter((o) => o.t === 'create').map((o) => (o as { tmp: string }).tmp));
-      for (const n of cached) {
-        if (n.role !== 'owner' || n.id.startsWith('tmp:') || inFresh.has(n.id) || sent.has(n.id) || this.tomb.has(n.id)) continue;
-        if (Date.now() / 1000 - n.updated < 180) continue; // made a moment ago: the list may simply be older than it
+      for (const n of deletedElsewhere(cached, inFresh, new Set(read<string[]>(seenKey, [])), new Set([...this.tomb, ...sent]))) {
+        this.rememberLeftover(n.vp, n.vm);
         if (n.vp && this.vaultPath) void vault.trash(n.vp).catch(() => {});
         deleteStored(this.storeName(n.id));
         this.tomb.add(n.id);
       }
+      write(seenKey, [...inFresh]);
       const seen = new Set<string>();
       this.notes = [
         ...this.notes.filter((n) => n.id.startsWith('tmp:') && !this.sentTmp.has(n.id)),
@@ -1348,6 +1356,15 @@ class Store {
 
   /** Notes deleted in this session: no sync pass may bring them back, however late it finishes. */
   private tomb = new Set<string>();
+  /** Files of deleted notes (path -> the file's time when it was deleted): a folder sync trashes them again if they linger, and never imports them as new notes. */
+  private tombPaths: Record<string, number> = read<Record<string, number>>('qm.tombpaths', {});
+  private rememberLeftover(vp: string | undefined, vm: number | undefined) {
+    if (!vp) return;
+    this.tombPaths[vp] = vm ?? Date.now();
+    const keys = Object.keys(this.tombPaths);
+    if (keys.length > 300) for (const k of keys.slice(0, keys.length - 300)) delete this.tombPaths[k];
+    write('qm.tombpaths', this.tombPaths);
+  }
   private alive = (n: NoteMeta) => !this.tomb.has(n.id);
 
   async deleteNote(id: string) {
@@ -1356,7 +1373,10 @@ class Store {
     this.tomb.add(id);
     this.notes = this.notes.filter((n) => n.id !== id);
     if (this.currentId === id) this.currentId = this.notes[0]?.id ?? null;
-    if ((this.mode === 'local' || this.mode === 'server') && gone?.vp && this.vaultPath) void vault.trash(gone.vp).catch(() => {});
+    if ((this.mode === 'local' || this.mode === 'server') && gone?.vp && this.vaultPath) {
+      this.rememberLeftover(gone.vp, gone.vm);
+      void vault.trash(gone.vp).catch(() => {});
+    }
     deleteStored(this.storeName(id));
     if (this.mode === 'server') {
       const shared = !!gone && gone.role !== 'owner';

@@ -2178,3 +2178,11 @@ dialog.settings { overflow: hidden; }
 .remind-banner small { color: var(--muted); }
 .remind-hint { grid-column: 2; color: var(--muted); font-size: 0.78rem; }
 .remind-hint.bad { color: var(--danger, #e5484d); }
+
+.remind-ed { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.remind-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.remind-chips .chip { padding: 3px 10px; border-radius: 999px; border: 1px solid var(--border); background: transparent; color: var(--text); font-size: 0.82rem; cursor: pointer; }
+.remind-chips .chip:hover { border-color: var(--accent); color: var(--accent); }
+.remind-row { display: flex; gap: 6px; }
+.remind-row > * { flex: 1; min-width: 0; }
+.remind-raw { font-size: 0.82rem; opacity: 0.85; }

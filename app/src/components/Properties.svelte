@@ -1,7 +1,8 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
 <!-- Copyright (C) 2026 mmBesar -->
 <script lang="ts">
-  import { parseRemind, otherCalendar } from '../lib/reminders.ts';
+  import ReminderEditor from './ReminderEditor.svelte';
+  import { formatRemind } from '../lib/reminders.ts';
   import Select from './Select.svelte';
   import Icon from './Icon.svelte';
   import { onMount } from 'svelte';
@@ -79,7 +80,9 @@
     const k = key.trim().replace(/[:\n]/g, '');
     if (!k || plist.some((p) => p.key.toLowerCase() === k.toLowerCase())) return;
     const known = COMMON_PROPS.find((c) => c.key === k.toLowerCase());
-    commit([...plist, { key: k, type: known?.type ?? type, text: value ?? known?.value ?? (type === 'checkbox' ? 'false' : ''), items: [] }]);
+    // a new reminder starts tomorrow morning, so there is already something to adjust
+    const tomorrow = () => { const d = new Date(); d.setDate(d.getDate() + 1); d.setHours(9, 0, 0, 0); return formatRemind(d.getTime(), false); };
+    commit([...plist, { key: k, type: known?.type ?? type, text: value ?? known?.value ?? (k.toLowerCase() === 'remind' ? tomorrow() : type === 'checkbox' ? 'false' : ''), items: [] }]);
     adding = false;
     picking = false;
     newKey = '';
@@ -186,10 +189,10 @@
             {:else if p.type === 'list'}
               <input id={'p' + i} value={p.items.join(', ')} disabled={readOnly} placeholder={t('propsListHint')} onchange={(e) => setItems(i, e.currentTarget.value)} />
             {:else}
-              <input id={'p' + i} type={p.type === 'number' ? 'number' : 'text'} value={p.text} disabled={readOnly} onchange={(e) => { update(i, { text: e.currentTarget.value }); if (p.key.toLowerCase() === 'remind') store.askNotifications(); }} />
-              {#if p.key.toLowerCase() === 'remind'}
-                {@const r = parseRemind(p.text)}
-                <small class="remind-hint" class:bad={p.text.trim() !== '' && !r}>{r ? `${otherCalendar(r, store.lang)}` : p.text.trim() ? t('remindBad') : t('remindHint')}</small>
+              {#if p.key.toLowerCase() === 'remind' && p.type === 'text'}
+                <ReminderEditor value={p.text} {readOnly} onchange={(v) => update(i, { text: v })} />
+              {:else}
+                <input id={'p' + i} type={p.type === 'number' ? 'number' : 'text'} value={p.text} disabled={readOnly} onchange={(e) => update(i, { text: e.currentTarget.value })} />
               {/if}
             {/if}
             {#if !readOnly}<button class="ghost small" aria-label={t('delete')} title={t('delete')} onclick={() => remove(i)}>✕</button>{:else}<span></span>{/if}

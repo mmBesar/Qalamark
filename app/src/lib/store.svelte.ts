@@ -1540,7 +1540,7 @@ class Store {
     }
     const now = Date.now();
     const list = upcoming(all, now, 0);
-    if (hasNativeReminders()) { scheduleNative(list.slice(0, 60)); return; } // the phone rings them, app open or not
+    if (hasNativeReminders()) { scheduleNative(list.slice(0, 150)); return; } // the phone rings them, app open or not
     clearTimeout(this.remTimer);
     const next = list.find((x) => !this.fired.includes(x.id + '@' + x.at));
     if (!next) return;

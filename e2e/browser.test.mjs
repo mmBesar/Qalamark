@@ -1704,6 +1704,26 @@ test('remind 1: a note with a remind property rings at that time and the banner 
   await c.close();
 });
 
+test('remind 2: easy picker writes the text, repeats are understood', async () => {
+  const c = await browser.newContext({ viewport: { width: 1100, height: 760 } });
+  const p = await c.newPage();
+  await signIn(p, 'alice', 'alice-password');
+  await freshNote(p, 'Water the plants');
+  await p.keyboard.press('Control+Home');
+  await p.keyboard.insertText('---\nremind: 2026-12-01 09:30\n---\n');
+  await p.waitForSelector('.remind-ed');
+  await p.click('.remind-chips .chip >> nth=2'); // tomorrow morning
+  await p.waitForFunction(() => /^\d{4}-\d\d-\d\d 09:00$/.test(document.querySelector('.remind-raw').value));
+  await p.fill('.remind-raw', '2026-12-01 09:30 every 2 weeks');
+  await p.locator('.remind-raw').blur();
+  await p.waitForFunction(() => document.querySelector('.remind-hint')?.textContent.includes('Every 2 weeks'));
+  await p.fill('.remind-raw', 'h1448-06-13 20:00 كل شهر');
+  await p.locator('.remind-raw').blur();
+  await p.waitForFunction(() => document.querySelector('.remind-hint')?.textContent.includes('Every month'));
+  if (process.env.SHOT) { await p.screenshot({ path: process.env.SHOT + '-desktop.png' }); await p.setViewportSize({ width: 390, height: 780 }); await p.waitForTimeout(400); await p.locator('.props').screenshot({ path: process.env.SHOT + '-phone.png' }); }
+  await c.close();
+});
+
 test('tools 1: the insert menu shows, bullet and task start an empty item, the bar can be customised, and each panel hides on its own', async () => {
   const errors = [];
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });

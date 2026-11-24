@@ -1,6 +1,7 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
 <!-- Copyright (C) 2026 mmBesar -->
 <script lang="ts">
+  import { parseRemind, otherCalendar } from '../lib/reminders.ts';
   import Select from './Select.svelte';
   import Icon from './Icon.svelte';
   import { onMount } from 'svelte';
@@ -87,7 +88,7 @@
   function setItems(i: number, raw: string) {
     update(i, { items: raw.split(',').map((x) => x.trim().replace(/^#/, '')).filter(Boolean) });
   }
-  const ICON: Record<string, string> = { title: 'type', tags: 'tag', tag: 'tag', aliases: 'link', alias: 'link', description: 'text', summary: 'text', date: 'calendar', created: 'calendar', updated: 'calendar', modified: 'calendar', due: 'clock', start: 'calendar', end: 'calendar', author: 'user', url: 'globe', link: 'globe', source: 'link', cssclasses: 'layers', kanban: 'board', view: 'board', tap: 'check', status: 'target', priority: 'flag', project: 'briefcase', category: 'folder', type: 'layers', location: 'mappin', rating: 'star', progress: 'percent', cover: 'image', related: 'link', pinned: 'pin', draft: 'check-box', publish: 'check-box' };
+  const ICON: Record<string, string> = { title: 'type', tags: 'tag', tag: 'tag', aliases: 'link', alias: 'link', description: 'text', summary: 'text', date: 'calendar', created: 'calendar', updated: 'calendar', modified: 'calendar', due: 'clock', remind: 'bell', start: 'calendar', end: 'calendar', author: 'user', url: 'globe', link: 'globe', source: 'link', cssclasses: 'layers', kanban: 'board', view: 'board', tap: 'check', status: 'target', priority: 'flag', project: 'briefcase', category: 'folder', type: 'layers', location: 'mappin', rating: 'star', progress: 'percent', cover: 'image', related: 'link', pinned: 'pin', draft: 'check-box', publish: 'check-box' };
   const iconFor = (p: Prop) => store.s.propIcons?.[p.key.toLowerCase()] ?? ICON[p.key.toLowerCase()] ?? (p.type === 'checkbox' ? 'check-box' : p.type === 'list' ? 'list' : p.type === 'number' ? 'hash' : 'text');
   const viewOf = $derived((plist.find((p) => p.key.toLowerCase() === 'view')?.text ?? '').trim().toLowerCase());
   const unused = $derived([
@@ -185,7 +186,11 @@
             {:else if p.type === 'list'}
               <input id={'p' + i} value={p.items.join(', ')} disabled={readOnly} placeholder={t('propsListHint')} onchange={(e) => setItems(i, e.currentTarget.value)} />
             {:else}
-              <input id={'p' + i} type={p.type === 'number' ? 'number' : 'text'} value={p.text} disabled={readOnly} onchange={(e) => update(i, { text: e.currentTarget.value })} />
+              <input id={'p' + i} type={p.type === 'number' ? 'number' : 'text'} value={p.text} disabled={readOnly} onchange={(e) => { update(i, { text: e.currentTarget.value }); if (p.key.toLowerCase() === 'remind') store.askNotifications(); }} />
+              {#if p.key.toLowerCase() === 'remind'}
+                {@const r = parseRemind(p.text)}
+                <small class="remind-hint" class:bad={p.text.trim() !== '' && !r}>{r ? `${otherCalendar(r, store.lang)}` : p.text.trim() ? t('remindBad') : t('remindHint')}</small>
+              {/if}
             {/if}
             {#if !readOnly}<button class="ghost small" aria-label={t('delete')} title={t('delete')} onclick={() => remove(i)}>✕</button>{:else}<span></span>{/if}
           {/each}

@@ -19,7 +19,8 @@ import { chooseBox, confirmBox } from './dialog.svelte.ts';
 import { cleanToolbar, DEFAULT_TOOLBAR } from './toolbar.ts';
 import { DEFAULT_GESTURES, type Gestures } from './gestures.ts';
 import { deletedElsewhere, leftoverIsUnchanged } from './syncplan.ts';
-import { hasWidgets, isChecklist, keepAlive, publishLists, putBackTick, takeTicks, toggleItem, widgetItems } from './widgets.ts';
+import { remindersOf, upcoming, type Reminder } from './reminders.ts';
+import { hasNativeReminders, hasWidgets, isChecklist, keepAlive, scheduleNative, takeOpenNote, publishLists, putBackTick, takeTicks, toggleItem, widgetItems } from './widgets.ts';
 import { deleteStored, readStoredText, syncNoteNow, writeStoredText } from './session.ts';
 
 export type Mode = 'boot' | 'welcome' | 'login' | 'local' | 'server';
@@ -1491,6 +1492,82 @@ class Store {
     }
   }
 
+  // ── reminders: a `remind` property in a note rings at that time and opens the note ──
+  /** The reminder that is ringing right now (shown as a banner), if any. */
+  ringing = $state<{ id: string; title: string; at: number } | null>(null);
+  private remOn = false;
+  private remTimer: ReturnType<typeof setTimeout> | undefined;
+  private remKickTimer: ReturnType<typeof setTimeout> | undefined;
+  private remCache = new Map<string, { updated: number; list: Reminder[] }>();
+  private fired: string[] = read<string[]>('qm.fired', []);
+  startReminders() {
+    if (this.remOn) return;
+    this.remOn = true;
+    const w = window as unknown as { __qmOpen?: () => void };
+    w.__qmOpen = () => this.openFromNotification();
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { this.openFromNotification(); this.remindKick(0); } });
+    this.remindKick(1000);
+  }
+  /** Ask for the reminders to be planned again soon (after a burst of changes). */
+  remindKick(ms = 2000) {
+    if (!this.remOn) return;
+    clearTimeout(this.remKickTimer);
+    this.remKickTimer = setTimeout(() => void this.planReminders(), ms);
+  }
+  /** A tapped notification (Android) asks for its note. */
+  openFromNotification() {
+    const id = takeOpenNote();
+    if (id && this.notes.some((n) => n.id === id)) this.currentId = id;
+  }
+  /** Open the note of the ringing reminder and dismiss it. */
+  openRinging() {
+    const r = this.ringing;
+    this.ringing = null;
+    if (r && this.notes.some((n) => n.id === r.id)) this.currentId = r.id;
+  }
+  private async planReminders() {
+    if (this.mode !== 'server' && this.mode !== 'local') return;
+    this.openFromNotification(); // the app was started by a tapped reminder: the notes are here now
+    const all: Array<{ id: string; title: string; list: Reminder[] }> = [];
+    for (const n of this.notes) {
+      let c = this.remCache.get(n.id);
+      if (!c || c.updated !== n.updated) {
+        const text = await this.exportText(n.id).catch(() => '');
+        c = { updated: n.updated, list: text.startsWith('---') ? remindersOf(text) : [] };
+        this.remCache.set(n.id, c);
+      }
+      if (c.list.length) all.push({ id: n.id, title: n.title, list: c.list });
+    }
+    const now = Date.now();
+    const list = upcoming(all, now, 0);
+    if (hasNativeReminders()) { scheduleNative(list.slice(0, 60)); return; } // the phone rings them, app open or not
+    clearTimeout(this.remTimer);
+    const next = list.find((x) => !this.fired.includes(x.id + '@' + x.at));
+    if (!next) return;
+    // a timer cannot be longer than about 24 days: look again before then
+    this.remTimer = setTimeout(() => void this.fire(next), Math.min(Math.max(next.at - Date.now(), 0), 2 ** 30));
+  }
+  private async fire(r: { id: string; title: string; at: number }) {
+    if (Date.now() < r.at - 1000) { this.remindKick(0); return; }
+    const key = r.id + '@' + r.at;
+    if (!this.fired.includes(key)) {
+      this.fired = [...this.fired.slice(-200), key];
+      write('qm.fired', this.fired);
+      this.ringing = r;
+      try {
+        if ('Notification' in window && Notification.permission === 'granted') {
+          const n = new Notification(r.title || 'Qalamark', { body: new Date(r.at).toLocaleString(), tag: key });
+          n.onclick = () => { window.focus(); this.openRinging(); };
+        }
+      } catch { /* no system notifications here: the banner is enough */ }
+    }
+    this.remindKick(0);
+  }
+  /** Ask the system once for the right to show notifications (when the first reminder is added). */
+  askNotifications() {
+    try { if ('Notification' in window && Notification.permission === 'default') void Notification.requestPermission(); } catch { /* ignore */ }
+  }
+
   /** What a ```base block lists: every note you can read, with its properties. */
   async baseRows(): Promise<NoteRow[]> {
     const out: NoteRow[] = [];
@@ -1572,6 +1649,10 @@ class Store {
   touch(id: string) {
     const n = this.notes.find((x) => x.id === id);
     if (n) n.updated = Math.floor(Date.now() / 1000);
+    this.remCache.delete(id); // `updated` counts seconds: an edit in the same second still has to be read again
+    this.widgetCache.delete(id);
+    this.remindKick();
+    this.widgetKick();
     if (this.mode === 'local') this.saveLocalList();
   }
 }

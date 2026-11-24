@@ -2170,3 +2170,11 @@ dialog.settings { overflow: hidden; }
   .props-box .props-quick { gap: 0.4rem; padding: 0.3rem 0; }
   .props-box .props-quick button { min-height: 2.3rem; }
 }
+
+/* reminders */
+.remind-banner { position: fixed; z-index: 90; top: calc(env(safe-area-inset-top, 0px) + 10px); left: 50%; translate: -50% 0; width: min(520px, calc(100vw - 24px)); display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 14px; background: var(--surface, var(--bg)); border: 1px solid var(--accent); box-shadow: 0 10px 30px rgb(0 0 0 / 0.35); touch-action: none; }
+.remind-banner .remind-text { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.remind-banner .remind-text strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.remind-banner small { color: var(--muted); }
+.remind-hint { grid-column: 2; color: var(--muted); font-size: 0.78rem; }
+.remind-hint.bad { color: var(--danger, #e5484d); }

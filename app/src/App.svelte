@@ -17,16 +17,18 @@
   import { inShell } from './lib/vault.ts';
   import { editorMenu, fieldMenu } from './lib/menus.ts';
   import { store } from './lib/store.svelte.ts';
+  import ReminderBanner from './components/ReminderBanner.svelte';
 
   let drawer = $state(false);
 
   // the home-screen widget follows the notes: one refresh after a burst of changes, never on a timer
   $effect(() => {
     store.notes.map((n) => n.updated).join(',');
-    untrack(() => store.widgetKick());
+    untrack(() => { store.widgetKick(); store.remindKick(); });
   });
   onMount(() => {
     store.startWidgets();
+    store.startReminders();
     void store.boot();
   });
 
@@ -224,6 +226,7 @@
   {/if}
 {/if}
 {#if store.toolbarOpen}<ToolbarDialog />{/if}
+<ReminderBanner />
 {#if store.palette}<Palette onSettings={() => (store.settingsOpen = true)} />{/if}
 <svelte:window ontouchstart={swStart} ontouchmove={swMove} ontouchend={swEnd} ontouchcancel={swEnd} oncontextmenu={onContext} onkeydown={(e) => { if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && (latinKey(e) === 'p' || latinKey(e) === 'k') && store.mode !== 'login' && store.mode !== 'welcome' && store.mode !== 'boot') { e.preventDefault(); store.palette = !store.palette; } else if (e.altKey && !e.ctrlKey && !e.metaKey && latinKey(e) === 'w' && store.currentId) { e.preventDefault(); store.closeTabs([store.currentId]); } else if ((e.ctrlKey || e.metaKey) && latinKey(e) === '\\' && store.mode !== 'login' && store.mode !== 'welcome') { e.preventDefault(); store.toggleSide(); } else if (e.altKey && !e.ctrlKey && !e.metaKey && latinKey(e) === 'z' && store.mode !== 'login' && store.mode !== 'welcome') { e.preventDefault(); store.toggleZen(); } else if (e.key === 'Escape' && store.zen && !store.palette) { store.zen = false; } else if (e.ctrlKey && e.key === 'Tab') { e.preventDefault(); store.nextTab(e.shiftKey ? -1 : 1); } }} />
 <DialogHost />

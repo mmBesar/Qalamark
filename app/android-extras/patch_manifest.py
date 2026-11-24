@@ -12,6 +12,10 @@ extra = """
       <intent-filter><action android:name="android.appwidget.action.APPWIDGET_CONFIGURE" /></intent-filter>
     </activity>
     <service android:name="io.github.mmbesar.qalamark.ChecklistService" android:permission="android.permission.BIND_REMOTEVIEWS" android:exported="false" />
+    <receiver android:name="io.github.mmbesar.qalamark.ReminderReceiver" android:exported="false" />
+    <receiver android:name="io.github.mmbesar.qalamark.BootReceiver" android:exported="true">
+      <intent-filter><action android:name="android.intent.action.BOOT_COMPLETED" /><action android:name="android.intent.action.MY_PACKAGE_REPLACED" /></intent-filter>
+    </receiver>
     <service android:name="io.github.mmbesar.qalamark.KeepAliveService" android:exported="false" android:foregroundServiceType="specialUse">
       <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE" android:value="Keeps the person's notes in sync while the app is in the background" />
     </service>

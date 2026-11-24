@@ -149,6 +149,7 @@ export const COMMON_PROPS: Array<{ key: string; type: PropType; value?: string }
   { key: 'date', type: 'text' },
   { key: 'status', type: 'text', value: 'todo' },
   { key: 'priority', type: 'text', value: 'medium' },
+  { key: 'remind', type: 'text' },
   { key: 'due', type: 'text' },
   { key: 'start', type: 'text' },
   { key: 'end', type: 'text' },

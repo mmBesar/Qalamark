@@ -7,4 +7,7 @@
   <string name="qm_sync_channel">Keeping notes up to date</string>
   <string name="qm_sync_title">Qalamark</string>
   <string name="qm_sync_text">Keeping your notes up to date</string>
+  <string name="qm_remind_channel">Reminders</string>
+  <string name="qm_remind_title">Qalamark</string>
+  <string name="qm_remind_text">Tap to open the note</string>
 </resources>

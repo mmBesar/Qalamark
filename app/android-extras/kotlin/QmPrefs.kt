@@ -14,6 +14,14 @@ object QmPrefs {
     w.post { w.evaluateJavascript("window.__qmTicks && window.__qmTicks()", null) }
   }
 
+  /** The note a tapped reminder asked for: kept until the page takes it. */
+  @Volatile var openNote: String = ""
+  fun takeOpen(): String { val v = openNote; openNote = ""; return v }
+  fun pokeOpen() {
+    val w = web ?: return
+    w.post { w.evaluateJavascript("window.__qmOpen && window.__qmOpen()", null) }
+  }
+
   private fun sp(c: Context) = c.getSharedPreferences("qalamark_widget", Context.MODE_PRIVATE)
 
   fun lists(c: Context): JSONArray = try { JSONArray(sp(c).getString("lists", "[]")) } catch (e: Exception) { JSONArray() }

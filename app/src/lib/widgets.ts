@@ -12,6 +12,8 @@ interface Bridge {
   takeTicks?(): string;
   pushTick?(json: string): void;
   keepAlive?(on: boolean): void;
+  scheduleReminders?(json: string): void;
+  takeOpen?(): string;
 }
 const bridge = (): Bridge | undefined => (typeof window === 'undefined' ? undefined : (window as unknown as { QalamarkAndroid?: Bridge }).QalamarkAndroid);
 export const hasWidgets = (): boolean => !!bridge()?.widgetData;
@@ -68,3 +70,13 @@ export function keepAlive(on: boolean): void {
 }
 
 export { flatItems, isChecklist, toggleItem };
+
+export const hasNativeReminders = (): boolean => !!bridge()?.scheduleReminders;
+/** Hand the coming reminders to the phone's alarm clock: they ring even when the app is closed. */
+export function scheduleNative(list: Array<{ id: string; title: string; at: number }>): void {
+  try { bridge()?.scheduleReminders?.(JSON.stringify(list)); } catch { /* not in the Android app */ }
+}
+/** The note a tapped notification asked for (once). */
+export function takeOpenNote(): string {
+  try { return bridge()?.takeOpen?.() || ''; } catch { return ''; }
+}

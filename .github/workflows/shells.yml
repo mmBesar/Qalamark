@@ -100,7 +100,7 @@ jobs:
           # Documents/Qalamark is outside the app's own space: Android asks for "all files" access (Settings, once)
           grep -q 'MANAGE_EXTERNAL_STORAGE' "$M" || sed -i 's|<application|<uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />\n    <application|' "$M"
           # background running (a quiet notification) and the home-screen checklist widget
-          for P in FOREGROUND_SERVICE FOREGROUND_SERVICE_SPECIAL_USE POST_NOTIFICATIONS; do
+          for P in FOREGROUND_SERVICE FOREGROUND_SERVICE_SPECIAL_USE POST_NOTIFICATIONS RECEIVE_BOOT_COMPLETED USE_EXACT_ALARM; do
             grep -q "android.permission.$P" "$M" || sed -i "s|<application|<uses-permission android:name=\"android.permission.$P\" />\n    <application|" "$M"
           done
           python3 android-extras/patch_manifest.py "$M"
@@ -149,8 +149,15 @@ jobs:
               }
             }
 
+            // a tapped reminder: remember which note it was for and tell the page (now, or when it has loaded)
+            override fun onNewIntent(intent: Intent) {
+              super.onNewIntent(intent)
+              intent.getStringExtra("qm_note")?.let { QmPrefs.openNote = it; QmPrefs.pokeOpen() }
+            }
+
             override fun onCreate(savedInstanceState: Bundle?) {
               super.onCreate(savedInstanceState)
+              intent?.getStringExtra("qm_note")?.let { QmPrefs.openNote = it }
               // asks once ("Allow Qalamark to access devices on your local network?"); without it a home server times out
               if (Build.VERSION.SDK_INT >= 37 && checkSelfPermission("android.permission.ACCESS_LOCAL_NETWORK") != PackageManager.PERMISSION_GRANTED) {
                 requestPermissions(arrayOf("android.permission.ACCESS_LOCAL_NETWORK"), 7)
@@ -197,6 +204,13 @@ jobs:
                   QmPrefs.pushTick(applicationContext, json)
                 }
                 // keep running in the background with a quiet notification
+                // reminders: the coming ones go to the phone's alarm clock; a tapped notification names its note
+                @JavascriptInterface
+                fun scheduleReminders(json: String) {
+                  Reminders.schedule(applicationContext, json)
+                }
+                @JavascriptInterface
+                fun takeOpen(): String = QmPrefs.takeOpen()
                 @JavascriptInterface
                 fun keepAlive(on: Boolean) {
                   runOnUiThread {

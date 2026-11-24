@@ -1688,6 +1688,22 @@ test('sync 1: a note deleted on one device disappears on the other and does not 
   await ca.close(); await cb.close();
 });
 
+test('remind 1: a note with a remind property rings at that time and the banner opens the note', async () => {
+  const c = await browser.newContext({ viewport: { width: 1100, height: 760 } });
+  const p = await c.newPage();
+  await signIn(p, 'alice', 'alice-password');
+  await freshNote(p, 'Call the plumber');
+  const d = new Date(Math.ceil((Date.now() + 8000) / 60000) * 60000); // the next whole minute (times have no seconds)
+  const f = (n) => String(n).padStart(2, '0');
+  await p.keyboard.press('Control+Home');
+  await p.keyboard.insertText(`---\nremind: ${d.getFullYear()}-${f(d.getMonth() + 1)}-${f(d.getDate())} ${f(d.getHours())}:${f(d.getMinutes())}:00\n---\n`);
+  await p.waitForSelector('.remind-banner', { timeout: 80000 });
+  assert.match(await p.locator('.remind-banner').innerText(), /Call the plumber/);
+  await p.click('.remind-banner button.primary');
+  await p.waitForSelector('.remind-banner', { state: 'detached' });
+  await c.close();
+});
+
 test('tools 1: the insert menu shows, bullet and task start an empty item, the bar can be customised, and each panel hides on its own', async () => {
   const errors = [];
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });

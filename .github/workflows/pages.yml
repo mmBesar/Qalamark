@@ -19,18 +19,17 @@ permissions:
   contents: read
   pages: write
   id-token: write
+  actions: read
 
 # Only one deployment at a time.
 concurrency:
   group: pages
-  cancel-in-progress: true
+  cancel-in-progress: false
 
+# Two jobs, the way GitHub documents it: one builds and uploads the site, the other only publishes it.
 jobs:
-  deploy:
+  build:
     runs-on: ubuntu-24.04
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v6
 
@@ -45,10 +44,19 @@ jobs:
         run: |
           npm ci
           npm run build
+          test -f dist/index.html
 
       - uses: actions/configure-pages@v6
       - uses: actions/upload-pages-artifact@v5
         with:
           path: app/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-24.04
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
       - id: deployment
         uses: actions/deploy-pages@v5

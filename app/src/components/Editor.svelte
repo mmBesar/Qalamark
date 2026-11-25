@@ -329,7 +329,6 @@
         { label: t('table'), run: (v) => insertTable(v) },
         { label: t('insCodeTitle'), keywords: 'code fence block', run: (v) => insertSnippet(v, SNIPPETS.codeTitle) },
         { label: t('insCallout'), keywords: 'note info warning', run: (v) => insertSnippet(v, SNIPPETS.callout) },
-        { label: t('insAdmonition'), keywords: 'mkdocs !!!', run: (v) => insertSnippet(v, SNIPPETS.admonition) },
         { label: t('insCollapsible'), keywords: 'details ???', run: (v) => insertSnippet(v, SNIPPETS.collapsible) },
         { label: t('insTabs'), keywords: '===', run: (v) => insertSnippet(v, SNIPPETS.tabs) },
         { label: t('insBase'), keywords: 'base database table properties list overview', run: (v) => insertSnippet(v, '```base\nshow: tags\nsort: title\n```\n') },
@@ -338,6 +337,8 @@
       ],
       mode: mode === 'board' ? 'live' : mode,
       titles: () => store.notes.map((n) => n.title).filter((x) => x !== first.title),
+      places: () => store.notes.filter((n) => n.id !== first.id).map((n) => ({ title: n.title, folder: n.folder ?? '' })),
+      folder: () => store.notes.find((n) => n.id === first.id)?.folder ?? first.folder ?? '',
       openLink: (target) => {
         const { note, heading } = splitTarget(target);
         if (!note || note.toLowerCase() === first.title.toLowerCase()) {
@@ -724,7 +725,6 @@
   {#if insMenu}
     <div class="menu insmenu" role="menu" transition:pop|global onpointerdown={holdTools} onmousedown={(e) => e.preventDefault()} style:left={insPos.left + 'px'} style:top={insPos.top != null ? insPos.top + 'px' : undefined} style:bottom={insPos.bottom != null ? insPos.bottom + 'px' : undefined}>
       <button onclick={() => snippet(SNIPPETS.callout)}>{t('insCallout')}</button>
-      <button onclick={() => snippet(SNIPPETS.admonition)}>{t('insAdmonition')}</button>
       <button onclick={() => snippet(SNIPPETS.collapsible)}>{t('insCollapsible')}</button>
       <button onclick={() => snippet(SNIPPETS.tabs)}>{t('insTabs')}</button>
       <button onclick={() => snippet(SNIPPETS.codeTitle)}>{t('insCodeTitle')}</button>

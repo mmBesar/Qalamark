@@ -57,7 +57,6 @@ export function editorMenu(e: MouseEvent, t: T): MenuItem[] {
           { label: t('quote'), icon: 'quote', run: () => { toggleLinePrefix(view, '> '); view.focus(); } },
           { label: t('table'), icon: 'table', run: () => { insertTable(view); } },
           { label: t('insCallout'), icon: 'layers', run: () => { insertSnippet(view, SNIPPETS.callout); } },
-          { label: t('insAdmonition'), icon: 'layers', run: () => { insertSnippet(view, SNIPPETS.admonition); } },
           { label: t('insCollapsible'), icon: 'layers', run: () => { insertSnippet(view, SNIPPETS.collapsible); } },
         ] as MenuItem[],
       },

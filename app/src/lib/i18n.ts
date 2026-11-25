@@ -7,8 +7,7 @@ export type Lang = 'en' | 'ar';
 
 const en = {
   appName: 'Qalamark',
-  insCallout: 'Callout (Obsidian)',
-  insAdmonition: 'Note box (MkDocs !!!)',
+  insCallout: 'Note box (GitHub alert)',
   insCollapsible: 'Collapsible box (MkDocs ???)',
   insTabs: 'Tabs (MkDocs ===)',
   insCodeTitle: 'Code block with a title',
@@ -385,8 +384,7 @@ const en = {
 
 const ar: typeof en = {
   appName: 'قلم',
-  insCallout: 'تنبيه (Obsidian)',
-  insAdmonition: 'مربع ملاحظة (MkDocs !!!)',
+  insCallout: 'مربع ملاحظة (تنبيه GitHub)',
   insCollapsible: 'مربع قابل للطي (MkDocs ???)',
   insTabs: 'تبويبات (MkDocs ===)',
   insCodeTitle: 'كتلة شيفرة بعنوان',

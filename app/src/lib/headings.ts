@@ -3,6 +3,8 @@
 //
 // Headings of a note (for the table of contents and for [[Note#Heading]] links).
 
+import { slug } from './mdlinks.ts';
+
 export interface Heading {
   level: number;
   /** The heading as plain text (marks removed). */
@@ -56,7 +58,7 @@ export function parseHeadings(text: string): Heading[] {
 export function findHeading(hs: Heading[], wanted: string): Heading | undefined {
   const w = plainHeading(wanted).toLowerCase();
   if (!w) return undefined;
-  return hs.find((h) => h.text.toLowerCase() === w) ?? hs.find((h) => h.text.toLowerCase().startsWith(w));
+  return hs.find((h) => h.text.toLowerCase() === w) ?? hs.find((h) => slug(h.text) === w) ?? hs.find((h) => h.text.toLowerCase().startsWith(w));
 }
 
 /** Split a link target "Note#Heading" into its parts. */

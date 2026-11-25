@@ -22,6 +22,7 @@ import { cycleHeading, toggleWrap } from './commands.ts';
 import { autoCalc } from './autocalc.ts';
 import { codeTitles, mkdocsBlocks } from './mkdocs.ts';
 import { pictures, type ImageHooks } from './images.ts';
+import { noteLink } from '../lib/mdlinks.ts';
 import { livePreview, plainFrontMatter, readingMode, wikiConfig } from './livepreview.ts';
 import { type BaseHooks, baseExtension } from './base.ts';
 import { type TableLabels, tablesExtension } from './tables.ts';
@@ -66,6 +67,9 @@ export interface EditorOptions {
   mode: ViewMode;
   /** Titles of the other notes (for [[links]]). */
   titles: () => string[];
+  /** Where each other note lives, and the folder of this one: `[[` writes standard relative links. */
+  places?: () => Array<{ title: string; folder: string }>;
+  folder?: () => string;
   openLink: (target: string) => void;
   /** Headings of the note called `note` (empty = this note), for [[Note#Heading]]. */
   headings?: (note: string) => Promise<string[]>;
@@ -400,6 +404,12 @@ const edgeClicks = ViewPlugin.fromClass(
 export function createEditor(o: EditorOptions): Editor {
   const undo = new UndoManager(o.ytext);
   // Typing [[ offers the titles of your notes.
+  /** The standard link to a note (and a heading in it): relative to this note, so it keeps working when the folder moves. */
+  const linkFor = (title: string, heading: string): string => {
+    const here = o.folder?.() ?? '';
+    const note = (o.places?.() ?? []).find((n) => n.title.toLowerCase() === (title || '').toLowerCase());
+    return noteLink(here, note?.folder ?? here, note?.title ?? title, heading);
+  };
   const wikiSource = async (ctx: CompletionContext) => {
     const m = ctx.matchBefore(/\[\[[^\]\n|]*/);
     if (!m) return null;
@@ -418,7 +428,11 @@ export function createEditor(o: EditorOptions): Editor {
           detail: '#',
           apply: (view: EditorView, _c: unknown, from: number, to: number) => {
             const closed = view.state.sliceDoc(to, to + 2) === ']]';
-            view.dispatch({ changes: { from, to, insert: label + (closed ? '' : ']]') }, selection: { anchor: from + label.length + (closed ? 2 : 2) } });
+            const note = body.slice(0, hash).trim();
+            const link = linkFor(note, label);
+            const start = m.from;
+            const end = to + (closed ? 2 : 0);
+            view.dispatch({ changes: { from: start, to: end, insert: link }, selection: { anchor: start + link.length } });
           },
         }));
       return options.length ? { from: m.from + 2 + hash + 1, options, filter: false, validFor: /^[^\]\n|]*$/ } : null;
@@ -432,7 +446,10 @@ export function createEditor(o: EditorOptions): Editor {
         label,
         apply: (view: EditorView, _c: unknown, from: number, to: number) => {
           const closed = view.state.sliceDoc(to, to + 2) === ']]';
-          view.dispatch({ changes: { from, to, insert: label + (closed ? '' : ']]') }, selection: { anchor: from + label.length + 2 } });
+          const link = linkFor(label, '');
+          const start = m.from;
+          const end = to + (closed ? 2 : 0);
+          view.dispatch({ changes: { from: start, to: end, insert: link }, selection: { anchor: start + link.length } });
         },
       }));
     return { from: m.from + 2, options, filter: false, validFor: /^[^\]\n|#]*$/ };
@@ -500,7 +517,7 @@ export function createEditor(o: EditorOptions): Editor {
     bracketMatching(),
     closeBrackets(),
     autocompletion({ icons: false, override: [wikiSource, slashSource] }),
-    wikiConfig.of({ titles: o.titles, open: o.openLink }),
+    wikiConfig.of({ titles: o.titles, open: o.openLink, folder: o.folder }),
     highlightSelectionMatches({ minSelectionLength: 3, wholeWords: true, highlightWordAroundCursor: false }),
     // Triple-click selects the line itself, not the line break (which dragged the cursor onto the next line).
     // Home and End go to the start and end of the line as it is written (the first and last character), also on lines that mix

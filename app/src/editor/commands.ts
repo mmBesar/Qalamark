@@ -189,8 +189,7 @@ export function insertSnippet(view: EditorView, snippet: string): boolean {
 }
 
 export const SNIPPETS = {
-  callout: '> [!note] Title\n> [[cursor]]\n',
-  admonition: '!!! note "Title"\n    [[cursor]]\n',
+  callout: '> [!NOTE]\n> [[cursor]]\n',
   collapsible: '??? tip "Title"\n    [[cursor]]\n',
   tabs: '=== "First"\n    [[cursor]]\n\n=== "Second"\n    \n',
   codeTitle: '```py title="example.py"\n[[cursor]]\n```\n',

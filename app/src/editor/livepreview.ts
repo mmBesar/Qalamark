@@ -6,6 +6,7 @@
 // Nothing here changes the text itself - only how it is drawn.
 
 import { readFrontMatter } from '../lib/frontmatter.ts';
+import { noteTarget } from '../lib/mdlinks.ts';
 import { scanBlocks } from './mkdocs.ts';
 import { syntaxTree } from '@codemirror/language';
 import { CodeBadge, fenceLang } from './codebadge.ts';
@@ -18,6 +19,8 @@ const hide = Decoration.replace({});
 /** What the editor needs to know about other notes, to draw and follow [[links]]. */
 export interface WikiConfig {
   titles: () => string[];
+  /** Folder of the note being edited (standard links are relative to it). */
+  folder?: () => string;
   /** Follow a link: "Note", "Note#Heading" or "#Heading". */
   open: (target: string) => void;
 }
@@ -418,9 +421,13 @@ const plugin = ViewPlugin.fromClass(
         if (!url) return false;
         // a link to another note ([text](other.md)) opens in the app; web addresses open with Ctrl/Cmd-click
         if (!/^[a-z][a-z0-9+.-]*:/i.test(url) && !url.startsWith('#') && cfg) {
-          let name = url;
-          try { name = decodeURIComponent(url); } catch { /* keep as is */ }
-          cfg.open(name.replace(/^\.?\//, '').replace(/\.md$/i, ''));
+          const to = noteTarget(cfg.folder?.() ?? '', url);
+          if (to) cfg.open(to.title + (to.frag ? '#' + to.frag : ''));
+          else {
+            let name = url;
+            try { name = decodeURIComponent(url); } catch { /* keep as is */ }
+            cfg.open(name.replace(/^\.?\//, '').replace(/\.md$/i, ''));
+          }
           e.preventDefault();
           return true;
         }

@@ -14,6 +14,8 @@
   import { type LinkStatus, NoteSession } from '../lib/session.ts';
   import HistoryDialog from './HistoryDialog.svelte';
   import { snapshot } from '../lib/history.ts';
+  import { miniBlocks } from '../lib/miniview.ts';
+  import PdfDialog from './PdfDialog.svelte';
   import { store } from '../lib/store.svelte.ts';
   import { latinKey } from '../lib/keys.ts';
   import Properties from './Properties.svelte';
@@ -501,6 +503,15 @@
   }
   const run = (f: (v: typeof editor.view) => boolean) => () => { f(editor.view); editor.view.focus(); };
 
+  // the tab cards show the notes as they are now: read each open note when the cards open
+  async function refreshThumbs() {
+    for (const id of store.tabs) {
+      if (id === note.id) continue; // this one is kept up to date by the editor itself
+      const text = await store.exportText(id).catch(() => '');
+      if (text) store.setPreview(id, text);
+    }
+  }
+  $effect(() => { if (mobile && store.sheet === 'tabs') void refreshThumbs(); });
   async function rename() {
     if (!canRename || title.trim() === note.title) return;
     try {
@@ -510,6 +521,12 @@
       err = e instanceof Error ? e.message : String(e);
       title = note.title;
     }
+  }
+
+  let pdf = $state<{ text: string } | null>(null);
+  async function openPdf() {
+    menu = false;
+    pdf = { text: await store.exportText(note.id, session.ytext.toString()) };
   }
 
   async function exportMd() {
@@ -687,6 +704,7 @@
             <button role="menuitem" onclick={() => { menu = false; store.toggleZen(); }}>{t('zen')} · Alt+Z</button>
             <button role="menuitem" onclick={() => ((help = true), (menu = false))}>{t('help')} · ƒ</button>
             {#if !viewNote && !readOnly}<button role="menuitem" onclick={() => { menu = false; makeBoardNote(); }}>{t('boardUse')}</button><button role="menuitem" onclick={() => { menu = false; makeChecklistNote(); }}>{t('checklistUse')}</button>{/if}
+            <button role="menuitem" onclick={openPdf}>{t('pdfExport')}</button>
             <button role="menuitem" onclick={exportMd}>{t('export')}</button>
             <button role="menuitem" class="danger" onclick={remove}>{note.role === 'owner' || store.mode === 'local' ? t('delete') : t('leave')}</button>
           </div>
@@ -775,7 +793,18 @@
           <div class="tab-card" dir="auto" class:on={id === store.currentId} role="button" tabindex="0" onclick={() => { store.currentId = id; store.sheet = null; }} onkeydown={(e) => { if (e.key === 'Enter') { store.currentId = id; store.sheet = null; } }}>
             <b>{n.title}</b>
             <small>{n.folder || t('personal')}</small>
-            <p>{store.previews[id] ?? ''}</p>
+            <div class="tab-thumb" dir="auto" aria-hidden="true">
+              {#each miniBlocks(store.previews[id] ?? '') as b, bi (bi)}
+                {#if b.t === 'h'}<div class={'mv-h mv-h' + Math.min(b.level, 3)} dir="auto">{b.text}</div>
+                {:else if b.t === 'li'}<div class="mv-li" dir="auto" style:margin-inline-start={b.depth * 0.7 + 'em'}><span class="mv-mark" class:box={b.task} class:done={b.task === 'done'}>{b.task ? (b.task === 'done' ? '✓' : '') : b.num ? b.num + '.' : '•'}</span><span class:mv-struck={b.task === 'done'}>{b.text}</span></div>
+                {:else if b.t === 'quote'}<div class="mv-quote" dir="auto">{b.text}</div>
+                {:else if b.t === 'code'}<pre class="mv-code" dir="ltr">{b.text}</pre>
+                {:else if b.t === 'table'}<table class="mv-table"><tbody>{#each b.rows as row, ri (ri)}<tr>{#each row as c, ci (ci)}<td dir="auto">{c}</td>{/each}</tr>{/each}</tbody></table>
+                {:else if b.t === 'img'}<div class="mv-img">🖼 {b.text}</div>
+                {:else if b.t === 'hr'}<hr class="mv-hr" />
+                {:else}<div class="mv-p" dir="auto">{b.text}</div>{/if}
+              {/each}
+            </div>
             <button class="x" aria-label={t('tabClose')} onclick={(e) => { e.stopPropagation(); store.closeTabs([id]); if (!store.tabs.length) store.sheet = null; }}><Icon name="close" size={14} /></button>
           </div>
         {/if}
@@ -819,6 +848,7 @@
       <button onclick={() => { store.sheet = null; hist = true; }}><Icon name="clock" size={20} /> {t('history')}</button>
       <button onclick={() => { store.sheet = null; store.settingsOpen = true; }}><Icon name="settings" size={20} /> {t('settings')}</button>
       <button onclick={() => { store.sheet = null; help = true; }}><Icon name="fx" size={20} /> {t('help')}</button>
+      <button onclick={() => { store.sheet = null; void openPdf(); }}><Icon name="pdf" size={20} /> {t('pdfExport')}</button>
       <button onclick={() => { store.sheet = null; exportMd(); }}><Icon name="upload" size={20} /> {t('export')}</button>
       <button class="danger" onclick={() => { store.sheet = null; remove(); }}><Icon name="trash" size={20} /> {note.role === 'owner' || store.mode === 'local' ? t('delete') : t('leave')}</button>
     </div>
@@ -835,6 +865,10 @@
       {/each}
     </div>
   </Sheet>
+{/if}
+
+{#if pdf}
+  <PdfDialog title={note.title} text={pdf.text} resolve={resolveImage} onClose={() => (pdf = null)} />
 {/if}
 
 {#if hist}

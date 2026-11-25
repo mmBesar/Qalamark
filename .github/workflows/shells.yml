@@ -204,6 +204,11 @@ jobs:
                   QmPrefs.pushTick(applicationContext, json)
                 }
                 // keep running in the background with a quiet notification
+                // export as PDF: the system print window, which can save a PDF
+                @JavascriptInterface
+                fun printHtml(html: String, name: String) {
+                  PrintPage.print(this@MainActivity, html, name)
+                }
                 // reminders: the coming ones go to the phone's alarm clock; a tapped notification names its note
                 @JavascriptInterface
                 fun scheduleReminders(json: String) {

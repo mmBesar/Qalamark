@@ -1159,13 +1159,15 @@ class Store {
   }
 
   /** Recently opened notes, newest first. */
+  /** Phones: a settings category page is showing over the category list. */
+  settingsPage = $state(false);
   /** Phones: which bottom sheet is open. */
   sheet = $state<null | 'tabs' | 'toc' | 'more' | 'links' | 'templates'>(null);
   /** The first lines of notes opened here, for the tab thumbnails. */
   previews = $state<Record<string, string>>(read<Record<string, string>>('qm.previews', {}));
   private previewTimer = 0;
   setPreview(id: string, text: string) {
-    const clean = text.replace(/^---[\s\S]*?\n---\s*/, '').replace(/[#>*`_\[\]|-]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 140);
+    const clean = text.replace(/^---[ \t]*\r?\n[\s\S]*?\r?\n---[ \t]*(?:\r?\n|$)/, '').slice(0, 700); // the start of the note, drawn as it looks when read
     if (this.previews[id] === clean) return;
     this.previews[id] = clean;
     clearTimeout(this.previewTimer);

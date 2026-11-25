@@ -7,7 +7,7 @@
 
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { mkdtempSync, readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, before, test } from 'node:test';
@@ -1658,6 +1658,94 @@ test('phone 1: settings fit the screen as a list that slides to a page; properti
   const after = await page.evaluate(() => { const m = document.querySelector('.set-main').getBoundingClientRect(); return { l: m.left, r: m.right, iw: innerWidth }; });
   assert.ok(after.l >= -1 && after.r <= after.iw + 1, 'the page is on screen ' + JSON.stringify(after));
   await ctx.close();
+});
+
+test('android 1: rendered tab cards, dropdowns in settings open on screen, system back goes page -> list -> app', async () => {
+  const ctx = await browser.newContext({ viewport: { width: 393, height: 800 }, hasTouch: true, isMobile: true, deviceScaleFactor: 2 });
+  const page = await ctx.newPage();
+  await signIn(page, 'alice', 'alice-password');
+  await freshNote(page, 'Rendered thumb');
+  await page.keyboard.insertText('# Big heading\n\n- [ ] one\n- [x] two\n');
+  await page.waitForTimeout(900);
+  await page.locator('.icon.tabs').dispatchEvent('click');
+  await page.waitForSelector('.tab-card.on .mv-h');
+  assert.ok(await page.locator('.tab-card.on .mv-mark.box').count() >= 2, 'ticks are drawn as boxes');
+  assert.ok(!(await page.locator('.tab-card.on .tab-thumb').innerText()).includes('- ['), 'no markdown source in the card');
+  await page.locator('.tab-card.on').dispatchEvent('click');
+  await page.waitForFunction(() => !document.querySelector('.tab-card'));
+  await page.evaluate(() => { document.querySelector('button[aria-label="Settings"]')?.click(); });
+  await page.waitForSelector('dialog.settings[open]');
+  await page.tap('.set-tabs button:has-text("Look")');
+  await page.waitForTimeout(500);
+  await page.tap('.set-main .selbtn >> nth=0');
+  await page.waitForSelector('.sel-pop');
+  const box = await page.evaluate(() => { const r = document.querySelector('.sel-pop').getBoundingClientRect(); return { t: r.top, b: r.bottom, l: r.left, r: r.right, iw: innerWidth, ih: innerHeight, inDlg: !!document.querySelector('.sel-pop').closest('dialog') }; });
+  assert.ok(box.t >= 0 && box.b <= box.ih && box.l >= 0 && box.r <= box.iw && box.inDlg, 'the list is on screen: ' + JSON.stringify(box));
+  await page.tap('.sel-pop li >> nth=1');
+  await page.waitForFunction(() => !document.querySelector('.sel-pop'));
+  // a keyboard coming and going (height only) must not close a list
+  await page.tap('.set-main .selbtn >> nth=0');
+  await page.waitForSelector('.sel-pop');
+  await page.setViewportSize({ width: 393, height: 480 });
+  await page.waitForTimeout(300);
+  assert.ok(await page.locator('.sel-pop').count(), 'list survives a keyboard-sized resize');
+  await page.setViewportSize({ width: 393, height: 800 });
+  await page.keyboard.press('Escape');
+  await page.waitForFunction(() => !document.querySelector('.sel-pop'));
+  // back: page -> list -> app
+  await page.evaluate(() => history.back());
+  await page.waitForFunction(() => !document.querySelector('.set-shell.in-page'));
+  assert.ok(await page.locator('dialog.settings[open]').count(), 'still in settings, on the list');
+  await page.evaluate(() => history.back());
+  await page.waitForFunction(() => !document.querySelector('dialog.settings[open]'));
+  await ctx.close();
+});
+
+test('android 2: leaving a settings page with the arrow leaves no stale back entry', async () => {
+  const ctx = await browser.newContext({ viewport: { width: 393, height: 800 }, hasTouch: true, isMobile: true, deviceScaleFactor: 2 });
+  const page = await ctx.newPage();
+  await signIn(page, 'alice', 'alice-password');
+  await freshNote(page, 'Back entries');
+  // the arrow in the page and then one system back leaves settings (no stale entry)
+  await page.evaluate(() => { document.querySelector('button[aria-label="Settings"]')?.click(); });
+  await page.waitForSelector('dialog.settings[open]');
+  await page.tap('.set-tabs button:has-text("Look")');
+  await page.waitForTimeout(400);
+  await page.tap('.set-back button');
+  await page.waitForFunction(() => !document.querySelector('.set-shell.in-page'));
+  await page.waitForTimeout(300);
+  await page.evaluate(() => history.back());
+  await page.waitForFunction(() => !document.querySelector('dialog.settings[open]'));
+  await ctx.close();
+});
+
+test('pdf 1: the export page has the note without its properties, tables and Arabic, and prints', async () => {
+  const c = await browser.newContext({ viewport: { width: 1200, height: 860 } });
+  const p = await c.newPage();
+  await signIn(p, 'alice', 'alice-password');
+  await freshNote(p, 'Invoice 7');
+  await p.keyboard.press('Control+Home');
+  await p.keyboard.insertText('---\ncustomer: SECRETPROP\nstatus: draft\n---\n# Invoice 7\n\n| الصنف | السعر |\n|---|--:|\n| قلم | 5 |\n\nمرحبا بالعالم\n\n- [x] paid\n');
+  await p.waitForTimeout(800);
+  await p.locator('.menu-wrap.desk button.icon').click();
+  await p.click('.menu button:has-text("Export as PDF")');
+  await p.waitForSelector('dialog.pdf-dlg[open] iframe');
+  const frame = p.frameLocator('dialog.pdf-dlg iframe');
+  await frame.locator('table').waitFor();
+  const text = await frame.locator('body').innerText();
+  assert.ok(text.includes('Invoice 7') && text.includes('قلم') && text.includes('مرحبا بالعالم'), 'the note is there');
+  assert.ok(!text.includes('SECRETPROP') && !text.includes('customer'), 'properties are not');
+  assert.equal(await frame.locator('table').getAttribute('dir'), 'auto');
+  // the real thing: print the page to a PDF file with the browser's own engine
+  const html = await p.evaluate(() => document.querySelector('dialog.pdf-dlg iframe').srcdoc);
+  const q = await c.newPage();
+  await q.setContent(html);
+  const pdf = await q.pdf({ preferCSSPageSize: true, printBackground: true });
+  assert.ok(pdf.length > 3000 && pdf.subarray(0, 4).toString() === '%PDF', 'a PDF came out');
+  if (process.env.SHOT) { writeFileSync(process.env.SHOT + '-invoice.pdf', pdf); await p.screenshot({ path: process.env.SHOT + '-pdfdlg.png' }); }
+  await p.click('dialog.pdf-dlg .primary');
+  await p.waitForFunction(() => !document.querySelector('dialog.pdf-dlg[open]'));
+  await c.close();
 });
 
 test('sync 1: a note deleted on one device disappears on the other and does not come back', async () => {

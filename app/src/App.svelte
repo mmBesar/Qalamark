@@ -34,19 +34,24 @@
 
   const t = store.t;
 
-  // Android back button: close the top layer (settings, menu, palette, sign-in) before leaving the app
+  // Android back button: close the top layer (a settings page, settings, menu, palette, sign-in) before leaving the app.
+  // Each layer has one history entry: opening one adds an entry, and closing one by hand (an X, a back arrow) takes its entry
+  // away again, so the next back press is not wasted on an entry that no longer means anything.
   let pushed = 0;
+  let skip = 0; // entries we took away ourselves: their popstate must not close anything
   $effect(() => {
-    const layers = (store.settingsOpen ? 1 : 0) + (drawer ? 1 : 0) + (store.sheet ? 1 : 0) + (store.palette ? 1 : 0) + (store.mode === 'login' ? 1 : 0);
-    while (pushed < layers) {
-      history.pushState({ qm: ++pushed }, '');
-    }
+    const layers = (store.settingsOpen ? 1 : 0) + (store.settingsOpen && store.settingsPage ? 1 : 0) + (drawer ? 1 : 0) + (store.sheet ? 1 : 0) + (store.palette ? 1 : 0) + (store.mode === 'login' ? 1 : 0);
+    while (pushed < layers) history.pushState({ qm: ++pushed }, '');
+    while (pushed > layers) { pushed--; skip++; history.back(); }
   });
+  $effect(() => { if (!store.settingsOpen) store.settingsPage = false; });
   onMount(() => {
     const onPop = () => {
+      if (skip > 0) { skip--; return; }
       if (pushed > 0) pushed--;
       if (store.sheet) store.sheet = null;
       else if (store.palette) store.palette = false;
+      else if (store.settingsOpen && store.settingsPage) store.settingsPage = false;
       else if (store.settingsOpen) store.settingsOpen = false;
       else if (drawer) drawer = false;
       else if (store.mode === 'login') store.startLocal();

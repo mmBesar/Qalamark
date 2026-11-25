@@ -69,7 +69,6 @@
     />
     {#if draft}<button type="button" class="fp-clear" aria-label={store.t('fontDefault')} title={store.t('fontDefault')} onclick={() => choose('')}><Icon name="close" size={14} /></button>{/if}
     <button type="button" class="fp-open" aria-label={store.t('fontsList')} onclick={() => (open ? commit() : void show())}><Icon name="chevron" size={14} /></button>
-  </div>
   {#if open}
     <div class="fp-list" role="listbox">
       {#each groups as g (g.name)}
@@ -82,6 +81,7 @@
       {/each}
     </div>
   {/if}
+  </div>
   <div class="fp-sample" style:--pick={draft ? `'${draft.replace(/['"\\]/g, '')}'` : ''}>
     <div class="fp-en" dir="ltr">Quiet notes, bright ideas — 2026</div>
     <div class="fp-ar" dir="rtl">أفكار هادئة، وكلمات تنبض بالحياة ١٢٣٤</div>

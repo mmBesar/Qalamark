@@ -16,10 +16,21 @@
   let btn: HTMLButtonElement | undefined = $state();
   let pos = $state({ x: 0, y: 0, w: 0, up: false });
   let hi = $state(0);
+  // the list is moved to <body>: inside a panel that slides (the settings page) a fixed list is placed against the panel, not the screen
+  function portal(node: HTMLElement) {
+    // a window opened with showModal() is drawn above everything else in the page, so the list goes into that window
+    (btn?.closest('dialog') ?? document.body).appendChild(node);
+    return { destroy() { node.remove(); } };
+  }
+  // the keyboard going up or down changes the height only: that must not close the list (only a real change of width does)
+  let lastW = typeof window === 'undefined' ? 0 : window.innerWidth;
   const current = $derived(options.find((o) => o.value === value)?.label ?? '—');
 
   function toggle() {
     if (open) return (open = false);
+    // a keyboard left open by a field above would resize the page under the list: put it away first
+    const a = document.activeElement as HTMLElement | null;
+    if (a && a !== btn && (/^(INPUT|TEXTAREA)$/.test(a.tagName) || a.isContentEditable)) a.blur();
     const r = btn!.getBoundingClientRect();
     const room = window.innerHeight - r.bottom;
     pos = { x: r.left, y: room < 220 ? r.top : r.bottom + 4, w: r.width, up: room < 220 };
@@ -45,13 +56,13 @@
   }
 </script>
 
-<svelte:window onpointerdown={(e) => { if (open && !(e.target as Element).closest('.sel-pop, .selbtn')) open = false; }} onresize={() => (open = false)} />
+<svelte:window onpointerdown={(e) => { if (open && !(e.target as Element).closest('.sel-pop, .selbtn')) open = false; }} onresize={() => { if (window.innerWidth !== lastW) { lastW = window.innerWidth; open = false; } }} />
 
 <button type="button" class="selbtn" bind:this={btn} role="combobox" aria-expanded={open} aria-haspopup="listbox" aria-label={label || undefined} {dir} onclick={toggle} onkeydown={key}>
   <span class="cur">{current}</span><Icon name="chevron" size={14} />
 </button>
 {#if open}
-  <ul class="sel-pop" role="listbox" {dir} transition:pop|global style="left:{pos.x}px; min-width:{pos.w}px; {pos.up ? `bottom:${window.innerHeight - pos.y + 4}px` : `top:${pos.y}px`}">
+  <ul class="sel-pop" role="listbox" {dir} use:portal transition:pop|global style="left:{pos.x}px; min-width:{pos.w}px; {pos.up ? `bottom:${window.innerHeight - pos.y + 4}px` : `top:${pos.y}px`}">
     {#each options as o, i (o.value)}
       <li role="option" aria-selected={o.value === value} class:hi={i === hi} onpointerenter={() => (hi = i)} onclick={() => pick(o.value)} onkeydown={() => {}}>{o.label}</li>
     {/each}

@@ -29,9 +29,10 @@
   // a phone gets its own shape: a list of categories that slides over to the page you picked (back arrow to return)
   const mq = typeof matchMedia === 'function' ? matchMedia('(max-width: 760px)') : null;
   let phone = $state(mq?.matches ?? false);
-  let inPage = $state(false);
+  // whether a category page is showing (phone): the system back button goes from it to the list, so the app knows about it
+  const inPage = $derived(store.settingsPage);
   $effect(() => { const f = () => (phone = mq!.matches); mq?.addEventListener('change', f); return () => mq?.removeEventListener('change', f); });
-  const pick = (id: string) => { tab = id; inPage = true; };
+  const pick = (id: string) => { tab = id; if (phone) store.settingsPage = true; };
 
   const t = store.t;
   let avatarInput: HTMLInputElement;
@@ -151,7 +152,7 @@
 
     <div class="set-main">
       {#if phone}
-        <div class="set-back"><button class="icon" type="button" aria-label={t('back')} onclick={() => (inPage = false)}><Icon name="chevron-left" size={22} /></button><h2>{t(tabs.find((x) => x.id === tab)?.label as never)}</h2></div>
+        <div class="set-back"><button class="icon" type="button" aria-label={t('back')} onclick={() => (store.settingsPage = false)}><Icon name="chevron-left" size={22} /></button><h2>{t(tabs.find((x) => x.id === tab)?.label as never)}</h2></div>
       {/if}
       <div class="set-page">
         {#if tab === 'look'}

@@ -62,8 +62,8 @@
     </div>
   {/if}
   <div class="remind-row">
-    <input type="date" value={dateVal} disabled={readOnly} aria-label={t('remDate')} onchange={(e) => setDate(e.currentTarget.value)} />
-    <input type="time" value={timeVal} disabled={readOnly} aria-label={t('remTime')} onchange={(e) => setTime(e.currentTarget.value)} />
+    <input type="date" inputmode="none" value={dateVal} disabled={readOnly} aria-label={t('remDate')} onchange={(e) => setDate(e.currentTarget.value)} />
+    <input type="time" inputmode="none" value={timeVal} disabled={readOnly} aria-label={t('remTime')} onchange={(e) => setTime(e.currentTarget.value)} />
   </div>
   <div class="remind-row">
     <Select value={key(every)} options={repeatOptions} onchange={setRepeat} label={t('remRepeat')} />

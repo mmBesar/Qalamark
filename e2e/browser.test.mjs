@@ -610,7 +610,7 @@ test('round 8: offline work queues and syncs when the server returns; section li
   await page.click('.topbar .seg button:has-text("Source")');
   await page.waitForTimeout(300);
   const shown = await page.locator('.cm-content').innerText();
-  assert.ok(/\[\[Target#Second part\]\]/.test(shown), 'heading inserted into the link: ' + JSON.stringify(shown));
+  assert.ok(/\[Target\]\(Target\.md#second-part\)/.test(shown), 'heading inserted as a standard link: ' + JSON.stringify(shown));
   assert.deepEqual(errors, []);
 });
 
@@ -1977,3 +1977,31 @@ test('sync 1: a note made offline reaches the server once, with its text, and th
   assert.deepEqual(errors, []);
 });
 function readableOnDisk(name) { try { return readFileSync(note(name), 'utf8').includes('written'); } catch { return false; } }
+
+test('links 1: [[ writes a standard relative link, spaces in angle brackets, and the note opens from it', async () => {
+  const errors = [];
+  const page = await newPage(errors);
+  await signIn(page, 'alice', 'alice-password');
+  await page.locator('aside .actions button:first-child').dispatchEvent('click');
+  await page.waitForSelector('.page-title');
+  await page.fill('.page-title', 'Zeta target');
+  await page.locator('.page-title').blur();
+  await page.click('.cm-content');
+  await page.keyboard.insertText('the target body');
+  await page.waitForTimeout(600);
+  await page.locator('aside .actions button:first-child').dispatchEvent('click');
+  await page.waitForTimeout(500);
+  await page.fill('.page-title', 'Linker note');
+  await page.locator('.page-title').blur();
+  await page.click('.cm-content');
+  await page.keyboard.insertText('go [[Zeta');
+  await page.waitForSelector('.cm-tooltip-autocomplete', { timeout: 6000 });
+  await page.keyboard.press('Enter');
+  await page.waitForTimeout(300);
+  await page.click('.topbar .seg button:has-text("Source")');
+  await page.waitForTimeout(300);
+  const shown = await page.locator('.cm-content').innerText();
+  assert.ok(/go \[Zeta target\]\(<Zeta target\.md>\)/.test(shown), 'standard link written: ' + JSON.stringify(shown));
+  assert.ok(!/\[\[/.test(shown), 'no [[ left behind');
+  assert.deepEqual(errors, []);
+});

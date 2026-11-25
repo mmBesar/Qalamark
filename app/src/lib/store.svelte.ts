@@ -21,6 +21,7 @@ import { DEFAULT_GESTURES, type Gestures } from './gestures.ts';
 import { deletedElsewhere, leftoverIsUnchanged } from './syncplan.ts';
 import { remindersOf, upcoming, type Reminder } from './reminders.ts';
 import { hasNativeReminders, hasWidgets, isChecklist, keepAlive, scheduleNative, takeOpenNote, publishLists, putBackTick, takeTicks, toggleItem, widgetItems } from './widgets.ts';
+import { retarget } from './mdlinks.ts';
 import { deleteStored, readStoredText, syncNoteNow, writeStoredText } from './session.ts';
 
 export type Mode = 'boot' | 'welcome' | 'login' | 'local' | 'server';
@@ -1096,6 +1097,25 @@ class Store {
     this.notes = this.notes.map((x) => (x.id === id && (x.display ?? '') !== display ? { ...x, display } : x));
   }
 
+  /** Local mode: after a note was renamed or moved, links to it in the other notes (and its own relative links) are rewritten.
+   *  The note that is open in the editor is left alone (its live text would overwrite the change). */
+  private async relinkLocal(id: string, from: { folder: string; title: string }, to: { folder: string; title: string }) {
+    const full = (f: { folder: string; title: string }) => (f.folder ? f.folder + '/' : '') + f.title + '.md';
+    const [a, b] = [full(from), full(to)];
+    const moved = (p: string) => (p.toLowerCase() === a.toLowerCase() ? b : null);
+    for (const n of this.notes) {
+      if (this.mode === 'server' || (n.id !== id && n.id === this.currentId)) continue;
+      const own = n.id === id;
+      if (own && n.id === this.currentId) continue;
+      const folder = n.folder ?? '';
+      try {
+        const text = await readStoredText(`local:${n.id}`);
+        const out = retarget(text, own ? from.folder : folder, own ? to.folder : folder, moved);
+        if (out !== null) await writeStoredText(`local:${n.id}`, out);
+      } catch { /* a note that cannot be read is left as it is */ }
+    }
+  }
+
   async renameNote(id: string, title: string) {
     const name = title.trim();
     const note = this.notes.find((n) => n.id === id);
@@ -1114,8 +1134,10 @@ class Store {
       write(this.cacheKey(), this.notes);
       void this.vaultPaths();
     } else {
+      const was = { folder: note.folder ?? '', title: note.title };
       this.notes = this.notes.map((x) => (x.id === id ? { ...x, title: name } : x));
       this.saveLocalList();
+      await this.relinkLocal(id, was, { folder: was.folder, title: name });
     }
   }
 
@@ -1344,8 +1366,11 @@ class Store {
       write(this.cacheKey(), this.notes);
       void this.vaultPaths();
     } else {
-      this.notes = this.notes.map((x) => (x.id === id ? { ...x, folder, title: this.uniqueLocalTitle(x.title, folder) } : x));
+      const was = { folder: note.folder ?? '', title: note.title };
+      const title = this.uniqueLocalTitle(note.title, folder);
+      this.notes = this.notes.map((x) => (x.id === id ? { ...x, folder, title } : x));
       this.saveLocalList();
+      await this.relinkLocal(id, was, { folder, title });
     }
   }
 

@@ -6,7 +6,7 @@
 use crate::auth::{check_password, hash_password, new_token, token_hash, user_for_token, User};
 use crate::db::now;
 use crate::state::{Shared, Signup};
-use crate::text::{rewrite_links, safe_folder, safe_name, set_title_property, valid_username, wiki_links};
+use crate::text::{note_link_paths, retarget, rewrite_links, safe_folder, safe_name, set_title_property, valid_username, wiki_links};
 use axum::{
     extract::{ws::{Message as WsMessage, WebSocket, WebSocketUpgrade}, Path, Query, State},
     http::StatusCode,
@@ -666,7 +666,13 @@ pub struct Rename {
 
 /// After a rename: links to the page in the owner's other notes follow the new name, and the
 /// renamed note's own `title:` property (if it has one) is kept the same as its file name.
-fn relink(s: &Shared, owner: &str, renamed: &str, old: &str, new: &str) {
+/// After a note was renamed or moved (`old_path` → `new_path`, both as "<user>/…"): links to it elsewhere follow, and its
+/// own relative links and pictures are rewritten for the folder it is in now.
+fn relink(s: &Shared, owner: &str, renamed: &str, old_path: &str, new_path: &str) {
+    let (old, new) = (title_of(old_path), title_of(new_path));
+    let inner = |p: &str| p.split_once('/').map(|x| x.1.to_string()).unwrap_or_default();
+    let (old_in, new_in) = (inner(old_path), inner(new_path));
+    let moved = |p: &str| (p.to_lowercase() == old_in.to_lowercase()).then(|| new_in.clone());
     let rows: Vec<(String, String)> = {
         let db = s.db.lock().unwrap();
         let Ok(mut st) = db.prepare("SELECT n.id, n.path FROM notes n JOIN users u ON u.id = n.owner_id WHERE u.username = ?1") else { return };
@@ -678,12 +684,22 @@ fn relink(s: &Shared, owner: &str, renamed: &str, old: &str, new: &str) {
         let edit = |t: &str| -> Option<String> {
             let mut cur = t.to_string();
             let mut changed = false;
-            if let Some(x) = rewrite_links(&cur, old, new) {
+            let here = inner(&path);
+            let folder_old = if own { inner(old_path) } else { here.clone() };
+            let folder_old = folder_old.rsplit_once('/').map(|x| x.0.to_string()).unwrap_or_default();
+            let folder_new = if own { new_in.rsplit_once('/').map(|x| x.0.to_string()).unwrap_or_default() } else { folder_old.clone() };
+            if let Some(x) = retarget(&cur, &folder_old, &folder_new, &moved) {
                 cur = x;
                 changed = true;
             }
+            if old != new {
+                if let Some(x) = rewrite_links(&cur, &old, &new) {
+                    cur = x;
+                    changed = true;
+                }
+            }
             if own {
-                if let Some(x) = set_title_property(&cur, new) {
+                if let Some(x) = set_title_property(&cur, &new) {
                     cur = x;
                     changed = true;
                 }
@@ -719,10 +735,7 @@ pub async fn rename_note(State(s): State<Shared>, user: User, Path(id): Path<Str
             std::fs::rename(&from, &to).map_err(internal)?;
         }
         s.db.lock().unwrap().execute("UPDATE notes SET path = ?2 WHERE id = ?1", params![id, rel]).map_err(internal)?;
-        let (old_title, new_title) = (title_of(&a.path), title_of(&rel));
-        if old_title != new_title {
-            relink(&s, &a.owner, &id, &old_title, &new_title);
-        }
+        relink(&s, &a.owner, &id, &a.path, &rel);
     }
     Ok(Json(NoteMeta { display: display_of(&s, &rel), folder: folder_of(&rel), id, title: title_of(&rel), owner: a.owner, role: "owner", updated: a.updated }))
 }
@@ -902,7 +915,12 @@ pub async fn backlinks(State(s): State<Shared>, user: User, Path(id): Path<Strin
             Some(room) => room.text(),
             None => std::fs::read_to_string(s.cfg.notes_dir().join(&path)).unwrap_or_default(),
         };
-        if wiki_links(&text).iter().any(|l| l.to_lowercase() == title) {
+        let inner = path.split_once('/').map(|x| x.1).unwrap_or("");
+        let folder = inner.rsplit_once('/').map(|x| x.0).unwrap_or("");
+        let me_inner = me.path.split_once('/').map(|x| x.1).unwrap_or("").to_lowercase();
+        let same_owner = path.split('/').next() == me.path.split('/').next();
+        let by_path = same_owner && note_link_paths(&text, folder).iter().any(|p| p.to_lowercase() == me_inner);
+        if by_path || wiki_links(&text).iter().any(|l| l.to_lowercase() == title) {
             out.push(Backlink { id: nid, title: title_of(&path) });
         }
     }

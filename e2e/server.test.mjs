@@ -220,6 +220,25 @@ test('backlinks: notes that link to a note with [[Title]]', async () => {
   assert.equal((await api('GET', `/api/notes/${target.id}/backlinks`, bob)).status, 404);
 });
 
+test('standard links: backlinks find them, rename and move rewrite them (and the moved note\'s own links)', async () => {
+  const tgt = (await api('POST', '/api/notes', alice, { title: 'Std target' })).body;
+  const lk = (await api('POST', '/api/notes', alice, { title: 'Std linker', content: 'Go [here](Std%20target.md) or [there](<Std target.md#part>) and ![p](_images/p.png)' })).body;
+  assert.deepEqual((await api('GET', `/api/notes/${tgt.id}/backlinks`, alice)).body.map((b) => b.title), ['Std linker']);
+  // rename the target: the link follows
+  await api('PATCH', `/api/notes/${tgt.id}`, alice, { title: 'Std renamed' });
+  let text = readFileSync(join(data, 'notes/alice/Std linker.md'), 'utf8');
+  assert.ok(text.includes('[here](Std renamed.md)') || text.includes('[here](<Std renamed.md>)'), text);
+  assert.ok(text.includes('<Std renamed.md#part>'), text);
+  // move the target into a folder: the link follows again
+  await api('PATCH', `/api/notes/${tgt.id}`, alice, { folder: 'Deep' });
+  text = readFileSync(join(data, 'notes/alice/Std linker.md'), 'utf8');
+  assert.ok(text.includes('<Deep/Std renamed.md#part>'), text);
+  // move the linker into a folder: its own relative links gain ../
+  await api('PATCH', `/api/notes/${lk.id}`, alice, { folder: 'Other' });
+  text = readFileSync(join(data, 'notes/alice/Other/Std linker.md'), 'utf8');
+  assert.ok(text.includes('../Deep/Std renamed.md') && text.includes('](../_images/p.png)'), text);
+});
+
 test('admin: sign-up switch, password reset, make admin, delete user', async () => {
   // The switch: closed by default, open when the admin says so, and closed again.
   assert.equal((await api('PUT', '/api/admin/settings', bob, { signup: true })).status, 403);

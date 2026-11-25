@@ -1748,6 +1748,85 @@ test('pdf 1: the export page has the note without its properties, tables and Ara
   await c.close();
 });
 
+test('images 1: without a server a picture is kept on this device and shown after a reload', async () => {
+  const { srv, url } = await staticApp();
+  const errors = [];
+  const page = await newPage(errors);
+  await page.goto(url);
+  await page.waitForSelector('aside');
+  await page.click('aside .actions button:first-child');
+  await page.waitForSelector('.cm-content');
+  await page.click('.cm-content');
+  await page.keyboard.insertText('# With picture\n\n');
+  const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');
+  await page.setInputFiles('input[type=file][accept="image/*"]', { name: 'dot.png', mimeType: 'image/png', buffer: png });
+  await page.waitForFunction(() => /!\[\]\(_images\/img-[\w-]+\.png\)/.test(document.querySelector('.cm-content').innerText + [...document.querySelectorAll('.cm-line')].map((l) => l.textContent).join('')) || document.querySelector('.cm-picture img'), null, { timeout: 8000 });
+  await page.keyboard.press('Control+End');
+  await page.keyboard.insertText('after');
+  await sleep(600);
+  await page.reload();
+  await page.waitForSelector('.cm-content');
+  await page.waitForFunction(() => document.querySelector('.cm-picture img')?.src.startsWith('blob:'), null, { timeout: 8000 });
+  assert.deepEqual(errors, []);
+  srv.close();
+});
+
+test('board 1: a card is pressed and dragged to another column with a finger', async () => {
+  const ctx = await browser.newContext({ viewport: { width: 1100, height: 760 }, hasTouch: true });
+  const page = await ctx.newPage();
+  await signIn(page, 'alice', 'alice-password');
+  await page.click('aside .actions button:first-child');
+  await page.waitForSelector('.cm-content');
+  await page.click('.cm-content');
+  await page.keyboard.insertText('# Work\n\n## Todo\n- [ ] write docs\n- [ ] fix bug\n\n## Done\n- [x] ship\n');
+  await page.click('.page-title');
+  await page.click('.topbar .menu-wrap.desk > button');
+  await page.click('button[role=menuitem]:has-text("Kanban")');
+  await page.waitForSelector('.board .bcol');
+  const cdp = await ctx.newCDPSession(page);
+  const card = await page.locator('.bcol >> nth=0 >> .card:has-text("fix bug") >> .label').boundingBox();
+  const target = await page.locator('.bcol >> nth=1').boundingBox();
+  const sx = card.x + 20, sy = card.y + card.height / 2;
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: sx, y: sy }] });
+  await page.waitForTimeout(600); // the press
+  await page.waitForSelector('.card-ghost');
+  const ex = target.x + target.width / 2, ey = target.y + 90;
+  for (let k = 1; k <= 8; k++) await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: sx + ((ex - sx) * k) / 8, y: sy + ((ey - sy) * k) / 8 }] });
+  await page.waitForTimeout(150);
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  await page.waitForSelector('.bcol >> nth=1 >> .card:has-text("fix bug")');
+  assert.equal(await page.locator('.bcol >> nth=0 >> .card:has-text("fix bug")').count(), 0);
+  await page.waitForFunction(() => !document.querySelector('.card-ghost'));
+  // a quick swipe (no press) does not pick a card up
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: sx, y: sy }] });
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: sx + 60, y: sy + 5 }] });
+  await page.waitForTimeout(500);
+  assert.equal(await page.locator('.card-ghost').count(), 0);
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  await ctx.close();
+});
+
+test('board 2: a step template on the board note adds the steps to a tagged card', async () => {
+  const page = await newPage([]);
+  await signIn(page, 'alice', 'alice-password');
+  await page.click('aside .actions button:first-child');
+  await page.waitForSelector('.cm-content');
+  await page.click('.cm-content');
+  await page.keyboard.insertText('---\nsteps-bug: [Reproduce, Fix, Test]\n---\n# Work\n\n## Todo\n- [ ] crash on start #bug\n- [ ] plain card\n\n## Done\n');
+  await page.click('.page-title');
+  await page.click('.topbar .menu-wrap.desk > button');
+  await page.click('button[role=menuitem]:has-text("Kanban")');
+  await page.waitForSelector('.board .bcol');
+  await page.hover('.bcol >> nth=0 >> .card:has-text("crash on start")');
+  await page.click('.bcol >> nth=0 >> .card:has-text("crash on start") >> .stepbtn');
+  await page.click('.tplbtn');
+  await page.waitForFunction(() => document.querySelectorAll('.bcol .card .steps li').length === 3);
+  assert.equal(await page.locator('.tplbtn').count(), 0, 'offered once');
+  await page.hover('.bcol >> nth=0 >> .card:has-text("plain card")');
+  await page.click('.bcol >> nth=0 >> .card:has-text("plain card") >> .stepbtn');
+  assert.equal(await page.locator('.bcol >> nth=0 >> .card:has-text("plain card") >> .tplbtn').count(), 0, 'no tag, no template');
+});
+
 test('sync 1: a note deleted on one device disappears on the other and does not come back', async () => {
   const mk = async () => { const c = await browser.newContext({ viewport: { width: 1100, height: 760 } }); const p = await c.newPage(); await signIn(p, 'alice', 'alice-password'); return [c, p]; };
   const [ca, a] = await mk();

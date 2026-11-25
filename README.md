@@ -250,4 +250,6 @@ Notes are plain files, and the editing code is tested hard for exactly that reas
 - **Reminders**: add a `remind` property with the picker (quick choices, date, time, repeat daily / weekly / monthly / yearly, Gregorian or Hijri) or type it (`2026-12-01 09:30 every week`, Hijri: `h1448-06-13 20:00 every month`) and Qalamark rings at that time; tapping the notification opens that note. On Android the phone's alarm clock rings it even when the app is closed. The other calendar's date is shown under the property. Prayer-time anchors will come with a separate Prayer app.
 
 - **Export as PDF**: any note, without its properties, as a clean page (real text, Arabic lines on the right, tables, ticks, pictures). Choose paper, margins, text size, title and page numbers with a live preview, then save through the system print window (“Save as PDF”). Good for invoices.
-- **Pictures**: Insert (+) → Picture, or paste or drop an image; pictures are stored on your server (sign in to use them).
+- **Pictures**: Insert (+) → Picture, or paste or drop an image; pictures are stored on your server, or on this device when you use the app without one.
+
+- **Board**: press a card for a moment, then drag it to another column with your finger (the strip scrolls at the edges); mouse users drag as before. Step templates: add `steps-bug: [Reproduce, Fix, Test]` to the board note's properties and every card tagged `#bug` offers those steps.

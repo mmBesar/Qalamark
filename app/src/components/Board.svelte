@@ -50,6 +50,67 @@
     if (drag) relocate(drag.c, drag.i, c, i);
     drag = over = null;
   }
+  // ── touch: press a card for a moment, then drag it to another column (HTML5 drag and drop does not exist on phones) ──
+  let press: { id: number; x: number; y: number; c: number; i: number; dx: number; dy: number; w: number; h: number; text: string; timer: ReturnType<typeof setTimeout> } | null = null;
+  let ghost = $state<{ x: number; y: number; w: number; h: number; text: string } | null>(null);
+  let touchDragging = false;
+  let lastX = 0;
+  let edge: ReturnType<typeof setInterval> | undefined;
+
+  function cardDown(e: PointerEvent, c: number, i: number, text: string) {
+    if (e.pointerType === 'mouse' || readOnly || editing !== null || press) return;
+    if ((e.target as HTMLElement).closest('button, a, input, textarea, .steps, .stages, .addform')) return;
+    const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    press = { id: e.pointerId, x: e.clientX, y: e.clientY, c, i, dx: e.clientX - r.left, dy: e.clientY - r.top, w: r.width, h: r.height, text: clean(text) || text, timer: setTimeout(startTouchDrag, 380) };
+  }
+  function startTouchDrag() {
+    if (!press) return;
+    touchDragging = true;
+    drag = { c: press.c, i: press.i };
+    ghost = { x: press.x - press.dx, y: press.y - press.dy, w: press.w, h: press.h, text: press.text };
+    lastX = press.x;
+    try { navigator.vibrate?.(18); } catch { /* no vibration */ }
+    // keep the column strip still while a finger is dragging: a timer scrolls it when the finger is at an edge
+    edge = setInterval(() => {
+      if (!scroller) return;
+      const r = scroller.getBoundingClientRect();
+      const d = lastX < r.left + 48 ? -14 : lastX > r.right - 48 ? 14 : 0;
+      if (d) scroller.scrollLeft += d;
+    }, 16);
+  }
+  function cardMove(e: PointerEvent) {
+    if (!press || e.pointerId !== press.id) return;
+    if (!touchDragging) { if (Math.hypot(e.clientX - press.x, e.clientY - press.y) > 10) endPress(false); return; }
+    lastX = e.clientX;
+    if (ghost) ghost = { ...ghost, x: e.clientX - press.dx, y: e.clientY - press.dy };
+    const col = document.elementFromPoint(e.clientX, e.clientY)?.closest('.bcol') as HTMLElement | null;
+    const ci = col ? Array.from(scroller?.querySelectorAll('.bcol') ?? []).indexOf(col) : -1;
+    if (!col || ci < 0) { over = null; return; }
+    const cards = Array.from(col.querySelectorAll<HTMLElement>('li.card'));
+    const after = cards.find((el) => { const r = el.getBoundingClientRect(); return e.clientY < r.top + r.height / 2; });
+    over = { c: ci, i: after ? Number(after.dataset.i) : board.columns[ci]!.cards.length };
+  }
+  function cardUp(e: PointerEvent) {
+    if (!press || e.pointerId !== press.id) return;
+    endPress(touchDragging && e.type === 'pointerup');
+  }
+  function endPress(commit: boolean) {
+    if (!press) return;
+    clearTimeout(press.timer);
+    clearInterval(edge);
+    if (touchDragging && commit && over) drop(over.c, over.i);
+    drag = over = null;
+    ghost = null;
+    touchDragging = false;
+    press = null;
+  }
+  // a finger that is dragging a card must not also scroll the page
+  function holdScroll(node: HTMLElement) {
+    const h = (e: TouchEvent) => { if (touchDragging && e.cancelable) e.preventDefault(); };
+    node.addEventListener('touchmove', h, { passive: false });
+    return { destroy: () => node.removeEventListener('touchmove', h) };
+  }
+
   async function removeColumn(c: number) {
     const col = board.columns[c]!;
     if (col.cards.length && !(await confirmBox(t('deleteColumnAsk', { name: col.title, n: col.cards.length })))) return;
@@ -115,6 +176,27 @@
   let open = $state<Set<string>>(new Set());
   let moving = $state<string | null>(null);
   let stepDraft = $state('');
+  // step templates: a property `steps-bug: [Reproduce, Fix, Test]` on the board note gives every card tagged #bug those steps
+  const templates = $derived.by(() => {
+    const out: Record<string, string[]> = {};
+    for (const p of readFrontMatter(text)?.props ?? []) {
+      const m = /^steps?[-_.](.+)$/i.exec(p.key);
+      if (!m) continue;
+      const list = (p.type === 'list' ? p.items : p.text.split(/[,،]/)).map((x) => x.trim()).filter(Boolean);
+      if (list.length) out[m[1]!.toLowerCase()] = list;
+    }
+    return out;
+  });
+  const templateFor = (card: { text: string; subs: unknown[] }): { tag: string; steps: string[] } | null => {
+    if (card.subs.length) return null;
+    for (const tg of tags(card.text)) { const st = templates[tg.toLowerCase()]; if (st) return { tag: tg, steps: st }; }
+    return null;
+  };
+  function applyTemplate(c: number, i: number, steps: string[], stage: string | null) {
+    let next = text;
+    for (const label of steps) next = addSub(next, c, i, label, stage);
+    apply(next);
+  }
   const key = (c: number, i: number) => `${c}:${i}`;
   const toggleOpen = (k: string) => { const n = new Set(open); n.has(k) ? n.delete(k) : n.add(k); open = n; };
   const stepsOf = (card: { subs: Sub[] }, title: string) =>
@@ -164,6 +246,8 @@
   }
 </script>
 
+<svelte:window onpointermove={cardMove} onpointerup={cardUp} onpointercancel={cardUp} />
+
 <div class="boardwrap">
 <div class="btools">
   <div class="bsum" title={t('boardProgress')}>
@@ -183,7 +267,7 @@
 <nav class="bstrip" aria-label={t('modeBoard')}>
   {#each board.columns as col, c}<button class:on={at === c} onclick={() => jump(c)}>{col.title} <small>{col.cards.length}</small></button>{/each}
 </nav>
-<div class="board" role="region" aria-label={t('modeBoard')} bind:this={scroller} onscroll={seen}>
+<div class="board" class:dragging={!!ghost} role="region" aria-label={t('modeBoard')} bind:this={scroller} onscroll={seen} use:holdScroll>
   {#each board.columns as col, c (col.head + ':' + col.title)}
     <section class="bcol" class:over={over?.c === c && over.i >= col.cards.length}
       ondragover={(e) => { if (drag) { e.preventDefault(); over = { c, i: col.cards.length }; } }}
@@ -208,8 +292,10 @@
       <ul>
         {#each col.cards as card, i (card.start + ':' + card.text)}
           {#if shown(card.text)}
-          <li class="card" dir="auto" class:done={card.done} class:dragging={drag?.c === c && drag.i === i} class:before={over?.c === c && over.i === i && drag}
+          <li class="card" dir="auto" data-i={i} class:done={card.done} class:dragging={drag?.c === c && drag.i === i} class:before={over?.c === c && over.i === i && drag}
             onkeydown={(e) => cardKeys(e, c, i)}
+            onpointerdown={(e) => cardDown(e, c, i, card.text)}
+            oncontextmenu={(e) => { if (press) e.preventDefault(); }}
             draggable={!readOnly && editing === null}
             ondragstart={(e) => { drag = { c, i }; e.dataTransfer?.setData('text/plain', card.text); }}
             ondragend={() => (drag = over = null)}
@@ -259,6 +345,10 @@
                   {/each}
                 </ul>
                 {#if !readOnly}
+                  {#if templateFor(card)}
+                    {@const tpl = templateFor(card)!}
+                    <button class="ghost small tplbtn" onclick={() => applyTemplate(c, i, tpl.steps, kind === 'pipeline' ? col.title : null)}>＋ {t('boardTemplate', { tag: tpl.tag, n: tpl.steps.length })}</button>
+                  {/if}
                   <form class="addform stepadd" onsubmit={(e) => { e.preventDefault(); apply(addSub(text, c, i, stepDraft, kind === 'pipeline' ? col.title : null)); stepDraft = ''; }}>
                     <input bind:value={stepDraft} placeholder={t('boardStepText')} aria-label={t('boardStepText')} />
                   </form>
@@ -331,7 +421,14 @@
 </div>
 </div>
 
+{#if ghost}
+  <div class="card-ghost" dir="auto" aria-hidden="true" style:left="{ghost.x}px" style:top="{ghost.y}px" style:width="{ghost.w}px">{ghost.text}</div>
+{/if}
+
 <style>
+  .card-ghost { position: fixed; z-index: 120; pointer-events: none; padding: 0.6rem 0.75rem; border-radius: 12px; background: var(--surface, var(--bg)); border: 1px solid var(--accent); box-shadow: 0 14px 34px rgb(0 0 0 / 0.4); transform: rotate(2.5deg) scale(1.03); opacity: 0.96; overflow: hidden; max-height: 9rem; }
+  .board.dragging { scroll-snap-type: none !important; }
+  @media (pointer: coarse) { .card { -webkit-touch-callout: none; user-select: none; -webkit-user-select: none; } }
   .boardwrap { flex: 1; min-height: 0; display: flex; flex-direction: column; }
   .btools { display: flex; align-items: center; gap: 0.7rem; padding: 0.7rem 1.2rem 0; flex-wrap: wrap; }
   .bsum { display: flex; align-items: center; gap: 0.5rem; font-size: 0.82rem; color: var(--muted); }

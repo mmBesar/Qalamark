@@ -16,6 +16,7 @@
   import { snapshot } from '../lib/history.ts';
   import { miniBlocks } from '../lib/miniview.ts';
   import PdfDialog from './PdfDialog.svelte';
+  import { loadLocalImage, saveLocalImage } from '../lib/localimages.ts';
   import { store } from '../lib/store.svelte.ts';
   import { latinKey } from '../lib/keys.ts';
   import Properties from './Properties.svelte';
@@ -352,7 +353,7 @@
       extra: tocExt,
       images: {
         resolve: resolveImage,
-        upload: server && !readOnly ? uploadImage : undefined,
+        upload: !readOnly ? uploadImage : undefined,
       },
     });
     editorReady = true;
@@ -394,7 +395,14 @@
   function resolveImage(url: string): Promise<string | null> {
     if (/^(https?:|data:|blob:)/i.test(url)) return Promise.resolve(url);
     const m = /^(?:\.\/)?(?:\.\.\/)*_images\/([A-Za-z0-9._-]+)$/.exec(url);
-    if (!m || store.mode !== 'server') return Promise.resolve(null);
+    if (!m) return Promise.resolve(null);
+    if (store.mode !== 'server') {
+      // no server: the picture is on this device
+      const key = `local/${m[1]}`;
+      let lp = blobs.get(key);
+      if (!lp) { lp = loadLocalImage(m[1]!).then((b) => (b ? URL.createObjectURL(b) : null)); blobs.set(key, lp); }
+      return lp;
+    }
     const key = `${note.owner}/${m[1]}`;
     let p = blobs.get(key);
     if (!p) {
@@ -408,6 +416,7 @@
   }
   async function uploadImage(blob: Blob): Promise<string | null> {
     try {
+      if (store.mode !== 'server') return await saveLocalImage(blob);
       return (await store.api.uploadImage(blob)).markdown;
     } catch (e) {
       err = e instanceof Error ? e.message : String(e);

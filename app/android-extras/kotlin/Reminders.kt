@@ -67,7 +67,7 @@ object Reminders {
       flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
     }
     val tap = PendingIntent.getActivity(c, (id + at).hashCode(), open, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
-    b.setSmallIcon(android.R.drawable.ic_popup_reminder)
+    b.setSmallIcon(R.drawable.ic_stat_qalamark).setColor(0xFF8839EF.toInt())
       .setContentTitle(if (title.isEmpty()) c.getString(R.string.qm_remind_title) else title)
       .setContentText(c.getString(R.string.qm_remind_text))
       .setContentIntent(tap).setAutoCancel(true).setCategory(Notification.CATEGORY_REMINDER).setWhen(at).setShowWhen(true)

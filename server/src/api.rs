@@ -1075,6 +1075,35 @@ pub async fn delete_folder(State(s): State<Shared>, user: User, axum::extract::Q
     }
 }
 
+// -------------------------------------------------------------- a PDF made from a note
+
+#[derive(Serialize)]
+pub struct PdfSaved {
+    /// Where it was saved, inside the owner's notes folder.
+    path: String,
+}
+
+/// Save the PDF of a note (the request body) next to the note's file, with the same name and ".pdf" after it.
+/// Whoever may edit the note may do this; the file lives in the owner's folder.
+pub async fn put_note_pdf(State(s): State<Shared>, user: User, Path(id): Path<String>, body: axum::body::Bytes) -> ApiResult<PdfSaved> {
+    let a = access(&s, &user, &id)?;
+    if a.role == "view" {
+        return err(StatusCode::FORBIDDEN, "You can only view this note");
+    }
+    if body.len() < 8 || &body[..5] != b"%PDF-" {
+        return err(StatusCode::BAD_REQUEST, "That is not a PDF file");
+    }
+    let rel = format!("{}.pdf", a.path.strip_suffix(".md").unwrap_or(&a.path));
+    let file = s.cfg.notes_dir().join(&rel);
+    if let Some(d) = file.parent() {
+        std::fs::create_dir_all(d).map_err(internal)?;
+    }
+    let tmp = file.with_extension("pdf.tmp");
+    std::fs::write(&tmp, &body).map_err(internal)?;
+    std::fs::rename(&tmp, &file).map_err(internal)?;
+    Ok(Json(PdfSaved { path: rel.split_once('/').map(|x| x.1.to_string()).unwrap_or(rel) }))
+}
+
 // -------------------------------------------------------------- images
 
 #[derive(Serialize)]

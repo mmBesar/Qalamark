@@ -7,7 +7,7 @@
 
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, before, test } from 'node:test';
@@ -421,6 +421,8 @@ test('round 6: notes folder in the apps: files out, outside edits in, renames fo
           case 'vault_trash': fs.delete(a.path); return null;
           case 'vault_mkdir': return null;
           case 'vault_set': return a.path || '/home/me/Documents/Qalamark';
+          case 'plugin:event|listen': return 1; // the tray menu's events
+          case 'tray_get': return { enabled: false, close_to_tray: true, autostart: false, start_hidden: true, style: 'pen', tone: 'auto' };
         }
         throw 'unknown ' + cmd;
       },
@@ -1719,32 +1721,49 @@ test('android 2: leaving a settings page with the arrow leaves no stale back ent
   await ctx.close();
 });
 
-test('pdf 1: the export page has the note without its properties, tables and Arabic, and prints', async () => {
-  const c = await browser.newContext({ viewport: { width: 1200, height: 860 } });
+test('pdf 1: the PDF is made in the app: real pages in the preview, options, saved next to the note and downloadable', async () => {
+  const errors = [];
+  const c = await browser.newContext({ viewport: { width: 1200, height: 860 }, acceptDownloads: true });
   const p = await c.newPage();
+  p.on('pageerror', (e) => errors.push(String(e)));
   await signIn(p, 'alice', 'alice-password');
   await freshNote(p, 'Invoice 7');
   await p.keyboard.press('Control+Home');
-  await p.keyboard.insertText('---\ncustomer: SECRETPROP\nstatus: draft\n---\n# Invoice 7\n\n| الصنف | السعر |\n|---|--:|\n| قلم | 5 |\n\nمرحبا بالعالم\n\n- [x] paid\n');
+  await p.keyboard.insertText('---\ncustomer: SECRETPROP\nstatus: draft\n---\n# Invoice 7\n\n| الصنف | السعر |\n|---|--:|\n| قلم | 5 |\n\nسَيِّدُ الِاسْتِغْفَارِ\n\n- [x] paid\n');
   await p.waitForTimeout(800);
   await p.locator('.menu-wrap.desk button.icon').click();
   await p.click('.menu button:has-text("Export as PDF")');
-  await p.waitForSelector('dialog.pdf-dlg[open] iframe');
-  const frame = p.frameLocator('dialog.pdf-dlg iframe');
-  await frame.locator('table').waitFor();
-  const text = await frame.locator('body').innerText();
-  assert.ok(text.includes('Invoice 7') && text.includes('قلم') && text.includes('مرحبا بالعالم'), 'the note is there');
-  assert.ok(!text.includes('SECRETPROP') && !text.includes('customer'), 'properties are not');
-  assert.equal(await frame.locator('table').getAttribute('dir'), 'auto');
-  // the real thing: print the page to a PDF file with the browser's own engine
-  const html = await p.evaluate(() => document.querySelector('dialog.pdf-dlg iframe').srcdoc);
-  const q = await c.newPage();
-  await q.setContent(html);
-  const pdf = await q.pdf({ preferCSSPageSize: true, printBackground: true });
-  assert.ok(pdf.length > 3000 && pdf.subarray(0, 4).toString() === '%PDF', 'a PDF came out');
-  if (process.env.SHOT) { writeFileSync(process.env.SHOT + '-invoice.pdf', pdf); await p.screenshot({ path: process.env.SHOT + '-pdfdlg.png' }); }
+  await p.waitForSelector('dialog.pdf-dlg[open] canvas.pdf-page', { timeout: 20000 });
+  assert.equal(await p.locator('dialog.pdf-dlg .pdf-info').innerText(), '1 page');
+  // the page is really drawn (not blank)
+  const inked = await p.evaluate(() => { const c = document.querySelector('canvas.pdf-page'); const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data; let n = 0; for (let i = 0; i < d.length; i += 4) if (d[i] < 128) n++; return n; });
+  assert.ok(inked > 100, 'ink on the page: ' + inked);
+  // an option changes the pages: a header with the file name
+  await p.fill('dialog.pdf-dlg input[data-key="headerC"]', '{file}');
+  await p.waitForTimeout(600);
+  // defaults can be set and come back
+  await p.click('dialog.pdf-dlg button:has-text("Make these my defaults")');
+  assert.ok((await p.locator('dialog.pdf-dlg .pdf-status').innerText()).includes('defaults'));
+  assert.ok((await p.evaluate(() => localStorage.getItem('qm.pdf.defaults'))).includes('"headerC":"{file}"'));
+  // download: a real PDF with the note and without its properties
+  const [dl] = await Promise.all([p.waitForEvent('download'), p.click('dialog.pdf-dlg .dialog-actions button:has-text("Download")')]);
+  const file = join(tmpdir(), 'qm-dl-' + Date.now() + '.pdf');
+  await dl.saveAs(file);
+  const bytes = readFileSync(file);
+  assert.equal(bytes.subarray(0, 5).toString(), '%PDF-');
+  assert.ok(!bytes.toString('latin1').includes('SECRETPROP'));
+  if (process.env.SHOT) { writeFileSync(process.env.SHOT + '-invoice.pdf', bytes); await p.screenshot({ path: process.env.SHOT + '-pdfdlg.png' }); }
+  // saved next to the note, on the server
   await p.click('dialog.pdf-dlg .primary');
+  await p.waitForFunction(() => document.querySelector('dialog.pdf-dlg .pdf-status')?.textContent?.includes('next to the note on the server'), null, { timeout: 20000 });
+  const walk = (d) => readdirSync(d, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(join(d, e.name)) : [join(d, e.name)]));
+  const found = walk(join(data, 'notes/alice')).filter((f) => /Invoice 7.*\.pdf$/.test(f));
+  assert.equal(found.length, 1, 'one PDF next to the note: ' + found);
+  const saved = readFileSync(found[0]);
+  assert.equal(saved.subarray(0, 5).toString(), '%PDF-');
+  await p.keyboard.press('Escape');
   await p.waitForFunction(() => !document.querySelector('dialog.pdf-dlg[open]'));
+  assert.deepEqual(errors, []);
   await c.close();
 });
 
@@ -2003,5 +2022,51 @@ test('links 1: [[ writes a standard relative link, spaces in angle brackets, and
   const shown = await page.locator('.cm-content').innerText();
   assert.ok(/go \[Zeta target\]\(<Zeta target\.md>\)/.test(shown), 'standard link written: ' + JSON.stringify(shown));
   assert.ok(!/\[\[/.test(shown), 'no [[ left behind');
+  assert.deepEqual(errors, []);
+});
+
+test('tray 1: the desktop page of the settings drives the native tray (mocked here), icons and all', async () => {
+  const errors = [];
+  const page = await newPage(errors);
+  await signIn(page, 'alice', 'alice-password');
+  // pretend to be the desktop app: a native side that remembers the choices
+  await page.evaluate(() => {
+    let cfg = { enabled: false, close_to_tray: true, autostart: false, start_hidden: true, style: 'pen', tone: 'auto' };
+    window.__calls = [];
+    window.__TAURI_INTERNALS__ = {
+      transformCallback: () => 1,
+      invoke: async (cmd, args) => {
+        window.__calls.push([cmd, JSON.stringify(args ?? null)]);
+        if (cmd === 'tray_get') return cfg;
+        if (cmd === 'tray_set') { cfg = args.config; return cfg; }
+        if (cmd === 'tray_ok') return true;
+        return null;
+      },
+    };
+  });
+  await page.click('aside header button[aria-label="Settings"]');
+  await page.waitForSelector('dialog.settings[open] .set-nav');
+  await page.click('dialog.settings .set-nav button:has-text("Desktop")');
+  await page.waitForSelector('.tray-styles');
+  // the close option waits for the icon
+  assert.ok(await page.locator('dialog.settings label:has-text("Closing the window") input').isDisabled());
+  await page.locator('dialog.settings label:has-text("Show an icon") input').check();
+  await page.waitForFunction(() => window.__calls.some(([c, a]) => c === 'tray_set' && JSON.parse(a).config.enabled === true));
+  assert.ok(!(await page.locator('dialog.settings label:has-text("Closing the window") input').isDisabled()));
+  // the menu words go along, in the app's language
+  const set = await page.evaluate(() => JSON.parse(window.__calls.filter(([c]) => c === 'tray_set').at(-1)[1]));
+  assert.equal(set.labels.quit, 'Quit');
+  assert.equal(set.labels.new_note, 'New note');
+  // icon style and colour
+  await page.click('.tray-style:has-text("Letter")');
+  await page.click('.tray-tones button:has-text("White")');
+  await page.waitForFunction(() => { const s = window.__calls.filter(([c]) => c === 'tray_set').map(([, a]) => JSON.parse(a).config).at(-1); return s.style === 'qaf' && s.tone === 'light'; });
+  // the previews are real pictures
+  const ok = await page.evaluate(async () => [...document.querySelectorAll('.tray-style img')].every((i) => i.complete && i.naturalWidth > 0));
+  assert.ok(ok, 'icon pictures load');
+  // start at login, then start hidden
+  await page.locator('dialog.settings label:has-text("Start when I log in") input').check();
+  await page.waitForFunction(() => window.__calls.some(([c, a]) => c === 'tray_set' && JSON.parse(a).config.autostart === true));
+  if (process.env.SHOT) await page.screenshot({ path: process.env.SHOT + '-tray.png' });
   assert.deepEqual(errors, []);
 });

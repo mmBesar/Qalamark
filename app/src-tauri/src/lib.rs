@@ -6,6 +6,8 @@
 // other editor, backup tool or sync program can use them too.
 
 mod tlsbridge;
+#[cfg(desktop)]
+mod tray;
 mod vault;
 
 use serde::Serialize;
@@ -100,6 +102,33 @@ fn vault_read(app: AppHandle, path: String) -> Result<Content, String> {
 #[tauri::command]
 fn vault_write(app: AppHandle, path: String, text: String) -> Result<u64, String> {
     vault::write(&root(&app), &path, &text).map_err(err)
+}
+
+/// A file made from a note (its PDF), sent as raw bytes with the path in a header: no slow number lists.
+#[tauri::command]
+fn vault_write_file(app: AppHandle, request: tauri::ipc::Request<'_>) -> Result<u64, String> {
+    let tauri::ipc::InvokeBody::Raw(bytes) = request.body() else { return Err("no file data".into()) };
+    let path = request.headers().get("path").and_then(|v| v.to_str().ok()).ok_or("no path")?;
+    let path = percent_decode(path);
+    vault::write_file(&root(&app), &path, bytes).map_err(err)
+}
+
+fn percent_decode(s: &str) -> String {
+    let b = s.as_bytes();
+    let mut out = Vec::with_capacity(b.len());
+    let mut i = 0;
+    while i < b.len() {
+        if b[i] == b'%' && i + 2 < b.len() {
+            if let Ok(v) = u8::from_str_radix(&s[i + 1..i + 3], 16) {
+                out.push(v);
+                i += 3;
+                continue;
+            }
+        }
+        out.push(b[i]);
+        i += 1;
+    }
+    String::from_utf8_lossy(&out).into_owned()
 }
 
 #[tauri::command]
@@ -272,9 +301,31 @@ async fn net_bridge(url: String, pin: String) -> Result<String, String> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
-        .plugin(tauri_plugin_dialog::init())
-        .invoke_handler(tauri::generate_handler![vault_info, vault_set, vault_list, vault_read, vault_write, vault_trash, vault_rename, vault_mkdir, vault_reveal, tls_probe, system_fonts, system_colors, net_check, net_bridge])
-        .run(tauri::generate_context!())
-        .expect("error while running Qalamark");
+    let builder = tauri::Builder::default().plugin(tauri_plugin_dialog::init());
+    // desktop: one copy only (a second launch brings the first one's window back), and the system tray
+    #[cfg(desktop)]
+    let builder = builder
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| tray::show_window(app)))
+        .setup(|app| {
+            let handle = app.handle().clone();
+            app.manage(tray::TrayState::load(&handle));
+            tray::setup(&handle);
+            Ok(())
+        })
+        .on_window_event(|window, event| match event {
+            tauri::WindowEvent::CloseRequested { api, .. } => {
+                if let Some(w) = window.app_handle().get_webview_window(window.label()) {
+                    if tray::close_requested(window.app_handle(), &w) {
+                        api.prevent_close();
+                    }
+                }
+            }
+            tauri::WindowEvent::ThemeChanged(_) => tray::theme_changed(window.app_handle()),
+            _ => {}
+        });
+    #[cfg(desktop)]
+    let builder = builder.invoke_handler(tauri::generate_handler![vault_info, vault_set, vault_list, vault_read, vault_write, vault_write_file, vault_trash, vault_rename, vault_mkdir, vault_reveal, tls_probe, system_fonts, system_colors, net_check, net_bridge, tray::tray_get, tray::tray_set, tray::tray_ok]);
+    #[cfg(not(desktop))]
+    let builder = builder.invoke_handler(tauri::generate_handler![vault_info, vault_set, vault_list, vault_read, vault_write, vault_write_file, vault_trash, vault_rename, vault_mkdir, vault_reveal, tls_probe, system_fonts, system_colors, net_check, net_bridge]);
+    builder.run(tauri::generate_context!()).expect("error while running Qalamark");
 }

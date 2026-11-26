@@ -45,6 +45,7 @@ pub fn app(state: Shared) -> Router {
         .route("/api/notes", get(api::list_notes).post(api::create_note))
         .route("/api/notes/{id}", get(api::get_note).patch(api::rename_note).delete(api::delete_note))
         .route("/api/notes/{id}/backlinks", get(api::backlinks))
+        .route("/api/notes/{id}/pdf", axum::routing::put(api::put_note_pdf).layer(axum::extract::DefaultBodyLimit::max(60 * 1024 * 1024)))
         .route("/api/search", get(api::search))
         .route("/api/notes/{id}/shares", get(api::list_shares).post(api::add_share))
         .route("/api/notes/{id}/shares/{name}", delete(api::remove_share))

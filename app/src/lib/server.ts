@@ -129,6 +129,16 @@ export class Api {
     if (!r.ok) throw new ApiError(r.status, await r.text());
     return r.json();
   }
+  /** Save a note's PDF next to the note's file on the server. */
+  async putPdf(id: string, bytes: Uint8Array): Promise<{ path: string }> {
+    const r = await fetch(`${this.transport}/api/notes/${encodeURIComponent(id)}/pdf`, {
+      method: 'PUT',
+      headers: { authorization: `Bearer ${this.token}`, 'content-type': 'application/pdf' },
+      body: bytes as unknown as BodyInit,
+    });
+    if (!r.ok) throw new ApiError(r.status, await r.text());
+    return r.json();
+  }
   /** A picture as a blob: the page cannot send the sign-in header from a plain <img>. */
   async imageBlob(owner: string, file: string): Promise<Blob> {
     const r = await fetch(`${this.transport}/api/images/${encodeURIComponent(owner)}/${encodeURIComponent(file)}`, {

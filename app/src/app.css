@@ -2205,14 +2205,33 @@ dialog.settings { overflow: hidden; }
 .mv-hr { border: 0; border-top: 1px solid var(--line); }
 
 /* export as PDF */
-.pdf-dlg { width: min(960px, 96vw); }
-.pdf-body { display: grid; grid-template-columns: 15rem minmax(0, 1fr); gap: 1rem; padding: 0.5rem 1rem 0.2rem; }
-.pdf-opts { display: flex; flex-direction: column; gap: 0.7rem; }
-.pdf-opts label { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.85rem; color: var(--muted); }
+dialog.pdf-dlg.wide { width: min(1080px, 97vw); max-width: 97vw; }
+.pdf-body { display: grid; grid-template-columns: 19rem minmax(0, 1fr); gap: 1rem; padding: 0.5rem 1rem 0.2rem; }
+.pdf-opts { display: flex; flex-direction: column; gap: 0.6rem; max-height: min(66vh, 680px); overflow: auto; padding-inline-end: 0.4rem; }
+.pdf-opts h3 { margin: 0.7rem 0 0; font-size: 0.78rem; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); }
+.pdf-opts h3:first-child { margin-top: 0; }
+.pdf-opts label { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.85rem; color: var(--muted); min-width: 0; }
 .pdf-opts label.chk { flex-direction: row; align-items: center; gap: 0.5rem; color: var(--ink); }
+.pdf-opts input[type='number'], .pdf-hf input { width: 100%; min-width: 0; padding: 0.4rem 0.5rem; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--ink); font: inherit; }
+.pdf-row { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; }
+.pdf-hf { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.85rem; }
+.pdf-hf-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.35rem; }
+.pdf-tokens { display: flex; flex-wrap: wrap; gap: 0.3rem; }
+.pdf-tokens .chip { padding: 0.15rem 0.5rem; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); color: var(--ink); font: inherit; font-size: 0.78rem; cursor: pointer; }
+.pdf-defaults { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.6rem; }
 .pdf-note { font-size: 0.8rem; margin: 0; }
-.pdf-preview { max-height: min(62vh, 640px); overflow: auto; border: 1px solid var(--line); border-radius: 12px; background: #d9d9d9; padding: 0; }
-.pdf-sheet { position: relative; overflow: hidden; }
-.pdf-sheet iframe { border: 0; transform-origin: top left; display: block; }
-:root[dir='rtl'] .pdf-sheet iframe { transform-origin: top right; }
-@media (max-width: 720px) { .pdf-body { grid-template-columns: 1fr; } .pdf-preview { max-height: 42vh; } }
+.pdf-side { display: flex; flex-direction: column; gap: 0.4rem; min-width: 0; }
+.pdf-info { font-size: 0.82rem; min-height: 1.2em; }
+.pdf-preview { max-height: min(62vh, 640px); overflow: auto; border: 1px solid var(--line); border-radius: 12px; background: #d9d9d9; padding: 0.6rem; display: flex; flex-direction: column; gap: 0.6rem; }
+.pdf-page { width: 100%; height: auto; display: block; background: #fff; box-shadow: 0 2px 12px rgb(0 0 0 / 0.25); }
+.pdf-status { margin-inline-end: auto; align-self: center; font-size: 0.85rem; color: var(--muted); }
+.pdf-status.bad { color: var(--danger, #d64545); }
+@media (max-width: 720px) { .pdf-body { grid-template-columns: 1fr; } .pdf-opts { max-height: 34vh; } .pdf-preview { max-height: 38vh; } }
+
+.tray-styles { display: flex; flex-wrap: wrap; gap: 0.6rem; }
+.tray-style { display: flex; flex-direction: column; align-items: center; gap: 0.35rem; padding: 0.5rem 0.7rem; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); color: var(--ink); font: inherit; font-size: 0.85rem; cursor: pointer; }
+.tray-style.on { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.tray-swatch { display: grid; place-items: center; width: 56px; height: 56px; border-radius: 10px; background: color-mix(in srgb, var(--ink) 14%, var(--surface)); }
+.tray-tones { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-bottom: 0.4rem; }
+.tray-tones button { padding: 0.35rem 0.8rem; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); color: var(--ink); font: inherit; font-size: 0.85rem; cursor: pointer; }
+.tray-tones button.on { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 16%, var(--surface)); }

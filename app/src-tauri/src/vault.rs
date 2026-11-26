@@ -17,9 +17,15 @@ pub struct FileInfo {
 
 /// Turns "Folder/Note.md" into a safe path under `root`; refuses anything that could escape it.
 pub fn resolve(root: &Path, rel: &str) -> io::Result<PathBuf> {
+    resolve_ext(root, rel, &[".md"])
+}
+
+/// Like `resolve`, for the other kinds of file the app puts next to notes (a PDF export, later pictures).
+pub fn resolve_ext(root: &Path, rel: &str, exts: &[&str]) -> io::Result<PathBuf> {
     let bad = |m: &str| io::Error::new(io::ErrorKind::InvalidInput, m.to_string());
-    if rel.is_empty() || !rel.to_lowercase().ends_with(".md") {
-        return Err(bad("only .md files"));
+    let low = rel.to_lowercase();
+    if rel.is_empty() || !exts.iter().any(|e| low.ends_with(e)) {
+        return Err(bad("this kind of file is not allowed"));
     }
     let mut out = root.to_path_buf();
     for c in Path::new(rel).components() {
@@ -87,6 +93,18 @@ pub fn write(root: &Path, rel: &str, text: &str) -> io::Result<u64> {
     }
     let tmp = p.with_extension("md.qalamark-tmp");
     fs::write(&tmp, text)?;
+    fs::rename(&tmp, &p)?;
+    Ok(mtime(&p))
+}
+
+/// Writes a file that is not a note (a PDF made from one) next to it. Same safety rules as notes.
+pub fn write_file(root: &Path, rel: &str, bytes: &[u8]) -> io::Result<u64> {
+    let p = resolve_ext(root, rel, &[".pdf"])?;
+    if let Some(d) = p.parent() {
+        fs::create_dir_all(d)?;
+    }
+    let tmp = p.with_extension("pdf.qalamark-tmp");
+    fs::write(&tmp, bytes)?;
     fs::rename(&tmp, &p)?;
     Ok(mtime(&p))
 }
@@ -185,6 +203,18 @@ mod tests {
         let _ = fs::remove_dir_all(&d);
         fs::create_dir_all(&d).unwrap();
         d
+    }
+
+    #[test]
+    fn a_pdf_is_written_next_to_its_note_and_nothing_else_is() {
+        let r = tmp("pdf");
+        write_file(&r, "Work/Invoice.pdf", b"%PDF-1.7 test").unwrap();
+        assert_eq!(fs::read(r.join("Work/Invoice.pdf")).unwrap(), b"%PDF-1.7 test");
+        write_file(&r, "Work/Invoice.pdf", b"%PDF-1.7 again").unwrap(); // replaced, no leftovers
+        assert_eq!(fs::read_dir(r.join("Work")).unwrap().count(), 1);
+        assert!(write_file(&r, "../Evil.pdf", b"x").is_err(), "cannot leave the notes folder");
+        assert!(write_file(&r, "Work/run.sh", b"x").is_err(), "only PDFs");
+        assert!(write_file(&r, "Work/note.md", b"x").is_err(), "notes go through their own door");
     }
 
     #[test]

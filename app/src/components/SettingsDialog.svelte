@@ -5,6 +5,7 @@
   import Icon from './Icon.svelte';
   import NetOptions from './NetOptions.svelte';
   import { inShell, onAndroid, vault } from '../lib/vault.ts';
+  import { hasTray, trayGet, trayOk, traySet, trayPicture, type TrayConfig } from '../lib/tray.ts';
   import { hasWidgets } from '../lib/widgets.ts';
   import Select from './Select.svelte';
   import { askBox, confirmBox } from '../lib/dialog.svelte.ts';
@@ -22,10 +23,26 @@
     { id: 'text', icon: 'type', label: 'setText' },
     { id: 'tasks', icon: 'check-box', label: 'setTasks' },
     ...(store.vaultPath ? [{ id: 'notes', icon: 'folder', label: 'notesFolder' }] : []),
+    ...(hasTray() ? [{ id: 'desktop', icon: 'sliders', label: 'setDesktop' }] : []),
     { id: 'account', icon: 'user', label: 'setAccount' },
     ...(store.mode === 'server' && store.s.admin ? [{ id: 'people', icon: 'users', label: 'users' }] : []),
   ]);
   let tab = $state('look');
+  // the system tray (desktop app): the native side keeps the choices
+  let tray = $state<TrayConfig | null>(null);
+  let trayShown = $state(true);
+  /** The tone an "auto" icon has here: white on a dark theme (the text is light), black on a light one. */
+  function autoTone(): 'light' | 'dark' {
+    const m = /\d+/g, c = (getComputedStyle(document.body).color.match(m) ?? ['0', '0', '0']).map(Number);
+    return (c[0]! * 299 + c[1]! * 587 + c[2]! * 114) / 1000 > 128 ? 'light' : 'dark';
+  }
+  async function loadTray() { try { tray = await trayGet(); trayShown = !tray.enabled || (await trayOk()); } catch { tray = null; } }
+  async function setTray(patch: Partial<TrayConfig>) {
+    if (!tray) return;
+    const next = { ...tray, ...patch };
+    try { tray = await traySet(next, store.t); trayShown = !tray.enabled || (await trayOk()); } catch { /* unchanged */ }
+  }
+  $effect(() => { if (tab === 'desktop' && !tray) void loadTray(); });
   // a phone gets its own shape: a list of categories that slides over to the page you picked (back arrow to return)
   const mq = typeof matchMedia === 'function' ? matchMedia('(max-width: 760px)') : null;
   let phone = $state(mq?.matches ?? false);
@@ -239,6 +256,35 @@
     </div>
     <p class="muted tiny">{t('gesturesRtl')}</p>
   </div>
+        {:else if tab === 'desktop' && tray}
+          <div class="set-card">
+            <h3>{t('setDesktop')}</h3>
+            <label class="check"><input type="checkbox" checked={tray.enabled} onchange={(e) => setTray({ enabled: e.currentTarget.checked })} /> {t('trayShow')}</label>
+            <label class="check"><input type="checkbox" disabled={!tray.enabled} checked={tray.close_to_tray} onchange={(e) => setTray({ close_to_tray: e.currentTarget.checked })} /> {t('trayClose')}</label>
+            <p class="muted small">{t('trayCloseHelp')}</p>
+            <label class="check"><input type="checkbox" checked={tray.autostart} onchange={(e) => setTray({ autostart: e.currentTarget.checked })} /> {t('trayAutostart')}</label>
+            <label class="check"><input type="checkbox" disabled={!tray.enabled || !tray.autostart} checked={tray.start_hidden} onchange={(e) => setTray({ start_hidden: e.currentTarget.checked })} /> {t('trayHidden')}</label>
+            {#if tray.enabled && !trayShown}<p class="error" role="alert">{t('trayMissing')}</p>{/if}
+          </div>
+          <div class="set-card">
+            <h3>{t('trayStyle')}</h3>
+            <div class="tray-styles" role="radiogroup" aria-label={t('trayStyle')}>
+              {#each [['pen', 'trayPen'], ['outline', 'trayOutline'], ['qaf', 'trayQaf']] as [s, label] (s)}
+                {@const tone = tray.tone === 'auto' ? autoTone() : tray.tone}
+                <button type="button" role="radio" aria-checked={tray.style === s} class="tray-style" class:on={tray.style === s} onclick={() => setTray({ style: s as TrayConfig['style'] })}>
+                  <span class="tray-swatch" style:background={tone === 'light' ? '#2b2b36' : tone === 'dark' ? '#f4f4f7' : undefined}><img src={trayPicture(s!, tone)} alt="" width="36" height="36" /></span>
+                  {t(label as 'trayPen')}
+                </button>
+              {/each}
+            </div>
+            <h3>{t('trayTone')}</h3>
+            <div class="tray-tones" role="radiogroup" aria-label={t('trayTone')}>
+              {#each [['colour', 'trayColour'], ['light', 'trayLight'], ['dark', 'trayDark'], ['auto', 'trayAuto']] as [x, label] (x)}
+                <button type="button" role="radio" aria-checked={tray.tone === x} class:on={tray.tone === x} onclick={() => setTray({ tone: x as TrayConfig['tone'] })}>{t(label as 'trayColour')}</button>
+              {/each}
+            </div>
+            <p class="muted small">{t('trayLeftClick')}</p>
+          </div>
         {:else if tab === 'notes'}
           <div class="set-card">
   {#if store.vaultPath}

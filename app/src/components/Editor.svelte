@@ -877,7 +877,7 @@
 {/if}
 
 {#if pdf}
-  <PdfDialog title={note.title} text={pdf.text} resolve={resolveImage} onClose={() => (pdf = null)} />
+  <PdfDialog title={note.title} file={note.title + '.md'} id={note.id} text={pdf.text} resolve={resolveImage} onClose={() => (pdf = null)} />
 {/if}
 
 {#if hist}

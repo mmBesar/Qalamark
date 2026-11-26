@@ -30,7 +30,7 @@ class KeepAliveService : Service() {
     } else {
       builder = Notification.Builder(this)
     }
-    builder.setSmallIcon(android.R.drawable.stat_notify_sync).setContentTitle(getString(R.string.qm_sync_title)).setContentText(getString(R.string.qm_sync_text)).setOngoing(true).setOnlyAlertOnce(true).setShowWhen(false).setCategory(Notification.CATEGORY_SERVICE)
+    builder.setSmallIcon(R.drawable.ic_stat_qalamark).setColor(0xFF8839EF.toInt()).setContentTitle(getString(R.string.qm_sync_title)).setContentText(getString(R.string.qm_sync_text)).setOngoing(true).setOnlyAlertOnce(true).setShowWhen(false).setCategory(Notification.CATEGORY_SERVICE)
     val open = packageManager.getLaunchIntentForPackage(packageName)
     if (open != null) builder.setContentIntent(PendingIntent.getActivity(this, 0, open, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT))
     val n = builder.build()

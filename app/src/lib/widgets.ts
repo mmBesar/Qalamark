@@ -81,13 +81,3 @@ export function scheduleNative(list: Array<{ id: string; title: string; at: numb
 export function takeOpenNote(): string {
   try { return bridge()?.takeOpen?.() || ''; } catch { return ''; }
 }
-
-/** Android: print a page through the system print window (it can save a PDF). False when not in the Android app. */
-export function printNative(html: string, name: string): boolean {
-  try {
-    const b = bridge();
-    if (!b?.printHtml) return false;
-    b.printHtml(html, name);
-    return true;
-  } catch { return false; }
-}

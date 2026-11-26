@@ -64,6 +64,11 @@ export const vault = {
   list: () => call<VaultEntry[]>('vault_list'),
   read: (path: string) => call<{ text: string; mtime_ms: number }>('vault_read', { path }),
   write: (path: string, text: string) => call<number>('vault_write', { path, text }),
+  /** A file made from a note (its PDF), written next to it. */
+  async writeFile(path: string, bytes: Uint8Array): Promise<number> {
+    const { invoke } = await import('@tauri-apps/api/core');
+    return invoke<number>('vault_write_file', bytes, { headers: { path: encodeURIComponent(path) } });
+  },
   trash: (path: string) => call<void>('vault_trash', { path }),
   rename: (from: string, to: string) => call<number>('vault_rename', { from, to }),
   mkdir: (folder: string) => call<void>('vault_mkdir', { folder }),

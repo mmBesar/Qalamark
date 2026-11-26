@@ -3,6 +3,7 @@
 <script lang="ts">
   import { latinKey } from './lib/keys.ts';
   import { onMount, untrack } from 'svelte';
+  import { hasTray, listenTray, trayRefresh } from './lib/tray.ts';
   import Editor from './components/Editor.svelte';
   import Login from './components/Login.svelte';
   import Welcome from './components/Welcome.svelte';
@@ -26,6 +27,14 @@
     store.notes.map((n) => n.updated).join(',');
     untrack(() => { store.widgetKick(); store.remindKick(); });
   });
+  // the tray menu's "New note" and "Settings", and its words in the app's language
+  onMount(() => {
+    if (!hasTray()) return;
+    let off = () => {};
+    void listenTray(() => void store.createNote(), () => { store.settingsOpen = true; }).then((f) => (off = f));
+    return () => off();
+  });
+  $effect(() => { void store.s.lang; if (hasTray()) void trayRefresh(store.t); });
   onMount(() => {
     store.startWidgets();
     store.startReminders();

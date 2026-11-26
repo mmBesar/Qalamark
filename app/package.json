@@ -29,6 +29,8 @@
     "@qalamark/tables": "file:../packages/tables",
     "@tauri-apps/api": "^2.12.4",
     "@tauri-apps/plugin-dialog": "^2.8.4",
+    "bidi-js": "^1.1.0",
+    "fontkit": "^3.0.0",
     "marked": "^15.0.12",
     "y-codemirror.next": "^0.3.6",
     "y-indexeddb": "^9.0.12",

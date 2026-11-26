@@ -1116,6 +1116,19 @@ class Store {
     }
   }
 
+  /** Save a note's PDF next to the note: in the notes folder (apps) or on the server. Null when there is no such place. */
+  async savePdf(id: string, bytes: Uint8Array): Promise<'folder' | 'server' | null> {
+    const n = this.notes.find((x) => x.id === id);
+    if (!n) return null;
+    if (this.vaultOn) {
+      const md = n.vp ?? notePath(n.folder ?? '', n.title);
+      await vault.writeFile(md.replace(/\.md$/i, '.pdf'), bytes);
+      return 'folder';
+    }
+    if (this.mode === 'server') { await this.api.putPdf(id, bytes); return 'server'; }
+    return null;
+  }
+
   async renameNote(id: string, title: string) {
     const name = title.trim();
     const note = this.notes.find((n) => n.id === id);

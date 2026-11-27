@@ -674,21 +674,19 @@
 
 <section class="editor-pane" class:mobile class:hide-bars={mobile && !bars && !typing} class:typing={mobile && typing}>
   <header class="topbar">
-    <button class="icon side-btn" aria-label={t('sidebar')} title="{t('sidebar')} (Ctrl+\\)" onclick={() => store.toggleSide()}><Icon name="sidebar" /></button>
+    <button class="icon side-btn" aria-label={t('sidebar')} title="{t('sidebar')} (Ctrl+\\)" onclick={() => (matchMedia('(max-width: 760px)').matches ? onMenu() : store.toggleSide())}><Icon name="sidebar" /></button>
 
     {#if !readOnly && mode !== 'read' && mode !== 'board'}
       <div class="toolbar" role="toolbar" onpointerdown={holdTools} onmousedown={(e) => { if ((e.target as HTMLElement).closest('button')) e.preventDefault(); }}>
-        {#if tbl && !tbl.readOnly}
-          <div class="tb-table" role="group" aria-label={t('table')} transition:pop|global>
-            <button title={t('addRow')} aria-label={t('addRow')} onclick={() => tbl?.addRow()}><Icon name="row-add" /></button>
-            <button title={t('addColumn')} aria-label={t('addColumn')} onclick={() => tbl?.addColumn()}><Icon name="col-add" /></button>
-            <button title={t('deleteRow')} aria-label={t('deleteRow')} onclick={() => tbl?.deleteRow()}><Icon name="row-del" /></button>
-            <button title={t('deleteColumn')} aria-label={t('deleteColumn')} onclick={() => tbl?.deleteColumn()}><Icon name="col-del" /></button>
-            <button title={t('alignColumn')} aria-label={t('alignColumn')} onclick={() => tbl?.align()}><Icon name="text-align" /></button>
-            <button class="fx" class:bad={tbl.problems} title={t('formulas')} aria-label={t('formulas')} onclick={() => tbl?.formulas()}>ƒ</button>
-          </div>
-        {/if}
         <div class="tb-scroll" use:sideWheel>
+          <div class="tb-table" class:idle={!tbl || tbl.readOnly} role="group" aria-label={t('table')}>
+            <button disabled={!tbl || tbl.readOnly} title={t('addRow')} aria-label={t('addRow')} onclick={() => tbl?.addRow()}><Icon name="row-add" /></button>
+            <button disabled={!tbl || tbl.readOnly} title={t('addColumn')} aria-label={t('addColumn')} onclick={() => tbl?.addColumn()}><Icon name="col-add" /></button>
+            <button disabled={!tbl || tbl.readOnly} title={t('deleteRow')} aria-label={t('deleteRow')} onclick={() => tbl?.deleteRow()}><Icon name="row-del" /></button>
+            <button disabled={!tbl || tbl.readOnly} title={t('deleteColumn')} aria-label={t('deleteColumn')} onclick={() => tbl?.deleteColumn()}><Icon name="col-del" /></button>
+            <button disabled={!tbl || tbl.readOnly} title={t('alignColumn')} aria-label={t('alignColumn')} onclick={() => tbl?.align()}><Icon name="text-align" /></button>
+            <button class="fx" class:bad={tbl?.problems} disabled={!tbl || tbl.readOnly} title={t('formulas')} aria-label={t('formulas')} onclick={() => tbl?.formulas()}>ƒ</button>
+          </div>
         {#each toolList as id, i (i + id)}
           {#if id === 'sep'}
             <span class="sep"></span>

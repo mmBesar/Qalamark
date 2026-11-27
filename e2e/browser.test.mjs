@@ -2128,6 +2128,11 @@ test('panels 1: in a small window the notes panel opens with its button, stays f
   await p.mouse.move(2, 400); // the edge does nothing any more
   await p.waitForTimeout(500);
   assert.equal(await p.locator('.shell.drawer-open').count(), 0);
+  await p.click('.topbar .side-btn'); // the button people actually press
+  await p.waitForSelector('.shell.drawer-open');
+  await p.mouse.click(660, 400);
+  await p.waitForFunction(() => !document.querySelector('.shell.drawer-open'));
+  assert.equal(await p.evaluate(() => !!document.querySelector('.tb-scroll > .tb-table')), true, 'table tools scroll with the toolbar');
   await p.keyboard.press('Control+\\');
   await p.waitForSelector('.shell.drawer-open');
   await p.locator('aside .tree .row:not(.folder) .main').first().click({ button: 'right' });

@@ -2159,7 +2159,7 @@ test('tabs 1: pin a tab; quick note adds a dated line to Quick notes', async () 
   await page.waitForSelector('.tab.pinned');
   assert.equal(await page.locator('.tab').first().innerText().then((s) => s.includes('Other one')), true, 'pinned goes first');
   assert.equal(await page.locator('.tab.pinned .x').count(), 0, 'no close button on a pinned tab');
-  await page.locator('.tab', { hasText: 'Pin me' }).click({ button: 'right' });
+  await page.locator('.tab:not(.pinned)').first().click({ button: 'right' });
   await page.click('.ctx >> text=Close all tabs');
   await page.waitForTimeout(300);
   assert.equal(await page.locator('.tab.pinned').count(), 1, 'close all keeps pinned');

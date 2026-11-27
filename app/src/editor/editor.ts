@@ -25,6 +25,7 @@ import { pictures, type ImageHooks } from './images.ts';
 import { noteLink } from '../lib/mdlinks.ts';
 import { livePreview, plainFrontMatter, readingMode, wikiConfig } from './livepreview.ts';
 import { type BaseHooks, baseExtension } from './base.ts';
+import { closeFence, leaveCode } from './codeflow.ts';
 import { type TableLabels, tablesExtension } from './tables.ts';
 
 // Colours for Source mode (plain Markdown text, nicely coloured).
@@ -523,6 +524,8 @@ export function createEditor(o: EditorOptions): Editor {
     // Home and End go to the start and end of the line as it is written (the first and last character), also on lines that mix
     // Arabic and numbers or Latin words, where the default visual rule stopped in the middle. Wrapped lines keep the default.
     Prec.high(keymap.of([
+      { key: 'Enter', run: closeFence },
+      { key: 'Mod-Enter', run: leaveCode },
       { key: 'Home', shift: lineEdge(false, true), run: lineEdge(false, false) },
       { key: 'End', shift: lineEdge(true, true), run: lineEdge(true, false) },
     ])),

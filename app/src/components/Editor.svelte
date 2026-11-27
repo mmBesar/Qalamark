@@ -4,6 +4,8 @@
   import { findHeading, parseHeadings, splitTarget } from '../lib/headings.ts';
   import { onMount, untrack } from 'svelte';
   import { yUndoManagerKeymap } from 'y-codemirror.next';
+  import { insertCode } from '../editor/codeflow.ts';
+  import { setCodeLabels } from '../editor/codebadge.ts';
   import { cycleHeading, insertLink, insertRule, insertSnippet, insertTable, insertWikilink, shiftLines, SNIPPETS, toggleLinePrefix, toggleWrap } from '../editor/commands.ts';
   import { pop } from '../lib/motion.ts';
   import { BUILT_IN } from '../lib/templates.ts';
@@ -39,6 +41,7 @@
 
   let host: HTMLDivElement;
 
+  setCodeLabels({ language: t('codeLanguage'), none: t('codePlain'), other: t('codeUse') });
   setTouchLabels({ cut: t('cut'), copy: t('copyText'), paste: t('paste'), selectAll: t('selectAll') });
 
   // ---- phones: the text gets the whole screen; the bars hide while reading and come back with a tap or a scroll up
@@ -327,7 +330,11 @@
         { label: t('task'), keywords: 'todo checkbox', run: (v) => toggleLinePrefix(v, '- [ ] ') },
         { label: t('quote'), keywords: 'blockquote', run: (v) => toggleLinePrefix(v, '> ') },
         { label: t('table'), run: (v) => insertTable(v) },
-        { label: t('insCodeTitle'), keywords: 'code fence block', run: (v) => insertSnippet(v, SNIPPETS.codeTitle) },
+        { label: t('insCode'), keywords: 'code fence block ```', run: (v) => insertCode(v) },
+        ...(['bash', 'python', 'javascript', 'json', 'yaml', 'html', 'css', 'sql', 'nix', 'rust'] as const).map((l) => ({ label: t('insCode') + ' · ' + l, keywords: 'code ' + l, run: (v: EditorView) => insertCode(v, l) })),
+        { label: t('insCodeTitle'), keywords: 'code fence block title file', run: (v) => insertSnippet(v, SNIPPETS.codeTitle) },
+        { label: t('numbered'), keywords: 'ordered ol 1.', run: (v) => toggleLinePrefix(v, '1. ') },
+        { label: t('insRule'), keywords: 'divider line hr ---', run: (v) => insertRule(v) },
         { label: t('insCallout'), keywords: 'note info warning', run: (v) => insertSnippet(v, SNIPPETS.callout) },
         { label: t('insCollapsible'), keywords: 'details ???', run: (v) => insertSnippet(v, SNIPPETS.collapsible) },
         { label: t('insTabs'), keywords: '===', run: (v) => insertSnippet(v, SNIPPETS.tabs) },

@@ -2270,3 +2270,16 @@ dialog.pdf-dlg.wide { width: min(1080px, 97vw); max-width: 97vw; }
   .edge-zone { display: block; position: fixed; z-index: 4; top: 0; bottom: 0; inset-inline-start: 0; width: 7px; }
   .shell.drawer-open .edge-zone { display: none; }
 }
+
+/* the language in a code block's corner opens a small list */
+.cm-code-lang { border: 0; background: transparent; color: inherit; font: inherit; padding: 0.1rem 0.4rem; border-radius: 6px; cursor: pointer; }
+.cm-code-lang:hover { background: var(--accent-soft); color: var(--ink); }
+.cm-code-lang.none { font-style: italic; opacity: 0.7; }
+.cm-lang-pop { position: fixed; z-index: 90; width: 180px; padding: 6px; border-radius: 12px; border: 1px solid var(--line); background: var(--surface, var(--bg)); box-shadow: 0 12px 34px rgb(0 0 0 / 0.38); opacity: 0; transform: translateY(-6px) scale(0.98); transform-origin: 50% 0; transition: opacity 0.16s, transform 0.16s; }
+.cm-lang-pop.open { opacity: 1; transform: none; }
+.cm-lang-pop input { width: 100%; box-sizing: border-box; margin-bottom: 4px; }
+.cm-lang-pop ul { list-style: none; margin: 0; padding: 0; max-height: 224px; overflow: auto; }
+.cm-lang-pop li { padding: 0.3rem 0.5rem; border-radius: 8px; cursor: pointer; font-size: 0.88rem; direction: ltr; text-align: left; }
+.cm-lang-pop li.on, .cm-lang-pop li:hover { background: var(--accent-soft); }
+.cm-lang-pop li.cur { font-weight: 600; }
+@media (prefers-reduced-motion: reduce) { .cm-lang-pop { transition: none; } }

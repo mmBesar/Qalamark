@@ -2121,3 +2121,45 @@ test('panels 1: a small window floats the notes panel in at the edge and away ag
   assert.deepEqual(errors, []);
   await c.close();
 });
+
+test('code 1: ``` and Enter closes the block, Ctrl+Enter steps out, the corner list changes the language, / offers code', async () => {
+  const errors = [];
+  const page = await newPage(errors);
+  await signIn(page, 'alice', 'alice-password');
+  await freshNote(page, 'Code flow');
+  const doc = () => page.evaluate(() => document.querySelector('.cm-editor').cmEditorView.state.doc.toString());
+  await page.keyboard.insertText('```py');
+  await page.keyboard.press('Enter');
+  assert.equal(await doc(), '```py\n\n```');
+  await page.keyboard.insertText('x = 1');
+  await page.keyboard.press('Control+Enter');
+  await page.keyboard.insertText('after');
+  assert.equal(await doc(), '```py\nx = 1\n```\nafter');
+  // the corner list
+  await page.hover('.cm-codeblock');
+  await page.click('.cm-code-lang');
+  await page.waitForSelector('.cm-lang-pop.open input');
+  await page.keyboard.type('bas');
+  await page.keyboard.press('Enter');
+  await page.waitForFunction(() => !document.querySelector('.cm-lang-pop'));
+  assert.equal(await doc(), '```bash\nx = 1\n```\nafter');
+  // any word can be typed
+  await page.hover('.cm-codeblock');
+  await page.click('.cm-code-lang');
+  await page.keyboard.type('zig');
+  await page.keyboard.press('Enter');
+  await page.waitForFunction(() => !document.querySelector('.cm-lang-pop'));
+  assert.equal((await doc()).split('\n')[0], '```zig');
+  // the slash menu
+  await page.keyboard.press('Control+End');
+  await page.keyboard.insertText('\n\n/rust');
+  await page.waitForSelector('.cm-tooltip-autocomplete li');
+  await page.keyboard.press('Enter');
+  assert.ok((await doc()).endsWith('```rust\n\n```\n'), await doc());
+  // a block that is already closed is left alone by Enter
+  await page.keyboard.press('Control+Home');
+  await page.keyboard.press('End');
+  await page.keyboard.press('Enter');
+  assert.ok((await doc()).startsWith('```zig\n\nx = 1\n```'), await doc());
+  assert.deepEqual(errors, []);
+});

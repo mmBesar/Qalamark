@@ -69,3 +69,7 @@ Some of this is still being built; this page says what the app *will* write once
 2. Does GitHub render it? Use GitHub's form.
 3. Does Material for MkDocs / PyMdown (MIT) have it? Use that form.
 4. Otherwise hide it in an HTML comment. Add a row to the tables above and a case to the test.
+
+## How it is drawn
+
+Live preview and reading view draw the file the way it prints: an empty line between blocks is a paragraph gap (not a whole blank line), a `---` rule is one thin line, and table cells show their `**bold**`, `` `code` ``, links and `==highlight==` drawn until you edit the cell. Nested quotes (`> >`) are indented, backslash escapes (`\*`) and `<autolinks>` hide their punctuation, footnotes (`[^1]`) show as a small raised number, and `<sub>`, `<sup>`, `<kbd>`, `<mark>`, `<u>` and `<br>` are drawn. Other raw HTML (such as `<details>`) is shown as source, never run. The PDF export follows the same rules.

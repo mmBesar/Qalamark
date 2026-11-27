@@ -2283,3 +2283,45 @@ dialog.pdf-dlg.wide { width: min(1080px, 97vw); max-width: 97vw; }
 .cm-lang-pop li.on, .cm-lang-pop li:hover { background: var(--accent-soft); }
 .cm-lang-pop li.cur { font-weight: 600; }
 @media (prefers-reduced-motion: reduce) { .cm-lang-pop { transition: none; } }
+
+/* empty lines between blocks are paragraph gaps, like in the printed file; the rule is a thin line, not a whole text line */
+.cm-editor:not(.cm-source) .cm-line.cm-gap { line-height: 0.8; }
+.cm-editor:not(.cm-source) .cm-line.cm-hr-line { line-height: 1.1; }
+
+/* tools sit in room the table makes under itself while you are in it; they never cover a row */
+.qt.active { margin-bottom: 2.7rem; }
+.qt .qt-bar { top: calc(100% + 0.3rem); transform: none; inset-inline-end: 0; }
+.qt.active .qt-bar .qt-ctx, .qt:focus-within .qt-bar .qt-ctx { opacity: 1; transform: none; visibility: visible; pointer-events: auto; }
+.qt:hover:not(.active) .qt-bar .qt-ctx { opacity: 0; visibility: hidden; pointer-events: none; }
+.qt .qt-fx { opacity: 0; }
+.qt:hover .qt-fx, .qt.active .qt-fx, .qt.fx-open .qt-fx, .qt .qt-fx:focus-visible { opacity: 0.85; }
+.qt .qt-fx.bad { opacity: 1; }
+.qt .qt-formulas { top: calc(100% + 0.4rem); }
+.qt.active .qt-formulas { top: calc(100% + 2.8rem); }
+.qt .qt-formulas.up { top: auto; bottom: calc(100% + 0.4rem); }
+.qt:not(.active):not(:hover) .qt-fx:not(.bad) { pointer-events: none; }
+.qt .qt-bar { inset-inline-start: 0; inset-inline-end: 0; max-width: none; justify-content: flex-end; }
+.qt .qt-bar .qt-ctx { flex: 0 1 auto; min-width: 0; }
+.qt .qt-fx { flex: none; }
+
+/* nested quotes, footnotes and the little inline HTML that notes use */
+.cm-quote.cm-q2 { padding-inline-start: 1.9rem !important; box-shadow: inset 3px 0 0 var(--line); }
+.cm-quote.cm-q3, .cm-quote.cm-q4 { padding-inline-start: 2.9rem !important; box-shadow: inset 3px 0 0 var(--line), inset 16px 0 0 -13px var(--line); }
+.cm-fn-ref, .cm-fn-def-mark { font-size: 0.72em; color: var(--accent); font-weight: 600; margin-inline: 1px; }
+.cm-fndef { font-size: 0.9em; color: var(--muted); }
+.cm-h-sub { font-size: 0.75em; vertical-align: sub; }
+.cm-h-sup { font-size: 0.75em; vertical-align: super; }
+.cm-h-kbd { font-family: var(--mono); font-size: 0.85em; padding: 0.05rem 0.35rem; border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 5px; background: var(--code-bg); }
+.cm-h-mark { background: color-mix(in srgb, var(--gold) 35%, transparent); border-radius: 3px; }
+.cm-h-u { text-decoration: underline; }
+
+/* a table cell you are not editing, drawn: **bold**, `code`, links ... (the real text is still in the input underneath) */
+.qt td.qt-rich .qt-cell:not(:focus), .qt th.qt-rich .qt-cell:not(:focus) { color: transparent; }
+.qt-view { position: absolute; inset: 0; padding: 0.45rem 0.7rem; pointer-events: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: calc(var(--font-size, 17px) * 0.95); display: flex; align-items: center; }
+.qt-view > * { min-width: 0; }
+.qt th .qt-view { font-weight: 700; }
+.qt-cell:focus ~ .qt-view { display: none; }
+.qt-view code { font-family: var(--mono); font-size: 0.88em; padding: 0.05rem 0.3rem; border-radius: 5px; background: var(--code-bg); }
+.qt-view mark { background: color-mix(in srgb, var(--gold) 35%, transparent); border-radius: 3px; }
+.qt-view .qt-link { color: var(--accent); text-decoration: underline; }
+.qt-view strong { font-weight: 700; }

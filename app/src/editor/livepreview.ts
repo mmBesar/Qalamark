@@ -29,6 +29,32 @@ export const wikiConfig = Facet.define<WikiConfig, WikiConfig | null>({ combine:
 /** In reading mode every mark stays hidden, wherever the cursor is. */
 export const readingMode = Facet.define<boolean, boolean>({ combine: (v) => v.some(Boolean) });
 
+/** A footnote number, small and raised: [^1] shows as ¹. */
+class FootnoteWidget extends WidgetType {
+  constructor(readonly id: string, readonly def: boolean) {
+    super();
+  }
+  toDOM() {
+    const s = document.createElement('sup');
+    s.className = this.def ? 'cm-fn-def-mark' : 'cm-fn-ref';
+    s.textContent = this.def ? this.id : this.id;
+    return s;
+  }
+  eq(o: FootnoteWidget) {
+    return o.id === this.id && o.def === this.def;
+  }
+}
+
+/** <br> becomes a real line break in the text. */
+class BreakWidget extends WidgetType {
+  toDOM() {
+    return document.createElement('br');
+  }
+  eq() {
+    return true;
+  }
+}
+
 class BulletWidget extends WidgetType {
   toDOM() {
     const s = document.createElement('span');
@@ -174,8 +200,15 @@ function build(view: EditorView): DecorationSet {
         if (fmEnd > 0 && name !== 'Document' && n.from < fmEnd) return false;
         const heading = /^ATXHeading([1-6])$/.exec(name) ?? /^SetextHeading([12])$/.exec(name);
         if (heading) {
-          for (let p = state.doc.lineAt(n.from).number; p <= state.doc.lineAt(n.to).number; p++) {
-            line(state.doc.line(p).from, `cm-heading cm-h${heading[1]}`);
+          const lastNo = state.doc.lineAt(n.to).number;
+          // a title underlined with === or --- : the underline is not shown while you are elsewhere
+          const underline = name.startsWith('Setext') && !touched(state, n.from, n.to);
+          for (let p = state.doc.lineAt(n.from).number; p <= lastNo; p++) {
+            const l = state.doc.line(p);
+            if (underline && p === lastNo) {
+              line(l.from, 'cm-gap');
+              cover(l.from, l.to);
+            } else line(l.from, `cm-heading cm-h${heading[1]}`);
           }
           return;
         }
@@ -244,8 +277,11 @@ function build(view: EditorView): DecorationSet {
             const firstNo = first.number;
             for (let p = firstNo; p <= state.doc.lineAt(n.to).number; p++) {
               const l = state.doc.line(p);
-              if (!co) line(l.from, 'cm-quote');
-              else line(l.from, `cm-callout cm-callout-${co[2]!.toLowerCase()}${p === firstNo ? ' cm-callout-head' : ''}`);
+              if (!co) {
+                const depth = Math.min(4, (/^\s*((?:>\s?)+)/.exec(l.text)?.[1] ?? '>').replace(/\s/g, '').length);
+                line(l.from, 'cm-quote' + (depth > 1 ? ` cm-q${depth}` : ''));
+                if (/^\s*(?:>\s*)+$/.test(l.text)) line(l.from, 'cm-gap');
+              } else line(l.from, `cm-callout cm-callout-${co[2]!.toLowerCase()}${p === firstNo ? ' cm-callout-head' : ''}`);
             }
             if (co && !touched(state, first.from, first.to)) {
               const kind = co[2]!.toLowerCase();
@@ -289,7 +325,20 @@ function build(view: EditorView): DecorationSet {
               out.push(Decoration.replace({ widget: new RuleWidget() }).range(n.from, n.to));
             }
             break;
+          case 'Escape':
+            if (!touched(state, n.from, n.to)) cover(n.from, n.from + 1);
+            break;
+          case 'HardBreak':
+            if (state.sliceDoc(n.from, n.from + 1) === '\\' && !touched(state, n.from, n.from + 1)) cover(n.from, n.from + 1);
+            break;
+          case 'Autolink':
+            if (!touched(state, n.from, n.to)) {
+              cover(n.from, n.from + 1);
+              cover(n.to - 1, n.to);
+            }
+            break;
           case 'Link': {
+            if (state.sliceDoc(n.from, n.from + 2) === '[^') return false; // a footnote, drawn below
             mark(n.from, n.to, 'cm-link');
             if (!touched(state, n.from, n.to)) {
               const c = n.node.cursor();
@@ -318,21 +367,38 @@ function build(view: EditorView): DecorationSet {
       },
     });
   }
+  // An empty line between blocks is a paragraph gap, not a whole blank line of text: that is how the file looks printed or
+  // rendered anywhere else. (Inside code, front matter and raw HTML an empty line stays a full line.)
+  for (const { from, to } of view.visibleRanges) {
+    for (let p = state.doc.lineAt(from).number; p <= state.doc.lineAt(to).number; p++) {
+      const l = state.doc.line(p);
+      if (l.length > 0 && l.text.trim() !== '') continue;
+      if (fmEnd > 0 && l.from < fmEnd) continue;
+      let inCode = false;
+      for (let n: SyntaxNode | null = syntaxTree(state).resolveInner(l.from, 1); n; n = n.parent) {
+        if (n.name === 'FencedCode' || n.name === 'CodeBlock' || n.name === 'HTMLBlock' || n.name === 'CommentBlock') { inCode = true; break; }
+      }
+      if (!inCode) out.push(Decoration.line({ class: 'cm-gap' }).range(l.from));
+    }
+  }
   inlineExtras(view, out);
   return Decoration.set(out, true);
 }
 
 const SKIP = new Set(['FencedCode', 'InlineCode', 'CodeBlock', 'Comment', 'CommentBlock', 'HTMLBlock', 'HTMLTag']);
 
-function inCode(state: EditorState, pos: number): boolean {
+function inCode(state: EditorState, pos: number, html = false): boolean {
   for (let n: SyntaxNode | null = syntaxTree(state).resolveInner(pos, 1); n; n = n.parent) {
-    if (SKIP.has(n.name)) return true;
+    if (SKIP.has(n.name) && !(html && (n.name === 'HTMLTag' || n.name === 'HTMLBlock'))) return true;
   }
   return false;
 }
 
 const WIKI = /(?<!!)\[\[([^\]\n|#]*)(#[^\]\n|]*)?(?:\|([^\]\n]*))?\]\]/g;
 const HIGHLIGHT = /==(?=\S)([^=\n]+?)(?<=\S)==/g;
+const FN_REF = /\[\^([^\]\s]+)\]/g;
+const HTML_INLINE = /<(sub|sup|kbd|mark|u)>([^<\n]+)<\/\1>/gi;
+const HTML_BR = /<br\s*\/?>/gi;
 const TAG = /(^|[\s(])#([\p{L}\p{N}_][\p{L}\p{N}_/-]*)/gu;
 
 /** [[links]], ==highlights== and #tags: found in the text of each visible line. */
@@ -346,7 +412,7 @@ function inlineExtras(view: EditorView, out: Range<Decoration>[]): void {
       if (seen.has(p)) continue;
       seen.add(p);
       const l = state.doc.line(p);
-      if (!/[[=#]/.test(l.text)) continue;
+      if (!/[[=#<]/.test(l.text)) continue;
 
       for (const m of l.text.matchAll(WIKI)) {
         const start = l.from + m.index!;
@@ -374,6 +440,33 @@ function inlineExtras(view: EditorView, out: Range<Decoration>[]): void {
           out.push(hide.range(start, start + 2));
           out.push(hide.range(end - 2, end));
         } else out.push(Decoration.mark({ class: 'cm-listmark' }).range(start, start + 2), Decoration.mark({ class: 'cm-listmark' }).range(end - 2, end));
+      }
+
+      for (const m of l.text.matchAll(FN_REF)) {
+        const start = l.from + m.index!;
+        const end = start + m[0].length;
+        if (inCode(state, start)) continue;
+        const def = m.index === 0 && l.text[m[0].length] === ':';
+        if (touched(state, start, end)) continue;
+        out.push(Decoration.replace({ widget: new FootnoteWidget(m[1]!, def) }).range(start, end));
+        if (def) out.push(Decoration.line({ class: 'cm-fndef' }).range(l.from));
+      }
+
+      for (const m of l.text.matchAll(HTML_INLINE)) {
+        const start = l.from + m.index!;
+        const end = start + m[0].length;
+        if (inCode(state, start, true)) continue;
+        const open = m[1]!.length + 2;
+        out.push(Decoration.mark({ class: 'cm-h-' + m[1]!.toLowerCase() }).range(start + open, end - (open + 1)));
+        if (!touched(state, start, end)) {
+          out.push(hide.range(start, start + open));
+          out.push(hide.range(end - (open + 1), end));
+        }
+      }
+      for (const m of l.text.matchAll(HTML_BR)) {
+        const start = l.from + m.index!;
+        if (inCode(state, start, true) || touched(state, start, start + m[0].length)) continue;
+        out.push(Decoration.replace({ widget: new BreakWidget() }).range(start, start + m[0].length));
       }
 
       for (const m of l.text.matchAll(TAG)) {

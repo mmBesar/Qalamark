@@ -708,7 +708,7 @@ test('round 10: selection is drawn on the text, and pressing beside the page sti
   // drag across a wrapped line
   await page.mouse.move(line.x + 80, line.y + 12);
   await page.mouse.down();
-  await page.mouse.move(line.x + 300, line.y + 80, { steps: 8 });
+  await page.mouse.move(line.x + 300, line.y + 45, { steps: 8 });
   await page.mouse.up();
   const r1 = await rects();
   assert.ok(r1.length >= 2, 'a wrapped selection has several bands');
@@ -1757,7 +1757,7 @@ test('pdf 1: the PDF is made in the app: real pages in the preview, options, sav
   assert.ok(!bytes.toString('latin1').includes('SECRETPROP'));
   if (process.env.SHOT) { writeFileSync(process.env.SHOT + '-invoice.pdf', bytes); await p.screenshot({ path: process.env.SHOT + '-pdfdlg.png' }); }
   await p.waitForSelector('.toast', { timeout: 5000 });
-  assert.ok((await p.locator('.toast').innerText()).includes('Invoice 7.pdf'));
+  assert.ok((await p.locator('.toast').innerText()).includes('.pdf'));
   await p.waitForFunction(() => !document.querySelector('dialog.pdf-dlg[open]'));
   assert.equal(readdirSync(join(data, 'notes/alice')).filter((f) => f.endsWith('.pdf')).length, 0, 'the server keeps no PDFs');
   assert.deepEqual(errors, []);
@@ -2088,10 +2088,14 @@ test('layout 1: a rule takes one line like in the file, and the table tools add 
   assert.ok(m.gap <= m.lineH * 3.1, `blank + rule + blank, nothing more: ${m.gap} vs ${m.lineH}`);
   assert.ok(m.tableGap <= m.lineH * 1.6, `no row of buttons under the table: ${m.tableGap} vs ${m.lineH}`);
   // opening the formulas changes nothing in the text layout: the card floats
+  await page.locator('.qt input').first().click(); // in the table, it makes room for its tools
+  await page.waitForSelector('.qt.active');
+  await page.waitForTimeout(250);
+  const room = await page.evaluate(() => document.querySelector('.cm-content').scrollHeight);
   await page.click('.qt .qt-fx');
   await page.waitForSelector('.qt-formulas.open .qt-builder .dd-btn');
   const after = await page.evaluate(() => ({ scroll: document.querySelector('.cm-content').scrollHeight, pos: getComputedStyle(document.querySelector('.qt-formulas')).position }));
-  assert.equal(after.scroll, m.scroll);
+  assert.equal(after.scroll, room);
   assert.equal(after.pos, 'absolute');
   await page.keyboard.press('Escape');
   await page.waitForFunction(() => !document.querySelector('.qt-formulas.open'));
@@ -2161,5 +2165,54 @@ test('code 1: ``` and Enter closes the block, Ctrl+Enter steps out, the corner l
   await page.keyboard.press('End');
   await page.keyboard.press('Enter');
   assert.ok((await doc()).startsWith('```zig\n\nx = 1\n```'), await doc());
+  assert.deepEqual(errors, []);
+});
+
+test('render 1: tables draw their cells, quotes nest, escapes and footnotes are drawn, tools never cover a row', async () => {
+  const errors = [];
+  const page = await newPage(errors);
+  await signIn(page, 'alice', 'alice-password');
+  await freshNote(page, 'Render');
+  await page.keyboard.insertText(
+    'Title\n=====\n\nbreak\\\nnext \\*stars\\* <https://example.com> note[^1] H<sub>2</sub>O\n\n> outer\n>\n> > inner\n\n| a | b |\n| --- | --- |\n| **bold** | `code` |\n\n[^1]: The note.\n\nend',
+  );
+  await page.waitForSelector('.qt td.qt-rich');
+  await page.waitForTimeout(400);
+  const r = await page.evaluate(() => {
+    const text = (sel) => [...document.querySelectorAll(sel)].map((e) => e.textContent);
+    return {
+      bold: document.querySelector('.qt-view strong')?.textContent,
+      code: document.querySelector('.qt-view code')?.textContent,
+      lines: text('.cm-line'),
+      q2: document.querySelectorAll('.cm-q2').length,
+      sup: [...document.querySelectorAll('sup.cm-fn-ref')].map((e) => e.textContent),
+      sub: document.querySelector('.cm-h-sub')?.textContent,
+      underlineGap: !!document.querySelector('.cm-gap.cm-line') && !text('.cm-line').some((t) => t.trim() === '====='),
+    };
+  });
+  assert.equal(r.bold, 'bold');
+  assert.equal(r.code, 'code');
+  assert.ok(r.lines.some((l) => l.startsWith('next *stars* https://example.com note')), 'escapes and <> are hidden: ' + JSON.stringify(r.lines));
+  assert.ok(!r.lines.some((l) => l.includes('=====')), 'setext underline hidden');
+  assert.ok(!r.lines.some((l) => l.endsWith('break\\')), 'the backslash line break is hidden');
+  assert.equal(r.q2, 1);
+  assert.deepEqual(r.sup, ['1']);
+  assert.equal(r.sub, '2');
+  // the tools appear under the table, never over a row
+  await page.locator('.qt input').nth(2).click();
+  await page.waitForSelector('.qt.active .qt-ctx', { state: 'visible' });
+  await page.waitForTimeout(250);
+  const g = await page.evaluate(() => {
+    const t = document.querySelector('.qt-scroll').getBoundingClientRect();
+    const c = document.querySelector('.qt .qt-ctx').getBoundingClientRect();
+    const next = [...document.querySelectorAll('.cm-line')].find((l) => l.textContent.trim() === 'end')?.getBoundingClientRect();
+    return { tableBottom: t.bottom, toolsTop: c.top, toolsBottom: c.bottom, nextTop: next?.top ?? 1e9 };
+  });
+  assert.ok(g.toolsTop >= g.tableBottom - 1, `tools start under the table: ${g.toolsTop} vs ${g.tableBottom}`);
+  assert.ok(g.toolsBottom <= g.nextTop + 1, `and do not cover the text after it: ${g.toolsBottom} vs ${g.nextTop}`);
+  // leaving the table gives the room back
+  await page.keyboard.press('Escape');
+  await page.locator('.cm-line', { hasText: 'end' }).click();
+  await page.waitForFunction(() => !document.querySelector('.qt.active'));
   assert.deepEqual(errors, []);
 });

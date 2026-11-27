@@ -9,7 +9,7 @@ import { markdown, markdownKeymap, markdownLanguage } from '@codemirror/lang-mar
 import { codeStyle } from './codestyle.ts';
 import { findLanguage } from './langs.ts';
 import { bracketMatching, codeFolding, foldGutter, foldKeymap, HighlightStyle, indentOnInput, syntaxHighlighting } from '@codemirror/language';
-import { highlightSelectionMatches, searchKeymap, selectNextOccurrence, selectSelectionMatches } from '@codemirror/search';
+import { findNext, findPrevious, gotoLine, highlightSelectionMatches, searchKeymap, selectNextOccurrence, selectSelectionMatches } from '@codemirror/search';
 import { Compartment, EditorSelection, Prec, EditorState, type Extension, type Range } from '@codemirror/state';
 import { Decoration, type DecorationSet, ViewPlugin, type ViewUpdate, crosshairCursor, drawSelection, dropCursor, EditorView, highlightActiveLine, highlightActiveLineGutter, keymap, lineNumbers, placeholder, rectangularSelection, runScopeHandlers, type Command } from '@codemirror/view';
 import { latinKey } from '../lib/keys.ts';
@@ -29,6 +29,27 @@ import { closeFence, leaveCode } from './codeflow.ts';
 import { type TableLabels, tablesExtension } from './tables.ts';
 
 // Colours for Source mode (plain Markdown text, nicely coloured).
+/** Join the line with the next one (Ctrl+J): the line break and the next line's indent become one space. */
+const joinLines: Command = (view) => {
+  const { state } = view;
+  const changes: Array<{ from: number; to: number; insert: string }> = [];
+  const done = new Set<number>();
+  for (const r of state.selection.ranges) {
+    const last = state.doc.lineAt(r.to).number;
+    for (let n = state.doc.lineAt(r.from).number; n <= Math.max(last, state.doc.lineAt(r.from).number) && n < state.doc.lines; n++) {
+      if (done.has(n)) continue;
+      done.add(n);
+      const a = state.doc.line(n), b = state.doc.line(n + 1);
+      const indent = /^\s*/.exec(b.text)![0].length;
+      changes.push({ from: a.to, to: b.from + indent, insert: a.text.length && b.text.length > indent ? ' ' : '' });
+      if (r.empty) break;
+    }
+  }
+  if (!changes.length) return false;
+  view.dispatch({ changes, userEvent: 'delete.join' });
+  return true;
+};
+
 /** Move (or extend) each cursor to the first or last character of its line, unless the line is wrapped over several rows. */
 function lineEdge(end: boolean, extend: boolean): Command {
   return (view) => {
@@ -141,6 +162,10 @@ const vscodeEditing: Extension = [
     { key: 'Mod-[', run: indentLess },
     { key: 'Mod-/', run: toggleComment, preventDefault: true },
     { key: 'Mod-Enter', run: insertBlankLine },
+    { key: 'Mod-g', run: gotoLine, preventDefault: true }, // like VS Code: Ctrl+G is "go to line"; F3 finds the next match
+    { key: 'F3', run: findNext, preventDefault: true },
+    { key: 'Shift-F3', run: findPrevious, preventDefault: true },
+    { key: 'Mod-j', run: joinLines, preventDefault: true },
     ...foldKeymap,
   ]),
 ];

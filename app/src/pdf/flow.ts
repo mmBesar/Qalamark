@@ -82,6 +82,8 @@ export function lexer(md: string): Token[] {
   marked.use({
     extensions: [
       { name: 'wikilink', level: 'inline', start: (s: string) => s.indexOf('[['), tokenizer(s: string) { const m = /^\[\[([^\]|#]+)(?:#[^\]|]*)?(?:\|([^\]]+))?\]\]/.exec(s); return m ? { type: 'wikilink', raw: m[0], text: (m[2] ?? m[1])!.trim() } : undefined; } },
+      // a footnote mark [^1] prints as [1]; its definition line starts the same way
+      { name: 'fnref', level: 'inline', start: (s: string) => s.indexOf('[^'), tokenizer(s: string) { const m = /^\[\^([^\]\s]+)\]/.exec(s); return m ? { type: 'fnref', raw: m[0], text: '[' + m[1] + ']' } : undefined; } },
       { name: 'mark', level: 'inline', start: (s: string) => s.indexOf('=='), tokenizer(s: string) { const m = /^==(?=\S)([\s\S]*?\S)==/.exec(s); return m ? { type: 'mark', raw: m[0], text: m[1] } : undefined; } },
     ],
   });

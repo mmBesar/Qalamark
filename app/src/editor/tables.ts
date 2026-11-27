@@ -5,6 +5,7 @@
 // plain Markdown table: every change goes through @qalamark/tables, which
 // writes the new text (and recalculates the formulas).
 
+import { drawInline, hasInline, parseInline } from './inline.ts';
 import { themed } from './dropdown.ts';
 import { latinKey } from '../lib/keys.ts';
 import { describeTables, editCell, setFormulas, tableOp, type TableOp, type TableView } from '@qalamark/tables';
@@ -256,6 +257,17 @@ class TableWidget extends WidgetType {
           }
         });
         cell.append(input);
+        // Not editing: show the cell drawn (bold, code, links ...). Editing shows the plain text.
+        const nodes = f ? [] : parseInline(shown);
+        if (hasInline(nodes)) {
+          const view_ = el('div', 'qt-view');
+          view_.setAttribute('aria-hidden', 'true');
+          view_.dir = 'auto';
+          view_.style.textAlign = input.style.textAlign;
+          view_.append(drawInline(nodes));
+          cell.append(view_);
+          cell.classList.add('qt-rich');
+        }
         tr.append(cell);
       }
       table.append(tr);
@@ -377,11 +389,21 @@ class TableWidget extends WidgetType {
       if (t && (root.contains(t) || t.closest?.('.dd-pop'))) return;
       closeBox();
     };
+    // While you are in the table it makes room under itself for the tools (so nothing is covered); idle, it takes no extra space.
+    const syncActive = () => {
+      const on = root.matches(':focus-within') || box.classList.contains('open');
+      if (on === root.classList.contains('active')) return;
+      root.classList.toggle('active', on);
+      view.requestMeasure();
+    };
+    root.addEventListener('focusin', syncActive);
+    root.addEventListener('focusout', () => setTimeout(syncActive, 0));
     const closeBox = () => {
       box.classList.remove('open');
       root.classList.remove('fx-open');
       fxBtn.setAttribute('aria-expanded', 'false');
       document.removeEventListener('pointerdown', away, true);
+      syncActive();
     };
     const openBox = () => {
       const r = root.getBoundingClientRect();
@@ -390,9 +412,10 @@ class TableWidget extends WidgetType {
       root.classList.add('fx-open');
       fxBtn.setAttribute('aria-expanded', 'true');
       document.addEventListener('pointerdown', away, true);
+      syncActive();
       if (!readOnly) setTimeout(() => area.focus({ preventScroll: true }), 60);
     };
-    box.addEventListener('keydown', (e) => { if (e.key === 'Escape') { e.stopPropagation(); closeBox(); fxBtn.focus(); } });
+    root.addEventListener('keydown', (e) => { if (e.key === 'Escape' && box.classList.contains('open')) { e.stopPropagation(); e.preventDefault(); closeBox(); fxBtn.focus(); } }, true);
     if (!(readOnly && v.formulaText.length === 0 && v.problems.length === 0)) bar.append(fxBtn);
     root.append(bar, box);
     return root;

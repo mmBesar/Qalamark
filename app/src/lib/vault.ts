@@ -66,8 +66,8 @@ export const vault = {
   write: (path: string, text: string) => call<number>('vault_write', { path, text }),
   /** A file made from a note (its PDF), written next to it. */
   async writeFile(path: string, bytes: Uint8Array): Promise<number> {
-    const { invoke } = await import('@tauri-apps/api/core');
-    return invoke<number>('vault_write_file', bytes, { headers: { path: encodeURIComponent(path) } });
+    const { toBase64 } = await import('./pdfexport.ts');
+    return call<number>('vault_write_file', { path, data: toBase64(bytes) });
   },
   trash: (path: string) => call<void>('vault_trash', { path }),
   rename: (from: string, to: string) => call<number>('vault_rename', { from, to }),

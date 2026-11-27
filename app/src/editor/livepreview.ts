@@ -99,9 +99,10 @@ class CalloutLabel extends WidgetType {
 
 class RuleWidget extends WidgetType {
   toDOM() {
-    const hr = document.createElement('hr');
-    hr.className = 'cm-hr';
-    return hr;
+    // the line itself is drawn by the line's style (see .cm-hr-line): this only hides the dashes
+    const s = document.createElement('span');
+    s.className = 'cm-hr';
+    return s;
   }
   eq() {
     return true;
@@ -283,7 +284,10 @@ function build(view: EditorView): DecorationSet {
             break;
           }
           case 'HorizontalRule':
-            if (!lineTouched(state, n.from, n.to)) out.push(Decoration.replace({ widget: new RuleWidget() }).range(n.from, n.to));
+            if (!lineTouched(state, n.from, n.to)) {
+              out.push(Decoration.line({ class: 'cm-hr-line' }).range(state.doc.lineAt(n.from).from));
+              out.push(Decoration.replace({ widget: new RuleWidget() }).range(n.from, n.to));
+            }
             break;
           case 'Link': {
             mark(n.from, n.to, 'cm-link');

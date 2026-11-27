@@ -104,31 +104,68 @@ fn vault_write(app: AppHandle, path: String, text: String) -> Result<u64, String
     vault::write(&root(&app), &path, &text).map_err(err)
 }
 
-/// A file made from a note (its PDF), sent as raw bytes with the path in a header: no slow number lists.
+/// A file made from a note (its PDF), sent as base64 text: raw bodies do not reach the Android shell.
 #[tauri::command]
-fn vault_write_file(app: AppHandle, request: tauri::ipc::Request<'_>) -> Result<u64, String> {
-    let tauri::ipc::InvokeBody::Raw(bytes) = request.body() else { return Err("no file data".into()) };
-    let path = request.headers().get("path").and_then(|v| v.to_str().ok()).ok_or("no path")?;
-    let path = percent_decode(path);
-    vault::write_file(&root(&app), &path, bytes).map_err(err)
+fn vault_write_file(app: AppHandle, path: String, data: String) -> Result<u64, String> {
+    use base64::Engine;
+    let bytes = base64::engine::general_purpose::STANDARD.decode(data.trim()).map_err(|e| e.to_string())?;
+    vault::write_file(&root(&app), &path, &bytes).map_err(err)
 }
 
-fn percent_decode(s: &str) -> String {
-    let b = s.as_bytes();
-    let mut out = Vec::with_capacity(b.len());
-    let mut i = 0;
-    while i < b.len() {
-        if b[i] == b'%' && i + 2 < b.len() {
-            if let Ok(v) = u8::from_str_radix(&s[i + 1..i + 3], 16) {
-                out.push(v);
-                i += 3;
-                continue;
-            }
-        }
-        out.push(b[i]);
-        i += 1;
+/// "Save as": the system's save window (desktop), then the file is written where the person chose. Returns the path, or
+/// nothing when they cancelled.
+#[cfg(desktop)]
+#[tauri::command]
+async fn save_file_as(app: AppHandle, name: String, data: String) -> Result<Option<String>, String> {
+    use base64::Engine;
+    use tauri::Manager;
+    use tauri_plugin_dialog::DialogExt;
+    let bytes = base64::engine::general_purpose::STANDARD.decode(data.trim()).map_err(|e| e.to_string())?;
+    let mut d = app.dialog().file().set_file_name(&name).add_filter("PDF", &["pdf"]);
+    if let Ok(dir) = app.path().download_dir() {
+        d = d.set_directory(dir);
     }
-    String::from_utf8_lossy(&out).into_owned()
+    let Some(chosen) = d.blocking_save_file() else { return Ok(None) };
+    let mut path = chosen.into_path().map_err(|e| e.to_string())?;
+    if path.extension().is_none() {
+        path.set_extension("pdf");
+    }
+    std::fs::write(&path, bytes).map_err(|e| e.to_string())?;
+    Ok(Some(path.to_string_lossy().into_owned()))
+}
+
+/// A normal system notification (the desktop's own notification centre). Clicking it brings the app back and tells the page
+/// which note it was for.
+#[cfg(desktop)]
+#[tauri::command]
+fn notify(app: AppHandle, title: String, body: String, id: String) -> Result<(), String> {
+    use tauri::Emitter;
+    let mut n = notify_rust::Notification::new();
+    n.summary(&title).body(&body).appname("Qalamark").icon("qalamark");
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        n.action("default", "Open");
+        let handle = n.show().map_err(|e| e.to_string())?;
+        std::thread::spawn(move || {
+            handle.wait_for_action(|action| {
+                if action == "default" {
+                    use tauri::Manager;
+                    if let Some(w) = app.get_webview_window("main") {
+                        let _ = w.show();
+                        let _ = w.unminimize();
+                        let _ = w.set_focus();
+                    }
+                    let _ = app.emit("notify-open", id.clone());
+                }
+            });
+        });
+        return Ok(());
+    }
+    #[cfg(not(all(unix, not(target_os = "macos"))))]
+    {
+        let _ = (&app, &id);
+        n.show().map(|_| ()).map_err(|e| e.to_string())
+    }
 }
 
 #[tauri::command]
@@ -324,7 +361,7 @@ pub fn run() {
             _ => {}
         });
     #[cfg(desktop)]
-    let builder = builder.invoke_handler(tauri::generate_handler![vault_info, vault_set, vault_list, vault_read, vault_write, vault_write_file, vault_trash, vault_rename, vault_mkdir, vault_reveal, tls_probe, system_fonts, system_colors, net_check, net_bridge, tray::tray_get, tray::tray_set, tray::tray_ok]);
+    let builder = builder.invoke_handler(tauri::generate_handler![vault_info, vault_set, vault_list, vault_read, vault_write, vault_write_file, save_file_as, notify, vault_trash, vault_rename, vault_mkdir, vault_reveal, tls_probe, system_fonts, system_colors, net_check, net_bridge, tray::tray_get, tray::tray_set, tray::tray_ok]);
     #[cfg(not(desktop))]
     let builder = builder.invoke_handler(tauri::generate_handler![vault_info, vault_set, vault_list, vault_read, vault_write, vault_write_file, vault_trash, vault_rename, vault_mkdir, vault_reveal, tls_probe, system_fonts, system_colors, net_check, net_bridge]);
     builder.run(tauri::generate_context!()).expect("error while running Qalamark");

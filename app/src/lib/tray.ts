@@ -48,3 +48,10 @@ export async function listenTray(onNew: () => void, onSettings: () => void): Pro
 const icons = import.meta.glob('../../src-tauri/icons/tray/*.png', { query: '?url', import: 'default', eager: true }) as Record<string, string>;
 /** The picture of an icon (for the settings page). */
 export const trayPicture = (style: string, tone: string): string => icons[`../../src-tauri/icons/tray/${style}-${tone}.png`] ?? '';
+
+/** A normal notification of the desktop (its own notification centre). Clicking it brings the app back and names the note. */
+export const desktopNotify = (title: string, body: string, id: string): Promise<void> => call('notify', { title, body, id });
+export async function listenNotify(onOpen: (id: string) => void): Promise<() => void> {
+  const { listen } = await import('@tauri-apps/api/event');
+  return listen<string>('notify-open', (e) => onOpen(String(e.payload)));
+}

@@ -266,7 +266,7 @@ class TableWidget extends WidgetType {
     // ---- the buttons under the table (they act on the cell you are in) ----
     const bar = el('div', 'qt-bar');
     const box = el('div', 'qt-formulas');
-    box.hidden = v.problems.length === 0;
+    box.setAttribute('role', 'dialog');
     const area = el('textarea', 'qt-formula-text');
     area.rows = Math.max(2, v.formulaText.length + 1);
     area.value = v.formulaText.join('\n');
@@ -368,12 +368,32 @@ class TableWidget extends WidgetType {
       );
       bar.append(ctx);
     }
-    bar.append(
-      button(labels.formulas, 'ƒ', 'qt-btn', () => {
-        box.hidden = !box.hidden;
-        if (!box.hidden) area.focus();
-      }),
-    );
+    // The formulas live in a small floating card: it opens from the ƒ button and closes when you click away or press Escape.
+    const fxBtn = button(labels.formulas, 'ƒ', 'qt-btn qt-fx', () => (box.classList.contains('open') ? closeBox() : openBox()));
+    if (v.problems.length) fxBtn.classList.add('bad');
+    fxBtn.setAttribute('aria-haspopup', 'dialog');
+    const away = (e: Event) => {
+      const t = e.target as Element | null;
+      if (t && (root.contains(t) || t.closest?.('.dd-pop'))) return;
+      closeBox();
+    };
+    const closeBox = () => {
+      box.classList.remove('open');
+      root.classList.remove('fx-open');
+      fxBtn.setAttribute('aria-expanded', 'false');
+      document.removeEventListener('pointerdown', away, true);
+    };
+    const openBox = () => {
+      const r = root.getBoundingClientRect();
+      box.classList.toggle('up', window.innerHeight - r.bottom < 340 && r.top > window.innerHeight - r.bottom);
+      box.classList.add('open');
+      root.classList.add('fx-open');
+      fxBtn.setAttribute('aria-expanded', 'true');
+      document.addEventListener('pointerdown', away, true);
+      if (!readOnly) setTimeout(() => area.focus({ preventScroll: true }), 60);
+    };
+    box.addEventListener('keydown', (e) => { if (e.key === 'Escape') { e.stopPropagation(); closeBox(); fxBtn.focus(); } });
+    if (!(readOnly && v.formulaText.length === 0 && v.problems.length === 0)) bar.append(fxBtn);
     root.append(bar, box);
     return root;
   }

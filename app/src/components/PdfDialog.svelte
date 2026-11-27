@@ -6,8 +6,8 @@
   import { onMount, tick } from 'svelte';
   import Select from './Select.svelte';
   import { store } from '../lib/store.svelte.ts';
-  import { downloadPdf, forgetPdfDefaults, loadPdfDefaults, savePdfDefaults } from '../lib/pdfexport.ts';
-  import { onAndroid } from '../lib/vault.ts';
+  import { forgetPdfDefaults, handToDevice, loadPdfDefaults, savePdfDefaults } from '../lib/pdfexport.ts';
+  import { inShell, onAndroid, vault } from '../lib/vault.ts';
   import { DEFAULT_PDF, type Doc, type PdfImage, type PdfOptions } from '../pdf/index.ts';
 
   let { title, file, id, text, resolve, onClose }: { title: string; file: string; id: string; text: string; resolve: (url: string) => Promise<string | null>; onClose: () => void } = $props();
@@ -70,26 +70,37 @@
   });
 
   const base = $derived(title.replace(/[\\/:*?"<>|\u0000-\u001f]/g, '-') || 'note');
-  const canFolder = $derived(store.mode === 'server' || !!store.vaultPath);
+  const canFolder = $derived(!!store.vaultPath);
 
   async function make(): Promise<Uint8Array> {
     const { pdf, env } = await engine();
     const { bytes } = await pdf.makePdf(text, { title, file }, { ...o }, env);
     return bytes;
   }
+  const fail = (e: unknown) => { failed = true; status = t('pdfSaveFailed', { why: e instanceof Error ? e.message : String(e) }); };
+  /** Next to the note, in the notes folder. */
   async function saveNext() {
     busy = true; failed = false; status = t('pdfMaking');
     try {
-      const bytes = await make();
-      const where = await store.savePdf(id, bytes);
-      if (where) status = t(where === 'folder' ? 'pdfSavedNext' : 'pdfSavedServer', { name: base + '.pdf' });
-      else if (!onAndroid()) { downloadPdf(bytes, base); status = t('pdfNowhere'); }
-    } catch (e) { failed = true; status = t('pdfSaveFailed', { why: e instanceof Error ? e.message : String(e) }); } finally { busy = false; }
+      const where = await store.savePdf(id, await make());
+      if (!where) return void (status = '');
+      store.say(t('pdfSavedNext', { name: base + '.pdf' }), { label: !onAndroid() ? t('pdfShow') : undefined, act: () => void vault.reveal(where).catch(() => {}) });
+      dlg.close();
+    } catch (e) { fail(e); } finally { busy = false; }
   }
-  async function download() {
+  /** To the device: Downloads on the phone, a "Save as" window on the desktop, the browser's downloads on the web. */
+  async function toDevice() {
     busy = true; failed = false; status = t('pdfMaking');
-    try { downloadPdf(await make(), base); status = ''; } catch (e) { failed = true; status = t('pdfSaveFailed', { why: e instanceof Error ? e.message : String(e) }); } finally { busy = false; }
+    try {
+      const got = await handToDevice(await make(), base);
+      if (!got) { status = ''; return; }
+      store.say(t(got.how === 'downloads' ? 'pdfSavedDownloads' : got.how === 'chosen' ? 'pdfSavedAt' : 'pdfDownloaded', { name: got.where }));
+      dlg.close();
+    } catch (e) { fail(e); } finally { busy = false; }
   }
+  const deviceLabel = $derived(onAndroid() ? t('pdfToDownloads') : inShell() ? t('pdfSaveAs') : t('pdfDownload'));
+  let tab = $state<'page' | 'content' | 'hf' | 'style'>('page');
+  const tabs = $derived<Array<['page' | 'content' | 'hf' | 'style', string]>>([['page', t('pdfSecPage')], ['content', t('pdfSecContent')], ['hf', t('pdfTabHF')], ['style', t('pdfTabStyle')]]);
   function makeDefault() { savePdfDefaults({ ...o }); failed = false; status = t('pdfDefaultsSaved'); }
   function resetDefault() { forgetPdfDefaults(); o = { ...DEFAULT_PDF }; failed = false; status = t('pdfDefaultsReset'); }
   function token(tok: string) {
@@ -115,58 +126,65 @@
     <button class="icon" aria-label={t('close')}>×</button>
   </form>
   <div class="pdf-body">
-    <div class="pdf-opts">
-      <h3>{t('pdfSecPage')}</h3>
-      <div class="pdf-row">
-        <label>{t('pdfPaper')}<Select value={o.paper} options={['A4', 'A5', 'A3', 'Letter', 'Legal'].map((p) => opt(p, p))} onchange={(v) => (o.paper = v as PdfOptions['paper'])} label={t('pdfPaper')} /></label>
-        <label>{t('pdfOrient')}<Select value={o.landscape ? 'l' : 'p'} options={[opt('p', t('pdfPortrait')), opt('l', t('pdfLandscape'))]} onchange={(v) => (o.landscape = v === 'l')} label={t('pdfOrient')} /></label>
+    <div class="pdf-left">
+      <div class="pdf-tabs" role="tablist">
+        {#each tabs as [k, label] (k)}
+          <button type="button" role="tab" aria-selected={tab === k} class:on={tab === k} onclick={() => (tab = k)}>{label}</button>
+        {/each}
       </div>
-      <div class="pdf-row">
-        <label>{t('pdfMarginMm')}<input type="number" min="5" max="50" step="1" bind:value={o.margin} /></label>
-        <label>{t('pdfSizePt')}<input type="number" min="6" max="24" step="0.5" bind:value={o.size} /></label>
-      </div>
-      <div class="pdf-row">
-        <label>{t('pdfSpacing')}<Select value={o.spacing} options={[opt('tight', t('pdfTight')), opt('normal', t('pdfNormal')), opt('airy', t('pdfAiry'))]} onchange={(v) => (o.spacing = v as PdfOptions['spacing'])} label={t('pdfSpacing')} /></label>
-        <label>{t('pdfArabic')}<Select value={o.arabic} options={[opt('naskh', t('pdfNaskh')), opt('sans', t('pdfSansAr'))]} onchange={(v) => (o.arabic = v as PdfOptions['arabic'])} label={t('pdfArabic')} /></label>
-      </div>
-      <label class="chk"><input type="checkbox" bind:checked={o.fitOne} /> {t('pdfFitOne')}</label>
-
-      <h3>{t('pdfSecContent')}</h3>
-      <label class="chk"><input type="checkbox" bind:checked={o.title} /> {t('pdfShowTitle')}</label>
-      <label class="chk"><input type="checkbox" bind:checked={o.pictures} /> {t('pdfPictures')}</label>
-      <label class="chk"><input type="checkbox" bind:checked={o.breakH1} /> {t('pdfBreakH1')}</label>
-      <label class="chk"><input type="checkbox" bind:checked={o.codeBox} /> {t('pdfCodeBox')}</label>
-      <label class="chk"><input type="checkbox" bind:checked={o.tableLines} /> {t('pdfTableLines')}</label>
-      <label class="chk"><input type="checkbox" bind:checked={o.tableZebra} /> {t('pdfZebra')}</label>
-      <p class="muted pdf-note">{t('pdfNoProps')}</p>
-
-      <h3>{t('pdfSecLinks')}</h3>
-      <label>{t('pdfLinkColor')}<Select value={o.linkColor} options={[opt('blue', t('pdfLinkBlue')), opt('black', t('pdfLinkBlack'))]} onchange={(v) => (o.linkColor = v as PdfOptions['linkColor'])} label={t('pdfLinkColor')} /></label>
-      <label class="chk"><input type="checkbox" bind:checked={o.linkUnderline} /> {t('pdfLinkUnderline')}</label>
-      <label class="chk"><input type="checkbox" bind:checked={o.linkShowUrl} /> {t('pdfLinkUrl')}</label>
-
-      <h3>{t('pdfSecHF')}</h3>
-      {#each hf as [label, k, l, c, r] (k)}
-        <div class="pdf-hf">
-          <span class="muted">{t(label as 'pdfHeader')}</span>
-          <div class="pdf-hf-row">
-            {#each [[l, 'pdfLeft'], [c, 'pdfCenter'], [r, 'pdfRight']] as [key, ph] (key)}
-              <input dir="auto" type="text" data-key={key} placeholder={t(ph as 'pdfLeft')} aria-label={t(label as 'pdfHeader') + ' – ' + t(ph as 'pdfLeft')}
-                value={o[key as keyof PdfOptions] as string} oninput={(e) => ((o as unknown as Record<string, string>)[key as string] = e.currentTarget.value)} onfocus={(e) => (lastField = e.currentTarget)} />
-            {/each}
+      <div class="pdf-opts" role="tabpanel">
+        {#if tab === 'page'}
+          <div class="pdf-row">
+            <label>{t('pdfPaper')}<Select value={o.paper} options={['A4', 'A5', 'A3', 'Letter', 'Legal'].map((p) => opt(p, p))} onchange={(v) => (o.paper = v as PdfOptions['paper'])} label={t('pdfPaper')} /></label>
+            <label>{t('pdfOrient')}<Select value={o.landscape ? 'l' : 'p'} options={[opt('p', t('pdfPortrait')), opt('l', t('pdfLandscape'))]} onchange={(v) => (o.landscape = v === 'l')} label={t('pdfOrient')} /></label>
           </div>
-        </div>
-      {/each}
-      <div class="pdf-tokens">
-        {#each toks as tok (tok)}<button type="button" class="chip" onmousedown={(e) => e.preventDefault()} onclick={() => token(tok)}>{tok}</button>{/each}
+          <div class="pdf-row">
+            <label>{t('pdfMarginMm')}<input type="number" min="5" max="50" step="1" bind:value={o.margin} /></label>
+            <label>{t('pdfSizePt')}<input type="number" min="6" max="24" step="0.5" bind:value={o.size} /></label>
+          </div>
+          <div class="pdf-row">
+            <label>{t('pdfSpacing')}<Select value={o.spacing} options={[opt('tight', t('pdfTight')), opt('normal', t('pdfNormal')), opt('airy', t('pdfAiry'))]} onchange={(v) => (o.spacing = v as PdfOptions['spacing'])} label={t('pdfSpacing')} /></label>
+            <label>{t('pdfArabic')}<Select value={o.arabic} options={[opt('naskh', t('pdfNaskh')), opt('sans', t('pdfSansAr'))]} onchange={(v) => (o.arabic = v as PdfOptions['arabic'])} label={t('pdfArabic')} /></label>
+          </div>
+          <label class="chk"><input type="checkbox" bind:checked={o.fitOne} /> {t('pdfFitOne')}</label>
+        {:else if tab === 'content'}
+          <label class="chk"><input type="checkbox" bind:checked={o.title} /> {t('pdfShowTitle')}</label>
+          <label class="chk"><input type="checkbox" bind:checked={o.pictures} /> {t('pdfPictures')}</label>
+          <label class="chk"><input type="checkbox" bind:checked={o.breakH1} /> {t('pdfBreakH1')}</label>
+          <label class="chk"><input type="checkbox" bind:checked={o.codeBox} /> {t('pdfCodeBox')}</label>
+          <label class="chk"><input type="checkbox" bind:checked={o.tableLines} /> {t('pdfTableLines')}</label>
+          <label class="chk"><input type="checkbox" bind:checked={o.tableZebra} /> {t('pdfZebra')}</label>
+          <p class="muted pdf-note">{t('pdfNoProps')}</p>
+        {:else if tab === 'hf'}
+          <label class="chk"><input type="checkbox" bind:checked={o.pageNumbers} /> {t('pdfPageNumbers')}</label>
+          <label class="chk"><input type="checkbox" bind:checked={o.fileName} /> {t('pdfFileName')}</label>
+          <label class="chk"><input type="checkbox" bind:checked={o.rules} /> {t('pdfRules')}</label>
+          <details class="pdf-more" open={!!(o.headerL || o.headerC || o.headerR || o.footerL || o.footerC || o.footerR)}>
+            <summary>{t('pdfCustomHF')}</summary>
+            {#each hf as [label, k, l, c, r] (k)}
+              <div class="pdf-hf">
+                <span class="muted">{t(label as 'pdfHeader')}</span>
+                <div class="pdf-hf-row">
+                  {#each [[l, 'pdfLeft'], [c, 'pdfCenter'], [r, 'pdfRight']] as [key, ph] (key)}
+                    <input dir="auto" type="text" data-key={key} placeholder={t(ph as 'pdfLeft')} aria-label={t(label as 'pdfHeader') + ' – ' + t(ph as 'pdfLeft')}
+                      value={o[key as keyof PdfOptions] as string} oninput={(e) => ((o as unknown as Record<string, string>)[key as string] = e.currentTarget.value)} onfocus={(e) => (lastField = e.currentTarget)} />
+                  {/each}
+                </div>
+              </div>
+            {/each}
+            <div class="pdf-tokens">
+              {#each toks as tok (tok)}<button type="button" class="chip" onmousedown={(e) => e.preventDefault()} onclick={() => token(tok)}>{tok}</button>{/each}
+            </div>
+            <p class="muted pdf-note">{t('pdfTokens')}</p>
+          </details>
+        {:else}
+          <label>{t('pdfLinkColor')}<Select value={o.linkColor} options={[opt('blue', t('pdfLinkBlue')), opt('black', t('pdfLinkBlack'))]} onchange={(v) => (o.linkColor = v as PdfOptions['linkColor'])} label={t('pdfLinkColor')} /></label>
+          <label class="chk"><input type="checkbox" bind:checked={o.linkUnderline} /> {t('pdfLinkUnderline')}</label>
+          <label class="chk"><input type="checkbox" bind:checked={o.linkShowUrl} /> {t('pdfLinkUrl')}</label>
+          <label>{t('pdfInk')}<Select value={o.ink} options={[opt('black', t('pdfInkBlack')), opt('soft', t('pdfInkSoft'))]} onchange={(v) => (o.ink = v as PdfOptions['ink'])} label={t('pdfInk')} /></label>
+          <label class="chk"><input type="checkbox" bind:checked={o.plain} /> {t('pdfPlain')}</label>
+        {/if}
       </div>
-      <p class="muted pdf-note">{t('pdfTokens')}</p>
-      <label class="chk"><input type="checkbox" bind:checked={o.rules} /> {t('pdfRules')}</label>
-
-      <h3>{t('pdfSecLook')}</h3>
-      <label class="chk"><input type="checkbox" bind:checked={o.plain} /> {t('pdfPlain')}</label>
-      <label>{t('pdfInk')}<Select value={o.ink} options={[opt('black', t('pdfInkBlack')), opt('soft', t('pdfInkSoft'))]} onchange={(v) => (o.ink = v as PdfOptions['ink'])} label={t('pdfInk')} /></label>
-
       <div class="pdf-defaults">
         <button type="button" onclick={makeDefault}>{t('pdfMakeDefault')}</button>
         <button type="button" onclick={resetDefault}>{t('pdfResetDefault')}</button>
@@ -192,7 +210,7 @@
   <div class="dialog-actions">
     <span class="pdf-status" class:bad={failed} role="status">{status}</span>
     <button type="button" onclick={() => dlg.close()}>{t('cancel')}</button>
-    {#if !onAndroid()}<button type="button" disabled={busy || !doc} onclick={download}>{t('pdfDownload')}</button>{/if}
-    <button type="button" class="primary" disabled={busy || !doc} onclick={canFolder ? saveNext : download}>{canFolder ? t('pdfSaveNext') : t('pdfDownload')}</button>
+    {#if canFolder}<button type="button" disabled={busy || !doc} onclick={toDevice}>{deviceLabel}</button>{/if}
+    <button type="button" class="primary" disabled={busy || !doc} onclick={canFolder ? saveNext : toDevice}>{canFolder ? t('pdfSaveNext') : deviceLabel}</button>
   </div>
 </dialog>

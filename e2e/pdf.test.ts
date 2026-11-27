@@ -59,7 +59,7 @@ test('fit on one page shrinks a long note; without it the note takes several pag
 
 test('header and footer: words in braces are filled in, on every page', async () => {
   const md = Array.from({ length: 120 }, (_v, i) => `Paragraph ${i}`).join('\n\n');
-  const d = await layoutDoc(md, meta, { ...DEFAULT_PDF, headerC: '{title}', headerR: '{date} {time}', footerL: '{file}', footerR: '{page} / {pages}' }, env);
+  const d = await layoutDoc(md, meta, { ...DEFAULT_PDF, headerC: '{title}', headerR: '{date} {time}', fileName: true, pageNumbers: true }, env);
   assert.ok(d.pages.length >= 2);
   const n = d.pages.length;
   for (let i = 0; i < n; i++) {
@@ -97,4 +97,17 @@ test('old option files still load, and nonsense is put right', () => {
   assert.equal(o.paper, 'Letter'); assert.equal(o.margin, 28); assert.equal(o.size, 14); assert.equal(o.footerR, '');
   assert.deepEqual(cleanOptions(null), DEFAULT_PDF);
   assert.equal(cleanOptions({ margin: 900 }).margin, 50);
+});
+
+test('no footer unless asked: the file name and the page numbers are two switches', async () => {
+  const md = Array.from({ length: 120 }, (_v, i) => `Paragraph ${i}`).join('\n\n');
+  const off = await layoutDoc(md, meta, DEFAULT_PDF, env);
+  assert.ok(!said(off, 0).includes('Invoice 12'), 'nothing at the bottom by default');
+  const names = await layoutDoc(md, meta, { ...DEFAULT_PDF, fileName: true }, env);
+  assert.ok(said(names, 0).includes('Invoice 12'));
+  assert.ok(!said(names, 0).includes(' / '), 'no page numbers');
+  const mine = await layoutDoc(md, meta, { ...DEFAULT_PDF, fileName: true, footerL: 'Mine' }, env);
+  assert.ok(said(mine, 0).includes('Mine') && !said(mine, 0).includes('Invoice 12'), 'typed text wins');
+  const old = cleanOptions({ footerL: '{file}', footerR: '{page} / {pages}' });
+  assert.ok(old.fileName && old.pageNumbers && old.footerL === '' && old.footerR === '');
 });

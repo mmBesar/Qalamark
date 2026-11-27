@@ -14,7 +14,7 @@ interface Bridge {
   keepAlive?(on: boolean): void;
   scheduleReminders?(json: string): void;
   takeOpen?(): string;
-  printHtml?(html: string, name: string): void;
+  savePdf?(b64: string, name: string): string;
 }
 const bridge = (): Bridge | undefined => (typeof window === 'undefined' ? undefined : (window as unknown as { QalamarkAndroid?: Bridge }).QalamarkAndroid);
 export const hasWidgets = (): boolean => !!bridge()?.widgetData;

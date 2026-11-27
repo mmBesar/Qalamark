@@ -3,7 +3,7 @@
 <script lang="ts">
   import { latinKey } from './lib/keys.ts';
   import { onMount, untrack } from 'svelte';
-  import { hasTray, listenTray, trayRefresh } from './lib/tray.ts';
+  import { hasTray, listenNotify, listenTray, trayRefresh } from './lib/tray.ts';
   import Editor from './components/Editor.svelte';
   import Login from './components/Login.svelte';
   import Welcome from './components/Welcome.svelte';
@@ -19,8 +19,29 @@
   import { editorMenu, fieldMenu } from './lib/menus.ts';
   import { store } from './lib/store.svelte.ts';
   import ReminderBanner from './components/ReminderBanner.svelte';
+  import Toast from './components/Toast.svelte';
 
   let drawer = $state(false);
+  // Small window with a mouse: push the pointer against the side where the panel lives and it floats in; it floats away
+  // again when the pointer leaves it or after you pick something. (Opened with the menu button, it stays until closed.)
+  let hoverOpen = false;
+  let dwell: ReturnType<typeof setTimeout> | undefined;
+  let leave: ReturnType<typeof setTimeout> | undefined;
+  const fine = () => matchMedia('(hover: hover) and (pointer: fine)').matches;
+  function edgeIn() {
+    if (!small() || !fine() || drawer) return;
+    dwell = setTimeout(() => { hoverOpen = true; drawer = true; }, 140);
+  }
+  function edgeOut() { clearTimeout(dwell); }
+  function pointerNear(e: PointerEvent) {
+    if (!hoverOpen || !drawer) return;
+    const r = document.querySelector('aside')?.getBoundingClientRect();
+    const inside = !!r && e.clientX >= r.left - 10 && e.clientX <= r.right + 10;
+    if (inside) { clearTimeout(leave); leave = undefined; }
+    else if (!leave) leave = setTimeout(() => { leave = undefined; if (hoverOpen) drawer = false; }, 420);
+  }
+  function pin(e: FocusEvent) { if ((e.target as HTMLElement | null)?.matches?.('input, textarea')) hoverOpen = false; } // typing in the search keeps it open
+  $effect(() => { if (!drawer) { hoverOpen = false; clearTimeout(leave); leave = undefined; } });
 
   // the home-screen widget follows the notes: one refresh after a burst of changes, never on a timer
   $effect(() => {
@@ -31,8 +52,10 @@
   onMount(() => {
     if (!hasTray()) return;
     let off = () => {};
+    let off2 = () => {};
     void listenTray(() => void store.createNote(), () => { store.settingsOpen = true; }).then((f) => (off = f));
-    return () => off();
+    void listenNotify((id) => { if (store.ringing?.id === id) store.openRinging(); else if (store.notes.some((n) => n.id === id)) store.currentId = id; }).then((f) => (off2 = f));
+    return () => { off(); off2(); };
   });
   $effect(() => { void store.s.lang; if (hasTray()) void trayRefresh(store.t); });
   onMount(() => {
@@ -219,6 +242,7 @@
       ondblclick={() => store.setLayout({ sideWidth: 304 })}
     ></button>
     <button class="scrim" aria-label={t('close')} onclick={() => (drawer = false)}></button>
+    <div class="edge-zone" aria-hidden="true" onpointerenter={edgeIn} onpointerleave={edgeOut}></div>
     <main>
       <TabBar />
       {#if store.current}
@@ -241,7 +265,8 @@
 {/if}
 {#if store.toolbarOpen}<ToolbarDialog />{/if}
 <ReminderBanner />
+<Toast />
 {#if store.palette}<Palette onSettings={() => (store.settingsOpen = true)} />{/if}
-<svelte:window ontouchstart={swStart} ontouchmove={swMove} ontouchend={swEnd} ontouchcancel={swEnd} oncontextmenu={onContext} onkeydown={(e) => { if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && (latinKey(e) === 'p' || latinKey(e) === 'k') && store.mode !== 'login' && store.mode !== 'welcome' && store.mode !== 'boot') { e.preventDefault(); store.palette = !store.palette; } else if (e.altKey && !e.ctrlKey && !e.metaKey && latinKey(e) === 'w' && store.currentId) { e.preventDefault(); store.closeTabs([store.currentId]); } else if ((e.ctrlKey || e.metaKey) && latinKey(e) === '\\' && store.mode !== 'login' && store.mode !== 'welcome') { e.preventDefault(); store.toggleSide(); } else if (e.altKey && !e.ctrlKey && !e.metaKey && latinKey(e) === 'z' && store.mode !== 'login' && store.mode !== 'welcome') { e.preventDefault(); store.toggleZen(); } else if (e.key === 'Escape' && store.zen && !store.palette) { store.zen = false; } else if (e.ctrlKey && e.key === 'Tab') { e.preventDefault(); store.nextTab(e.shiftKey ? -1 : 1); } }} />
+<svelte:window onpointermove={pointerNear} onfocusin={pin} ontouchstart={swStart} ontouchmove={swMove} ontouchend={swEnd} ontouchcancel={swEnd} oncontextmenu={onContext} onkeydown={(e) => { if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && (latinKey(e) === 'p' || latinKey(e) === 'k') && store.mode !== 'login' && store.mode !== 'welcome' && store.mode !== 'boot') { e.preventDefault(); store.palette = !store.palette; } else if (e.altKey && !e.ctrlKey && !e.metaKey && latinKey(e) === 'w' && store.currentId) { e.preventDefault(); store.closeTabs([store.currentId]); } else if ((e.ctrlKey || e.metaKey) && latinKey(e) === '\\' && store.mode !== 'login' && store.mode !== 'welcome') { e.preventDefault(); if (small()) drawer = !drawer; else store.toggleSide(); } else if (e.altKey && !e.ctrlKey && !e.metaKey && latinKey(e) === 'z' && store.mode !== 'login' && store.mode !== 'welcome') { e.preventDefault(); store.toggleZen(); } else if (e.key === 'Escape' && drawer && small() && !store.palette && !document.querySelector('dialog[open]')) { drawer = false; } else if (e.key === 'Escape' && store.zen && !store.palette) { store.zen = false; } else if (e.ctrlKey && e.key === 'Tab') { e.preventDefault(); store.nextTab(e.shiftKey ? -1 : 1); } }} />
 <DialogHost />
 <ContextMenu />

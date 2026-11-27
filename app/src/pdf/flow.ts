@@ -519,7 +519,8 @@ export async function layoutDoc(md: string, meta: Meta, options: PdfOptions, env
   const o = { ...DEFAULT_PDF, ...options };
   const tokens = lexer(md);
   const fonts = new Fonts(env.fonts, o.arabic);
-  await fonts.prepare(md + [o.headerL, o.headerC, o.headerR, o.footerL, o.footerC, o.footerR].join(' ') + meta.title + meta.file);
+  const footL = o.footerL || (o.fileName ? '{file}' : ''), footR = o.footerR || (o.pageNumbers ? '{page} / {pages}' : '');
+  await fonts.prepare(md + [o.headerL, o.headerC, o.headerR, footL, o.footerC, footR].join(' ') + meta.title + meta.file);
   const urls = new Set<string>();
   urlsOf(tokens, urls);
   const imgs = new Map<string, PdfImage | null>();
@@ -556,9 +557,9 @@ export async function layoutDoc(md: string, meta: Meta, options: PdfOptions, env
     };
     const hy = Math.max(m * 0.55, 14), fy = lay.H - Math.max(m * 0.45, 14);
     put(o.headerL, 'L', hy); put(o.headerC, 'C', hy); put(o.headerR, 'R', hy);
-    put(o.footerL, 'L', fy); put(o.footerC, 'C', fy); put(o.footerR, 'R', fy);
+    put(footL, 'L', fy); put(o.footerC, 'C', fy); put(footR, 'R', fy);
     if (o.rules && (o.headerL || o.headerC || o.headerR)) pg.ops.push({ t: 'line', x1: lay.left, y1: hy + 7, x2: lay.right, y2: hy + 7, lw: 0.5, color: C.rule });
-    if (o.rules && (o.footerL || o.footerC || o.footerR)) pg.ops.push({ t: 'line', x1: lay.left, y1: fy - 11, x2: lay.right, y2: fy - 11, lw: 0.5, color: C.rule });
+    if (o.rules && (footL || o.footerC || footR)) pg.ops.push({ t: 'line', x1: lay.left, y1: fy - 11, x2: lay.right, y2: fy - 11, lw: 0.5, color: C.rule });
   });
   return { pages: lay.pages, w: lay.W, h: lay.H, fonts, images: lay.images, scale: k, title: meta.title, tooLong };
 }

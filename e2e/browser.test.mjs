@@ -1739,30 +1739,27 @@ test('pdf 1: the PDF is made in the app: real pages in the preview, options, sav
   const inked = await p.evaluate(() => { const c = document.querySelector('canvas.pdf-page'); const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data; let n = 0; for (let i = 0; i < d.length; i += 4) if (d[i] < 128) n++; return n; });
   assert.ok(inked > 100, 'ink on the page: ' + inked);
   // an option changes the pages: a header with the file name
+  await p.click('dialog.pdf-dlg [role=tab]:has-text("Header & footer")');
+  assert.equal(await p.locator('dialog.pdf-dlg input[type=checkbox]').first().isChecked(), false, 'no page numbers unless asked');
+  await p.click('dialog.pdf-dlg summary');
   await p.fill('dialog.pdf-dlg input[data-key="headerC"]', '{file}');
   await p.waitForTimeout(600);
   // defaults can be set and come back
   await p.click('dialog.pdf-dlg button:has-text("Make these my defaults")');
   assert.ok((await p.locator('dialog.pdf-dlg .pdf-status').innerText()).includes('defaults'));
   assert.ok((await p.evaluate(() => localStorage.getItem('qm.pdf.defaults'))).includes('"headerC":"{file}"'));
-  // download: a real PDF with the note and without its properties
-  const [dl] = await Promise.all([p.waitForEvent('download'), p.click('dialog.pdf-dlg .dialog-actions button:has-text("Download")')]);
+  // download: a real PDF with the note and without its properties; the window closes and a message says what happened
+  const [dl] = await Promise.all([p.waitForEvent('download'), p.click('dialog.pdf-dlg .dialog-actions .primary')]);
   const file = join(tmpdir(), 'qm-dl-' + Date.now() + '.pdf');
   await dl.saveAs(file);
   const bytes = readFileSync(file);
   assert.equal(bytes.subarray(0, 5).toString(), '%PDF-');
   assert.ok(!bytes.toString('latin1').includes('SECRETPROP'));
   if (process.env.SHOT) { writeFileSync(process.env.SHOT + '-invoice.pdf', bytes); await p.screenshot({ path: process.env.SHOT + '-pdfdlg.png' }); }
-  // saved next to the note, on the server
-  await p.click('dialog.pdf-dlg .primary');
-  await p.waitForFunction(() => document.querySelector('dialog.pdf-dlg .pdf-status')?.textContent?.includes('next to the note on the server'), null, { timeout: 20000 });
-  const walk = (d) => readdirSync(d, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(join(d, e.name)) : [join(d, e.name)]));
-  const found = walk(join(data, 'notes/alice')).filter((f) => /Invoice 7.*\.pdf$/.test(f));
-  assert.equal(found.length, 1, 'one PDF next to the note: ' + found);
-  const saved = readFileSync(found[0]);
-  assert.equal(saved.subarray(0, 5).toString(), '%PDF-');
-  await p.keyboard.press('Escape');
+  await p.waitForSelector('.toast', { timeout: 5000 });
+  assert.ok((await p.locator('.toast').innerText()).includes('Invoice 7.pdf'));
   await p.waitForFunction(() => !document.querySelector('dialog.pdf-dlg[open]'));
+  assert.equal(readdirSync(join(data, 'notes/alice')).filter((f) => f.endsWith('.pdf')).length, 0, 'the server keeps no PDFs');
   assert.deepEqual(errors, []);
   await c.close();
 });
@@ -2069,4 +2066,58 @@ test('tray 1: the desktop page of the settings drives the native tray (mocked he
   await page.waitForFunction(() => window.__calls.some(([c, a]) => c === 'tray_set' && JSON.parse(a).config.autostart === true));
   if (process.env.SHOT) await page.screenshot({ path: process.env.SHOT + '-tray.png' });
   assert.deepEqual(errors, []);
+});
+
+test('layout 1: a rule takes one line like in the file, and the table tools add no lines (the formula card floats)', async () => {
+  const errors = [];
+  const page = await newPage(errors);
+  await signIn(page, 'alice', 'alice-password');
+  await freshNote(page, 'Spacing');
+  await page.keyboard.insertText('before\n\n---\n\nmiddle\n\n| a | b |\n| --- | --- |\n| 1 | 2 |\n\nafter');
+  await page.waitForSelector('.qt');
+  await page.waitForSelector('.cm-hr-line');
+  await page.waitForTimeout(300);
+  const m = await page.evaluate(() => {
+    const lines = [...document.querySelectorAll('.cm-line')];
+    const find = (t) => lines.find((l) => l.textContent.trim() === t);
+    const r = (e) => e.getBoundingClientRect();
+    const before = r(find('before')), mid = r(find('middle')), after = r(find('after')), hr = r(document.querySelector('.cm-hr-line')), qt = r(document.querySelector('.qt'));
+    return { lineH: before.height, hrH: hr.height, gap: mid.top - before.bottom, tableGap: after.top - qt.bottom, scroll: document.querySelector('.cm-content').scrollHeight };
+  });
+  assert.ok(m.hrH <= m.lineH * 1.25, `the rule is one line: ${m.hrH} vs ${m.lineH}`);
+  assert.ok(m.gap <= m.lineH * 3.1, `blank + rule + blank, nothing more: ${m.gap} vs ${m.lineH}`);
+  assert.ok(m.tableGap <= m.lineH * 1.6, `no row of buttons under the table: ${m.tableGap} vs ${m.lineH}`);
+  // opening the formulas changes nothing in the text layout: the card floats
+  await page.click('.qt .qt-fx');
+  await page.waitForSelector('.qt-formulas.open .qt-builder .dd-btn');
+  const after = await page.evaluate(() => ({ scroll: document.querySelector('.cm-content').scrollHeight, pos: getComputedStyle(document.querySelector('.qt-formulas')).position }));
+  assert.equal(after.scroll, m.scroll);
+  assert.equal(after.pos, 'absolute');
+  await page.keyboard.press('Escape');
+  await page.waitForFunction(() => !document.querySelector('.qt-formulas.open'));
+  assert.deepEqual(errors, []);
+});
+
+test('panels 1: a small window floats the notes panel in at the edge and away again', async () => {
+  const errors = [];
+  const c = await browser.newContext({ viewport: { width: 700, height: 800 } });
+  const p = await c.newPage();
+  p.on('pageerror', (e) => errors.push(String(e)));
+  await signIn(p, 'alice', 'alice-password');
+  await p.waitForSelector('.shell');
+  assert.equal(await p.locator('.shell.drawer-open').count(), 0);
+  await p.mouse.move(400, 400);
+  await p.mouse.move(2, 400);
+  await p.waitForSelector('.shell.drawer-open', { timeout: 3000 });
+  await p.mouse.move(200, 300);
+  await p.waitForTimeout(700);
+  assert.equal(await p.locator('.shell.drawer-open').count(), 1, 'stays while the pointer is on it');
+  await p.mouse.move(690, 300);
+  await p.waitForFunction(() => !document.querySelector('.shell.drawer-open'), null, { timeout: 3000 });
+  await p.keyboard.press('Control+\\');
+  await p.waitForSelector('.shell.drawer-open');
+  await p.keyboard.press('Escape');
+  await p.waitForFunction(() => !document.querySelector('.shell.drawer-open'));
+  assert.deepEqual(errors, []);
+  await c.close();
 });

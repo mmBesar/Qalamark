@@ -20,6 +20,9 @@ export interface PdfOptions {
   /** Header and footer: left, middle, right. Words in braces are filled in: {file} {title} {date} {time} {page} {pages}. */
   headerL: string; headerC: string; headerR: string;
   footerL: string; footerC: string; footerR: string;
+  /** The two usual footer things, as simple switches: the file name at the left, "1 / 3" at the right. Text typed into the footer fields below takes their place. */
+  fileName: boolean;
+  pageNumbers: boolean;
   /** A thin line between the header or footer and the page. */
   rules: boolean;
   /** Links: blue like on the web, or the same black as the text. */
@@ -44,7 +47,7 @@ export interface PdfOptions {
 
 export const DEFAULT_PDF: PdfOptions = {
   paper: 'A4', landscape: false, margin: 20, size: 12, spacing: 'normal', fitOne: false, arabic: 'naskh', title: false,
-  headerL: '', headerC: '', headerR: '', footerL: '{file}', footerC: '', footerR: '{page} / {pages}', rules: false,
+  headerL: '', headerC: '', headerR: '', footerL: '', footerC: '', footerR: '', fileName: false, pageNumbers: false, rules: false,
   linkColor: 'blue', linkUnderline: false, linkShowUrl: false, plain: false, breakH1: false,
   tableLines: true, tableZebra: false, pictures: true, codeBox: true, ink: 'black',
 };
@@ -61,6 +64,9 @@ export function cleanOptions(raw: unknown): PdfOptions {
   // older versions: a page-number switch and word sizes
   if (r.pageNumbers === true && !('footerR' in r)) o.footerR = '{page}';
   if (r.pageNumbers === false && !('footerR' in r)) { o.footerR = ''; o.footerL = ''; }
+  // the old built-in footer (file name and "1 / 3") is now two switches
+  if (o.footerL === '{file}') { o.footerL = ''; o.fileName = true; }
+  if (o.footerR === '{page} / {pages}') { o.footerR = ''; o.pageNumbers = true; }
   if (r.margin === 'narrow') o.margin = 12; else if (r.margin === 'wide') o.margin = 28;
   if (r.size === 'small') o.size = 10.5; else if (r.size === 'large') o.size = 14;
   if (!(o.paper as string in PAPERS)) o.paper = 'A4';

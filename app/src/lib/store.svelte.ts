@@ -20,6 +20,7 @@ import { cleanToolbar, DEFAULT_TOOLBAR } from './toolbar.ts';
 import { DEFAULT_GESTURES, type Gestures } from './gestures.ts';
 import { deletedElsewhere, leftoverIsUnchanged } from './syncplan.ts';
 import { remindersOf, upcoming, type Reminder } from './reminders.ts';
+import { desktopNotify, hasTray } from './tray.ts';
 import { hasNativeReminders, hasWidgets, isChecklist, keepAlive, scheduleNative, takeOpenNote, publishLists, putBackTick, takeTicks, toggleItem, widgetItems } from './widgets.ts';
 import { retarget } from './mdlinks.ts';
 import { deleteStored, readStoredText, syncNoteNow, writeStoredText } from './session.ts';
@@ -1116,17 +1117,24 @@ class Store {
     }
   }
 
-  /** Save a note's PDF next to the note: in the notes folder (apps) or on the server. Null when there is no such place. */
-  async savePdf(id: string, bytes: Uint8Array): Promise<'folder' | 'server' | null> {
+  /** Save a note's PDF next to the note, in the notes folder of the app. Null when there is no such folder. */
+  async savePdf(id: string, bytes: Uint8Array): Promise<string | null> {
     const n = this.notes.find((x) => x.id === id);
-    if (!n) return null;
-    if (this.vaultOn) {
-      const md = n.vp ?? notePath(n.folder ?? '', n.title);
-      await vault.writeFile(md.replace(/\.md$/i, '.pdf'), bytes);
-      return 'folder';
-    }
-    if (this.mode === 'server') { await this.api.putPdf(id, bytes); return 'server'; }
-    return null;
+    if (!n || !this.vaultOn) return null;
+    const md = n.vp ?? notePath(n.folder ?? '', n.title);
+    const pdf = md.replace(/\.md$/i, '.pdf');
+    await vault.writeFile(pdf, bytes);
+    return pdf;
+  }
+
+  /** A short message at the bottom of the window. */
+  toast = $state<{ n: number; text: string; bad?: boolean; label?: string; act?: () => void } | null>(null);
+  private toastN = 0;
+  private toastTimer: ReturnType<typeof setTimeout> | undefined;
+  say(text: string, o: { bad?: boolean; label?: string; act?: () => void } = {}) {
+    clearTimeout(this.toastTimer);
+    this.toast = { n: ++this.toastN, text, ...o };
+    this.toastTimer = setTimeout(() => (this.toast = null), o.bad ? 9000 : 5500);
   }
 
   async renameNote(id: string, title: string) {
@@ -1595,7 +1603,10 @@ class Store {
       write('qm.fired', this.fired);
       this.ringing = r;
       try {
-        if ('Notification' in window && Notification.permission === 'granted') {
+        if (hasTray()) {
+          // the desktop app: the system's own notification, not the web view's
+          await desktopNotify(r.title || 'Qalamark', new Date(r.at).toLocaleString(), r.id);
+        } else if ('Notification' in window && Notification.permission === 'granted') {
           const n = new Notification(r.title || 'Qalamark', { body: new Date(r.at).toLocaleString(), tag: key });
           n.onclick = () => { window.focus(); this.openRinging(); };
         }

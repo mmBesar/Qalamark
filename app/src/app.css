@@ -658,11 +658,9 @@ dialog label {
 .cm-fence {
   color: var(--muted);
 }
-.cm-hr {
-  border: 0;
-  border-top: 2px solid var(--line);
-  margin: 0.8em 0;
-}
+.cm-hr { display: inline-block; width: 0; }
+/* a rule takes exactly one text line, like in the file and in the PDF: the line is drawn in the middle of it */
+.cm-hr-line { background: linear-gradient(var(--line), var(--line)) center / 100% 2px no-repeat; }
 .cm-task {
   display: inline-block;
   box-sizing: border-box;
@@ -2235,3 +2233,40 @@ dialog.pdf-dlg.wide { width: min(1080px, 97vw); max-width: 97vw; }
 .tray-tones { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-bottom: 0.4rem; }
 .tray-tones button { padding: 0.35rem 0.8rem; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); color: var(--ink); font: inherit; font-size: 0.85rem; cursor: pointer; }
 .tray-tones button.on { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 16%, var(--surface)); }
+
+/* a short message at the bottom */
+.toast { position: fixed; z-index: 95; bottom: calc(env(safe-area-inset-bottom, 0px) + 18px); left: 50%; translate: -50% 0; max-width: min(560px, calc(100vw - 24px)); display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-radius: 14px; background: var(--surface, var(--bg)); border: 1px solid var(--accent); box-shadow: 0 10px 30px rgb(0 0 0 / 0.35); font-size: 0.92rem; }
+.toast.bad { border-color: var(--danger, #e5484d); }
+.toast span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+
+/* PDF dialog: tabs instead of one long list */
+.pdf-left { display: flex; flex-direction: column; gap: 0.5rem; min-width: 0; }
+.pdf-tabs { display: flex; gap: 0.25rem; padding: 3px; border-radius: 10px; background: var(--surface-2, color-mix(in srgb, var(--ink) 7%, transparent)); }
+.pdf-tabs button { flex: 1; padding: 0.35rem 0.4rem; border: 0; border-radius: 8px; background: transparent; color: var(--muted); font: inherit; font-size: 0.82rem; cursor: pointer; transition: background 0.15s, color 0.15s; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pdf-tabs button.on { background: var(--surface); color: var(--ink); box-shadow: 0 1px 4px rgb(0 0 0 / 0.18); }
+.pdf-left .pdf-opts { height: min(48vh, 440px); max-height: none; }
+.pdf-more { border-top: 1px solid var(--line); padding-top: 0.5rem; display: flex; flex-direction: column; gap: 0.5rem; }
+.pdf-more summary { cursor: pointer; font-size: 0.85rem; color: var(--muted); margin-bottom: 0.4rem; }
+@media (max-width: 720px) { .pdf-left .pdf-opts { height: 34vh; } }
+
+/* tables: nothing under the table; the tools float over its bottom edge and the formulas open in a small card */
+.qt { position: relative; margin: 0.25rem 0; }
+.qt .qt-bar { position: absolute; z-index: 5; inset-inline-end: 6px; top: 100%; transform: translateY(-50%); min-height: 0; padding: 2px; gap: 0.2rem; flex-wrap: nowrap; align-items: center; max-width: calc(100% - 12px); border-radius: 999px; pointer-events: none; }
+.qt .qt-bar .qt-ctx { display: inline-flex; flex-wrap: nowrap; gap: 0.15rem; overflow-x: auto; scrollbar-width: none; padding: 2px 6px; border-radius: 999px; border: 1px solid var(--line); background: color-mix(in srgb, var(--surface, var(--bg)) 88%, transparent); backdrop-filter: blur(6px); box-shadow: 0 4px 14px rgb(0 0 0 / 0.22); opacity: 0; transform: translateY(6px) scale(0.96); transform-origin: 100% 50%; visibility: hidden; transition: opacity 0.16s, transform 0.16s, visibility 0.16s; }
+.qt:hover .qt-bar .qt-ctx, .qt:focus-within .qt-bar .qt-ctx { opacity: 1; transform: none; visibility: visible; pointer-events: auto; }
+.qt .qt-bar .qt-btn { white-space: nowrap; padding: 0.1rem 0.5rem; border: 0; border-radius: 999px; }
+.qt .qt-bar .qt-btn:hover { background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--ink); }
+.qt .qt-fx { pointer-events: auto; width: 1.7rem; height: 1.7rem; padding: 0; display: grid; place-items: center; font-style: italic; font-family: serif; font-size: 1rem; border: 1px solid var(--line); background: color-mix(in srgb, var(--surface, var(--bg)) 70%, transparent); backdrop-filter: blur(6px); opacity: 0.4; transition: opacity 0.16s, background 0.16s; }
+.qt:hover .qt-fx, .qt:focus-within .qt-fx, .qt.fx-open .qt-fx { opacity: 1; }
+.qt .qt-fx.bad { color: var(--danger, #e5484d); border-color: var(--danger, #e5484d); opacity: 1; }
+.qt .qt-formulas { position: absolute; z-index: 30; inset-inline-end: 0; top: calc(100% + 1.1rem); width: min(36rem, 100%); max-height: min(60vh, 28rem); overflow: auto; margin: 0; padding: 0.7rem 0.8rem; border-radius: 14px; border: 1px solid var(--line); background: var(--surface, var(--bg)); box-shadow: 0 14px 40px rgb(0 0 0 / 0.38); opacity: 0; visibility: hidden; pointer-events: none; transform: translateY(-8px) scale(0.98); transform-origin: 100% 0; transition: opacity 0.18s, transform 0.18s, visibility 0.18s; }
+.qt .qt-formulas.up { top: auto; bottom: calc(100% + 0.4rem); transform-origin: 100% 100%; transform: translateY(8px) scale(0.98); }
+.qt .qt-formulas.open { opacity: 1; visibility: visible; pointer-events: auto; transform: none; }
+@media (prefers-reduced-motion: reduce) { .qt .qt-bar .qt-ctx, .qt .qt-formulas, .qt .qt-fx { transition: none; } }
+
+/* a small window with a mouse: a thin hot strip on the panel's side floats the panel in */
+.edge-zone { display: none; }
+@media (max-width: 760px) and (hover: hover) and (pointer: fine) {
+  .edge-zone { display: block; position: fixed; z-index: 4; top: 0; bottom: 0; inset-inline-start: 0; width: 7px; }
+  .shell.drawer-open .edge-zone { display: none; }
+}

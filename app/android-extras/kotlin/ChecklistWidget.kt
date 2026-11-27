@@ -60,6 +60,19 @@ class ChecklistWidget : AppWidgetProvider() {
 
     fun update(context: Context, manager: AppWidgetManager, wid: Int) {
       val rv = RemoteViews(context.packageName, R.layout.widget_checklist)
+      val st = QmPrefs.style(context, wid)
+      val co = st.colors(context)
+      // the background is its own layer so that its colour and see-through level can change without redrawing a shape
+      rv.setImageViewResource(R.id.w_bg, when (st.corners) { 0 -> R.drawable.qm_bg_0; 1 -> R.drawable.qm_bg_12; else -> R.drawable.qm_bg_24 })
+      rv.setInt(R.id.w_bg, "setColorFilter", co.bg or 0xFF000000.toInt())
+      rv.setInt(R.id.w_bg, "setImageAlpha", st.alpha)
+      rv.setTextColor(R.id.w_title, co.ink)
+      rv.setTextColor(R.id.w_count, co.accent)
+      rv.setTextColor(R.id.w_prev, co.accent)
+      rv.setTextColor(R.id.w_next, co.accent)
+      rv.setTextColor(R.id.w_empty, co.muted)
+      rv.setTextViewTextSize(R.id.w_title, android.util.TypedValue.COMPLEX_UNIT_SP, 17f * st.scale)
+      rv.setTextViewTextSize(R.id.w_count, android.util.TypedValue.COMPLEX_UNIT_SP, 13f * st.scale)
       val lists = QmPrefs.lists(context)
       val n = lists.length()
       if (n == 0) {
@@ -113,15 +126,32 @@ class ChecklistService : RemoteViewsService() {
   class Factory(private val context: Context, private val wid: Int) : RemoteViewsFactory {
     private var noteId = ""
     private var rows = JSONArray()
+    private var st = WidgetStyle.DEFAULT
+    private var co = st.colors(context)
 
     override fun onCreate() {}
     override fun onDataSetChanged() {
+      st = QmPrefs.style(context, wid)
+      co = st.colors(context)
       val lists = QmPrefs.lists(context)
       val n = lists.length()
       if (n == 0) { rows = JSONArray(); return }
       val l = lists.getJSONObject(((QmPrefs.selected(context, wid) % n) + n) % n)
       noteId = l.getString("id")
-      rows = l.getJSONArray("items")
+      val all = l.getJSONArray("items")
+      if (!st.hideDone) { rows = all; return }
+      // without the finished tasks (and headings that would be left with nothing under them)
+      val keep = JSONArray()
+      for (i in 0 until all.length()) {
+        val o = all.getJSONObject(i)
+        if (o.optBoolean("head", false)) {
+          var any = false
+          var j = i + 1
+          while (j < all.length() && !any) { val q = all.getJSONObject(j); if (!q.optBoolean("head", false) && !q.getBoolean("done")) any = true; if (q.optBoolean("head", false) && q.getInt("depth") <= o.getInt("depth")) break; j++ }
+          if (any) keep.put(o)
+        } else if (!o.getBoolean("done")) keep.put(o)
+      }
+      rows = keep
     }
     override fun onDestroy() {}
     override fun getCount(): Int = rows.length()
@@ -142,6 +172,8 @@ class ChecklistService : RemoteViewsService() {
       if (it.optBoolean("head", false)) {
         val h = RemoteViews(context.packageName, R.layout.widget_head)
         h.setTextViewText(R.id.h_text, text)
+        h.setTextColor(R.id.h_text, co.accent)
+        h.setTextViewTextSize(R.id.h_text, android.util.TypedValue.COMPLEX_UNIT_SP, 12f * st.scale)
         h.setViewPadding(R.id.h_root, (it.getInt("depth") * 14 * context.resources.displayMetrics.density).toInt(), (6 * context.resources.displayMetrics.density).toInt(), (6 * context.resources.displayMetrics.density).toInt(), 0)
         return h
       }
@@ -149,8 +181,10 @@ class ChecklistService : RemoteViewsService() {
       val rv = RemoteViews(context.packageName, if (rtl) R.layout.widget_item_rtl else R.layout.widget_item)
       val label: CharSequence = if (done) SpannableString(text).also { s -> s.setSpan(StrikethroughSpan(), 0, text.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE) } else text
       rv.setTextViewText(R.id.i_text, label)
-      rv.setTextColor(R.id.i_text, if (done) 0xFF9399B2.toInt() else 0xFFCDD6F4.toInt())
+      rv.setTextColor(R.id.i_text, if (done) co.muted else co.ink)
+      rv.setTextViewTextSize(R.id.i_text, android.util.TypedValue.COMPLEX_UNIT_SP, 16f * st.scale)
       rv.setImageViewResource(R.id.i_box, if (done) R.drawable.qm_box_on else R.drawable.qm_box_off)
+      rv.setInt(R.id.i_box, "setColorFilter", if (done) co.accent else co.muted)
       val pad = (it.getInt("depth") * 22 * context.resources.displayMetrics.density).toInt()
       if (rtl) rv.setViewPadding(R.id.i_root, 0, 0, pad, 0) else rv.setViewPadding(R.id.i_root, pad, 0, 0, 0)
       rv.setOnClickFillInIntent(R.id.i_root, Intent().putExtra("id", noteId).putExtra("line", it.getInt("line")))

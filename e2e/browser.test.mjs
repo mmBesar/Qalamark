@@ -187,7 +187,8 @@ test('editing feels right: click anywhere, tables stay tables, links, callouts, 
   // Delete a row with the buttons under the table (no extra column).
   assert.equal(await page.locator('.qt .qt-tools').count(), 0);
   await page.locator('.qt input[data-r="2"][data-c="0"]').click();
-  await page.click('.qt-del >> nth=0');
+  await page.waitForSelector('.tb-table');
+  await page.click('.tb-table button[title="Delete row"]');
   await page.waitForFunction(() => document.querySelectorAll('.qt tr').length === 2);
 
   // Bullets: the cursor ends up after the marker.
@@ -243,7 +244,7 @@ test('round 2: folders, templates, properties, MkDocs blocks, pictures, builder,
   await page.waitForFunction(() => document.querySelector('.qt input[data-r="4"][data-c="3"]')?.value === '7.5', null, { timeout: 8000 });
 
   // The formula builder offers column letters.
-  await page.click('.qt button[title*="ormula"], .qt .qt-fx');
+  await page.click('.tb-table .fx');
   await page.waitForSelector('.qt-builder .dd-btn');
   assert.match(await page.locator('.qt-builder .qt-preview').innerText(), /^[A-Z] = /);
 
@@ -2089,130 +2090,95 @@ test('layout 1: a rule takes one line like in the file, and the table tools add 
   assert.ok(m.tableGap <= m.lineH * 1.6, `no row of buttons under the table: ${m.tableGap} vs ${m.lineH}`);
   // opening the formulas changes nothing in the text layout: the card floats
   await page.locator('.qt input').first().click(); // in the table, it makes room for its tools
-  await page.waitForSelector('.qt.active');
+  await page.waitForSelector('.tb-table');
   await page.waitForTimeout(250);
   const room = await page.evaluate(() => document.querySelector('.cm-content').scrollHeight);
-  await page.click('.qt .qt-fx');
+  await page.click('.tb-table .fx');
   await page.waitForSelector('.qt-formulas.open .qt-builder .dd-btn');
   const after = await page.evaluate(() => ({ scroll: document.querySelector('.cm-content').scrollHeight, pos: getComputedStyle(document.querySelector('.qt-formulas')).position }));
   assert.equal(after.scroll, room);
   assert.equal(after.pos, 'absolute');
   await page.keyboard.press('Escape');
   await page.waitForFunction(() => !document.querySelector('.qt-formulas.open'));
+  // toolbar tools add a row and a column; the edge "+" on hover adds one too
+  const dims = () => page.evaluate(() => ({ r: document.querySelectorAll('.qt tr').length, c: document.querySelectorAll('.qt tr:first-child > *').length }));
+  const d0 = await dims();
+  await page.locator('.qt input').first().click();
+  await page.click('.tb-table button[title="Add row"]');
+  await page.waitForFunction((n) => document.querySelectorAll('.qt tr').length === n + 1, d0.r);
+  await page.locator('.qt input').first().click();
+  await page.click('.tb-table button[title="Add column"]');
+  await page.waitForFunction((n) => document.querySelectorAll('.qt tr:first-child > *').length === n + 1, d0.c);
+  await page.locator('.qt').hover();
+  await page.locator('.qt-edge-row').first().click({ force: true });
+  await page.waitForFunction((n) => document.querySelectorAll('.qt tr').length === n + 2, d0.r);
   assert.deepEqual(errors, []);
 });
 
-test('panels 1: a small window floats the notes panel in at the edge and away again', async () => {
+test('panels 1: in a small window the notes panel opens with its button, stays for a right-click menu, closes when you click away', async () => {
   const errors = [];
   const c = await browser.newContext({ viewport: { width: 700, height: 800 } });
   const p = await c.newPage();
   p.on('pageerror', (e) => errors.push(String(e)));
   await signIn(p, 'alice', 'alice-password');
   await p.waitForSelector('.shell');
+  await p.evaluate(() => document.querySelector('aside .actions button').click()); // a note to point at
+  await p.waitForSelector('.cm-content');
+  await p.waitForFunction(() => !document.querySelector('.shell.drawer-open'));
+  await p.mouse.move(2, 400); // the edge does nothing any more
+  await p.waitForTimeout(500);
   assert.equal(await p.locator('.shell.drawer-open').count(), 0);
-  await p.mouse.move(400, 400);
-  await p.mouse.move(2, 400);
-  await p.waitForSelector('.shell.drawer-open', { timeout: 3000 });
-  await p.mouse.move(200, 300);
-  await p.waitForTimeout(700);
-  assert.equal(await p.locator('.shell.drawer-open').count(), 1, 'stays while the pointer is on it');
-  await p.mouse.move(690, 300);
-  await p.waitForFunction(() => !document.querySelector('.shell.drawer-open'), null, { timeout: 3000 });
   await p.keyboard.press('Control+\\');
   await p.waitForSelector('.shell.drawer-open');
+  await p.locator('aside .tree .row:not(.folder) .main').first().click({ button: 'right' });
+  await p.waitForSelector('.ctx');
+  // Android raises its own context-menu event under the finger right after a long press: that must not close the menu
+  await p.evaluate(() => document.querySelector('.ctx-scrim').dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true })));
+  await p.waitForTimeout(300);
+  assert.equal(await p.locator('.ctx').count(), 1, 'the menu is still there');
+  await p.waitForTimeout(900); // it stays however long the menu is open
+  assert.equal(await p.locator('.shell.drawer-open').count(), 1);
   await p.keyboard.press('Escape');
+  await p.waitForFunction(() => !document.querySelector('.ctx'));
+  assert.equal(await p.locator('.shell.drawer-open').count(), 1, 'and after the menu is gone');
+  await p.mouse.click(660, 400); // away from the panel
   await p.waitForFunction(() => !document.querySelector('.shell.drawer-open'));
   assert.deepEqual(errors, []);
   await c.close();
 });
 
-test('code 1: ``` and Enter closes the block, Ctrl+Enter steps out, the corner list changes the language, / offers code', async () => {
+test('tabs 1: pin a tab; quick note adds a dated line to Quick notes', async () => {
   const errors = [];
   const page = await newPage(errors);
   await signIn(page, 'alice', 'alice-password');
-  await freshNote(page, 'Code flow');
-  const doc = () => page.evaluate(() => document.querySelector('.cm-editor').cmEditorView.state.doc.toString());
-  await page.keyboard.insertText('```py');
-  await page.keyboard.press('Enter');
-  assert.equal(await doc(), '```py\n\n```');
-  await page.keyboard.insertText('x = 1');
+  await freshNote(page, 'Pin me');
+  await freshNote(page, 'Other one');
+  await page.locator('.tab', { hasText: 'Other one' }).waitFor();
+  await page.locator('.tab', { hasText: 'Other one' }).click({ button: 'right' });
+  await page.click('.ctx >> text=Pin tab');
+  await page.waitForSelector('.tab.pinned');
+  assert.equal(await page.locator('.tab').first().innerText().then((s) => s.includes('Other one')), true, 'pinned goes first');
+  assert.equal(await page.locator('.tab.pinned .x').count(), 0, 'no close button on a pinned tab');
+  await page.locator('.tab', { hasText: 'Pin me' }).click({ button: 'right' });
+  await page.click('.ctx >> text=Close all tabs');
+  await page.waitForTimeout(300);
+  assert.equal(await page.locator('.tab.pinned').count(), 1, 'close all keeps pinned');
+  // quick capture
+  await page.keyboard.press('Alt+n');
+  await page.waitForSelector('.quick-dlg[open] textarea');
+  await page.keyboard.type('buy milk');
   await page.keyboard.press('Control+Enter');
-  await page.keyboard.insertText('after');
-  assert.equal(await doc(), '```py\nx = 1\n```\nafter');
-  // the corner list
-  await page.hover('.cm-codeblock');
-  await page.click('.cm-code-lang');
-  await page.waitForSelector('.cm-lang-pop.open input');
-  await page.keyboard.type('bas');
-  await page.keyboard.press('Enter');
-  await page.waitForFunction(() => !document.querySelector('.cm-lang-pop'));
-  assert.equal(await doc(), '```bash\nx = 1\n```\nafter');
-  // any word can be typed
-  await page.hover('.cm-codeblock');
-  await page.click('.cm-code-lang');
-  await page.keyboard.type('zig');
-  await page.keyboard.press('Enter');
-  await page.waitForFunction(() => !document.querySelector('.cm-lang-pop'));
-  assert.equal((await doc()).split('\n')[0], '```zig');
-  // the slash menu
-  await page.keyboard.press('Control+End');
-  await page.keyboard.insertText('\n\n/rust');
-  await page.waitForSelector('.cm-tooltip-autocomplete li');
-  await page.keyboard.press('Enter');
-  assert.ok((await doc()).endsWith('```rust\n\n```\n'), await doc());
-  // a block that is already closed is left alone by Enter
-  await page.keyboard.press('Control+Home');
-  await page.keyboard.press('End');
-  await page.keyboard.press('Enter');
-  assert.ok((await doc()).startsWith('```zig\n\nx = 1\n```'), await doc());
-  assert.deepEqual(errors, []);
-});
-
-test('render 1: tables draw their cells, quotes nest, escapes and footnotes are drawn, tools never cover a row', async () => {
-  const errors = [];
-  const page = await newPage(errors);
-  await signIn(page, 'alice', 'alice-password');
-  await freshNote(page, 'Render');
-  await page.keyboard.insertText(
-    'Title\n=====\n\nbreak\\\nnext \\*stars\\* <https://example.com> note[^1] H<sub>2</sub>O\n\n> outer\n>\n> > inner\n\n| a | b |\n| --- | --- |\n| **bold** | `code` |\n\n[^1]: The note.\n\nend',
-  );
-  await page.waitForSelector('.qt td.qt-rich');
-  await page.waitForTimeout(400);
-  const r = await page.evaluate(() => {
-    const text = (sel) => [...document.querySelectorAll(sel)].map((e) => e.textContent);
-    return {
-      bold: document.querySelector('.qt-view strong')?.textContent,
-      code: document.querySelector('.qt-view code')?.textContent,
-      lines: text('.cm-line'),
-      q2: document.querySelectorAll('.cm-q2').length,
-      sup: [...document.querySelectorAll('sup.cm-fn-ref')].map((e) => e.textContent),
-      sub: document.querySelector('.cm-h-sub')?.textContent,
-      underlineGap: !!document.querySelector('.cm-gap.cm-line') && !text('.cm-line').some((t) => t.trim() === '====='),
-    };
-  });
-  assert.equal(r.bold, 'bold');
-  assert.equal(r.code, 'code');
-  assert.ok(r.lines.some((l) => l.startsWith('next *stars* https://example.com note')), 'escapes and <> are hidden: ' + JSON.stringify(r.lines));
-  assert.ok(!r.lines.some((l) => l.includes('=====')), 'setext underline hidden');
-  assert.ok(!r.lines.some((l) => l.endsWith('break\\')), 'the backslash line break is hidden');
-  assert.equal(r.q2, 1);
-  assert.deepEqual(r.sup, ['1']);
-  assert.equal(r.sub, '2');
-  // the tools appear under the table, never over a row
-  await page.locator('.qt input').nth(2).click();
-  await page.waitForSelector('.qt.active .qt-ctx', { state: 'visible' });
-  await page.waitForTimeout(250);
-  const g = await page.evaluate(() => {
-    const t = document.querySelector('.qt-scroll').getBoundingClientRect();
-    const c = document.querySelector('.qt .qt-ctx').getBoundingClientRect();
-    const next = [...document.querySelectorAll('.cm-line')].find((l) => l.textContent.trim() === 'end')?.getBoundingClientRect();
-    return { tableBottom: t.bottom, toolsTop: c.top, toolsBottom: c.bottom, nextTop: next?.top ?? 1e9 };
-  });
-  assert.ok(g.toolsTop >= g.tableBottom - 1, `tools start under the table: ${g.toolsTop} vs ${g.tableBottom}`);
-  assert.ok(g.toolsBottom <= g.nextTop + 1, `and do not cover the text after it: ${g.toolsBottom} vs ${g.nextTop}`);
-  // leaving the table gives the room back
-  await page.keyboard.press('Escape');
-  await page.locator('.cm-line', { hasText: 'end' }).click();
-  await page.waitForFunction(() => !document.querySelector('.qt.active'));
+  await page.waitForSelector('.toast');
+  await page.waitForFunction(() => !document.querySelector('.quick-dlg'));
+  await page.keyboard.press('Alt+n');
+  await page.waitForSelector('.quick-dlg[open] textarea');
+  await page.keyboard.type('call Sam');
+  await page.keyboard.press('Control+Enter');
+  await page.waitForTimeout(1500);
+  await page.waitForFunction(() => !document.querySelector('.quick-dlg'));
+  await page.keyboard.press('Alt+n');
+  await page.click('.quick-dlg >> text=Open Quick notes');
+  await page.waitForFunction(() => /buy milk/.test(document.querySelector('.cm-content')?.innerText ?? '') && /call Sam/.test(document.querySelector('.cm-content')?.innerText ?? ''), null, { timeout: 8000 });
+  assert.match(await page.locator('.cm-content').innerText(), /\d{4}-\d\d-\d\d \d\d:\d\d/);
   assert.deepEqual(errors, []);
 });

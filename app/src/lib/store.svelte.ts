@@ -1229,6 +1229,59 @@ class Store {
     this.save();
   }
 
+  /** Pinned tabs: kept first, small, and left alone by "close others / all". */
+  pinned = $state<string[]>(read<string[]>('qm.pinnedTabs', []));
+  isPinned(id: string) {
+    return this.pinned.includes(id);
+  }
+  pinTab(id: string, on: boolean) {
+    this.pinned = on ? [...this.pinned.filter((x) => x !== id), id] : this.pinned.filter((x) => x !== id);
+    write('qm.pinnedTabs', this.pinned);
+    const pins = this.pinned.filter((x) => this.tabs.includes(x));
+    this.tabs = [...pins, ...this.tabs.filter((x) => !pins.includes(x))];
+    this.saveTabs();
+  }
+
+  /** Quick capture: a small box that adds a dated line to one "Quick notes" note, from anywhere. */
+  quickOpen = $state(false);
+  private quickNote(): NoteMeta | undefined {
+    const title = this.t('quickTitle');
+    return this.notes.find((n) => n.title === title && (n.folder ?? '') === '' && (n.role === 'owner' || this.mode !== 'server'));
+  }
+  async quickAdd(text: string): Promise<string> {
+    const d = new Date();
+    const p = (n: number) => String(n).padStart(2, '0');
+    const stamp = `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+    const lines = text.trim().split(/\r?\n/);
+    const entry = `- **${stamp}** ${lines[0]}` + lines.slice(1).map((l) => '\n  ' + l).join('');
+    const have = this.quickNote();
+    if (!have) {
+      const prev = this.currentId; // making it must not take you away from what you are writing
+      const id = await this.createNote(this.t('quickTitle'), `# ${this.t('quickTitle')}\n\n${entry}\n`);
+      this.currentId = prev;
+      await new Promise((r) => setTimeout(r, 0));
+      if (prev) {
+        this.tabs = this.tabs.filter((x) => x !== id);
+        this.saveTabs();
+        this.currentId = prev;
+      }
+      return id;
+    }
+    if (this.mode === 'server' && this.serverReachable && this.currentId !== have.id) {
+      // add to the live text on the server, so it merges with whatever others are typing
+      await syncNoteNow(this.storeName(have.id), this.api, have.id, (y) => applyText(y, y.toString().replace(/\s*$/, '') + '\n' + entry + '\n'));
+      return have.id;
+    }
+    const old = await this.exportText(have.id).catch(() => '');
+    await this.importText(have, old.replace(/\s*$/, '') + '\n' + entry + '\n');
+    return have.id;
+  }
+  async openQuick() {
+    const have = this.quickNote();
+    if (have) this.currentId = have.id;
+    else this.currentId = await this.quickAdd(this.t('quickFirst'));
+  }
+
   /** Notes open in tabs, in order; the active one is `currentId`. */
   tabs = $state<string[]>(read<string[]>('qm.tabs', []));
   private lastTab: string | null = null;
@@ -1240,7 +1293,9 @@ class Store {
     if (!id) return;
     if (!this.tabs.includes(id)) {
       const at = this.lastTab ? this.tabs.indexOf(this.lastTab) : -1;
-      this.tabs = at >= 0 ? [...this.tabs.slice(0, at + 1), id, ...this.tabs.slice(at + 1)] : [...this.tabs, id];
+      const first = this.tabs.filter((x) => this.pinned.includes(x)).length;
+      const pos = Math.max(at + 1, first);
+      this.tabs = at >= 0 || first ? [...this.tabs.slice(0, pos), id, ...this.tabs.slice(pos)] : [...this.tabs, id];
       this.saveTabs();
     }
     this.lastTab = id;
@@ -1266,6 +1321,7 @@ class Store {
     }
   }
   moveTab(id: string, before: string | null) {
+    if (this.pinned.includes(id) !== (!!before && this.pinned.includes(before))) return; // pinned and loose tabs keep to their own side
     const rest = this.tabs.filter((t) => t !== id);
     const i = before ? rest.indexOf(before) : rest.length;
     this.tabs = [...rest.slice(0, i < 0 ? rest.length : i), id, ...rest.slice(i < 0 ? rest.length : i)];

@@ -22,7 +22,14 @@ class CtxMenu {
   x = $state(0);
   y = $state(0);
   items = $state<MenuItem[]>([]);
+  /** When it opened. A long press on Android ends with the system's own "context menu" event and the finger still down: that must not close the menu that just opened. */
+  openedAt = 0;
+  /** Still in the moment right after opening, when stray events from the same touch arrive. */
+  get fresh(): boolean {
+    return performance.now() - this.openedAt < 750;
+  }
   show(x: number, y: number, items: MenuItem[]) {
+    this.openedAt = performance.now();
     this.x = x;
     this.y = y;
     this.items = items.filter((i, k, a) => !(i.sep && (k === 0 || k === a.length - 1 || a[k - 1].sep)));

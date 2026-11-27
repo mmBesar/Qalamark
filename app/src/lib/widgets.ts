@@ -42,14 +42,50 @@ export function widgetItems(text: string): WidgetItem[] {
 }
 
 let lastSent = '';
-/** Give the widget the current checklists (only when something changed). */
-export function publishLists(lists: WidgetList[]): void {
+let lastLists: WidgetList[] = [];
+let watching = false;
+
+/** A CSS colour (any form, even color-mix) as #rrggbb, by letting a canvas resolve it. */
+function hexOf(css: string): string {
+  try {
+    const c = document.createElement('canvas').getContext('2d');
+    if (!c || !css) return '';
+    c.fillStyle = '#000';
+    c.fillStyle = css;
+    c.clearRect(0, 0, 1, 1);
+    c.fillRect(0, 0, 1, 1);
+    const [r, g, b] = c.getImageData(0, 0, 1, 1).data;
+    return '#' + [r, g, b].map((v) => (v ?? 0).toString(16).padStart(2, '0')).join('');
+  } catch {
+    return '';
+  }
+}
+/** The colours the app has right now, so a widget set to "follow the app" matches it. */
+export function appTheme(): { bg: string; ink: string; muted: string; accent: string } {
+  const cs = getComputedStyle(document.documentElement);
+  const v = (n: string) => hexOf(cs.getPropertyValue(n).trim());
+  return { bg: v('--surface') || v('--bg'), ink: v('--ink'), muted: v('--muted'), accent: v('--accent') };
+}
+
+function send(lists: WidgetList[]): void {
   const b = bridge();
   if (!b?.widgetData) return;
-  const json = JSON.stringify(lists.map((l) => ({ id: l.id, title: l.title, items: l.items })));
+  const json = JSON.stringify({ lists: lists.map((l) => ({ id: l.id, title: l.title, items: l.items })), theme: appTheme() });
   if (json === lastSent) return;
   lastSent = json;
   try { b.widgetData(json); } catch { /* the widget part is not there */ }
+}
+
+/** Give the widget the current checklists and the app's colours (only when something changed). */
+export function publishLists(lists: WidgetList[]): void {
+  lastLists = lists;
+  send(lists);
+  if (!watching && bridge()?.widgetData) {
+    watching = true;
+    // a new theme or accent in the app reaches the widgets too
+    let t: ReturnType<typeof setTimeout> | undefined;
+    new MutationObserver(() => { clearTimeout(t); t = setTimeout(() => send(lastLists), 400); }).observe(document.documentElement, { attributes: true, attributeFilter: ['style', 'class', 'data-theme', 'data-accent'] });
+  }
 }
 
 /** The ticks made on the home screen since last time: [{ id, line }]. */

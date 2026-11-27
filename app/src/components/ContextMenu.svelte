@@ -72,11 +72,11 @@
   }
 </script>
 
-<svelte:window onkeydown={key} onresize={() => ctxmenu.close()} onblur={() => ctxmenu.close()} />
+<svelte:window onkeydown={key} onresize={() => { if (!ctxmenu.fresh) ctxmenu.close(); }} onblur={() => { if (!ctxmenu.fresh) ctxmenu.close(); }} />
 
 {#if ctxmenu.open}
   <!-- svelte-ignore a11y_no_static_element_interactions -->
-  <div class="ctx-scrim" transition:fade|global={{ duration: 120 }} onpointerdown={() => ctxmenu.close()} oncontextmenu={(e) => { e.preventDefault(); ctxmenu.close(); }}></div>
+  <div class="ctx-scrim" transition:fade|global={{ duration: 120 }} onpointerdown={() => { if (!ctxmenu.fresh) ctxmenu.close(); }} oncontextmenu={(e) => { e.preventDefault(); if (!ctxmenu.fresh) ctxmenu.close(); }}></div>
   <div class="ctx" role="menu" transition:pop|global bind:this={el} style:left="{pos.x}px" style:top="{pos.y}px">
     {#if stack.length}
       <button class="ctx-item back" onclick={() => (stack = stack.slice(0, -1))}>

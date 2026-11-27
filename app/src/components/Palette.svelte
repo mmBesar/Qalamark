@@ -20,6 +20,7 @@
 
   const commands: Item[] = [
     { key: 'new', icon: 'plus', label: t('newNote'), run: () => void store.createNote() },
+    { key: 'quick', icon: 'bolt', label: t('quickNote'), hint: 'Alt+N', run: () => (store.quickOpen = true) },
     { key: 'daily', icon: 'calendar', label: t('dailyNote'), run: () => void store.openDaily() },
     { key: 'board', icon: 'board', label: t('newBoard'), run: () => void store.newFromTemplate('builtin:kanban') },
     { key: 'outline', icon: 'outline', label: t('outline'), run: () => cmd('outline') },

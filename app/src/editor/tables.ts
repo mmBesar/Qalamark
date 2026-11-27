@@ -25,6 +25,23 @@ export interface TableLabels {
   lang?: 'en' | 'ar';
 }
 
+/** What the toolbar can do with the table you are in (it gets this when a cell is focused). */
+export interface TableApi {
+  addRow(): void;
+  addColumn(): void;
+  deleteRow(): void;
+  deleteColumn(): void;
+  align(): void;
+  formulas(): void;
+  /** Some formula has an error. */
+  problems: boolean;
+  hasFormulas: boolean;
+  readOnly: boolean;
+}
+
+/** Fired from a table (bubbling) when you enter it (detail: its tools) and when you leave it (detail: null). */
+export const TABLE_EVENT = 'qm-table';
+
 /** Change only what differs, so other people's edits in the same note are not disturbed. */
 export function applyDiff(view: EditorView, oldText: string, newText: string): void {
   if (oldText === newText) return;
@@ -276,7 +293,6 @@ class TableWidget extends WidgetType {
     root.append(scroll);
 
     // ---- the buttons under the table (they act on the cell you are in) ----
-    const bar = el('div', 'qt-bar');
     const box = el('div', 'qt-formulas');
     box.setAttribute('role', 'dialog');
     const area = el('textarea', 'qt-formula-text');
@@ -353,71 +369,62 @@ class TableWidget extends WidgetType {
       focusCell(view, index, f.r, f.c);
     };
 
+    const addRow = (at: number) => act({ op: 'addRow', at }, (a) => ({ r: at, c: a.c }));
+    const addColumn = (at: number) => act({ op: 'addColumn', at }, (a) => ({ r: a.r, c: at }));
+    const api: TableApi = {
+      problems: v.problems.length > 0,
+      hasFormulas: v.formulaText.length > 0,
+      readOnly,
+      addRow: () => addRow(Math.max(2, (active?.r ?? nrows) + 1)),
+      addColumn: () => addColumn((active?.c ?? ncols - 1) + 1),
+      deleteRow: () => {
+        if (!active || active.r < 2) return;
+        act({ op: 'deleteRow', row: active.r }, (a) => ({ r: Math.min(a.r, nrows - 1), c: a.c }));
+      },
+      deleteColumn: () => {
+        if (!active || ncols < 2) return;
+        act({ op: 'deleteColumn', col: active.c }, (a) => ({ r: a.r, c: Math.min(a.c, ncols - 2) }));
+      },
+      align: () => {
+        if (!active) return;
+        const next = ({ none: 'left', left: 'center', center: 'right', right: 'none' } as const)[v.align[active.c] ?? 'none'];
+        act({ op: 'align', col: active.c, align: next } as TableOp, (a) => a);
+      },
+      formulas: () => (box.classList.contains('open') ? closeBox() : openBox()),
+    };
+    // The edges: hover the bottom edge or the end edge and a "+" adds a row or a column there (the toolbar does the same from anywhere in the table).
     if (!readOnly) {
-      const ctx = el('span', 'qt-ctx');
-      ctx.append(
-        button(labels.addRow, '＋ ' + labels.addRow, 'qt-btn', () => {
-          const at = Math.max(2, (active?.r ?? nrows) + 1);
-          act({ op: 'addRow', at }, (a) => ({ r: at, c: a.c }));
-        }),
-        button(labels.addColumn, '＋ ' + labels.addColumn, 'qt-btn', () => {
-          const at = (active?.c ?? ncols - 1) + 1;
-          act({ op: 'addColumn', at }, (a) => ({ r: a.r, c: at }));
-        }),
-        button(labels.deleteRow, '－ ' + labels.deleteRow, 'qt-btn qt-del', () => {
-          if (!active || active.r < 2) return;
-          act({ op: 'deleteRow', row: active.r }, (a) => ({ r: Math.min(a.r, nrows - 1), c: a.c }));
-        }),
-        button(labels.deleteColumn, '－ ' + labels.deleteColumn, 'qt-btn qt-del', () => {
-          if (!active || ncols < 2) return;
-          act({ op: 'deleteColumn', col: active.c }, (a) => ({ r: a.r, c: Math.min(a.c, ncols - 2) }));
-        }),
-        button('left / center / right', '↔', 'qt-btn', () => {
-          if (!active) return;
-          const next = ({ none: 'left', left: 'center', center: 'right', right: 'none' } as const)[v.align[active.c] ?? 'none'];
-          act({ op: 'align', col: active.c, align: next } as TableOp, (a) => a);
-        }),
-      );
-      bar.append(ctx);
+      const edgeRow = button(labels.addRow, '＋', 'qt-edge qt-edge-row', () => addRow(nrows + 1));
+      const edgeCol = button(labels.addColumn, '＋', 'qt-edge qt-edge-col', () => addColumn(ncols));
+      for (const e of [edgeRow, edgeCol]) e.addEventListener('mousedown', (ev) => ev.preventDefault());
+      root.append(edgeRow, edgeCol);
     }
     // The formulas live in a small floating card: it opens from the ƒ button and closes when you click away or press Escape.
-    const fxBtn = button(labels.formulas, 'ƒ', 'qt-btn qt-fx', () => (box.classList.contains('open') ? closeBox() : openBox()));
-    if (v.problems.length) fxBtn.classList.add('bad');
-    fxBtn.setAttribute('aria-haspopup', 'dialog');
     const away = (e: Event) => {
       const t = e.target as Element | null;
-      if (t && (root.contains(t) || t.closest?.('.dd-pop'))) return;
+      if (t && (root.contains(t) || t.closest?.('.dd-pop, .toolbar'))) return;
       closeBox();
     };
-    // While you are in the table it makes room under itself for the tools (so nothing is covered); idle, it takes no extra space.
-    const syncActive = () => {
-      const on = root.matches(':focus-within') || box.classList.contains('open');
-      if (on === root.classList.contains('active')) return;
-      root.classList.toggle('active', on);
-      view.requestMeasure();
-    };
-    root.addEventListener('focusin', syncActive);
-    root.addEventListener('focusout', () => setTimeout(syncActive, 0));
+    // Tell the toolbar which table you are in (and when you leave it).
+    const tell = (d: TableApi | null) => root.dispatchEvent(new CustomEvent<TableApi | null>(TABLE_EVENT, { bubbles: true, detail: d }));
+    root.addEventListener('focusin', () => tell(api));
+    root.addEventListener('focusout', () => setTimeout(() => { if (!root.matches(':focus-within') && !box.classList.contains('open')) tell(null); }, 0));
     const closeBox = () => {
       box.classList.remove('open');
       root.classList.remove('fx-open');
-      fxBtn.setAttribute('aria-expanded', 'false');
       document.removeEventListener('pointerdown', away, true);
-      syncActive();
+      if (!root.matches(':focus-within')) tell(null);
     };
     const openBox = () => {
       const r = root.getBoundingClientRect();
       box.classList.toggle('up', window.innerHeight - r.bottom < 340 && r.top > window.innerHeight - r.bottom);
       box.classList.add('open');
       root.classList.add('fx-open');
-      fxBtn.setAttribute('aria-expanded', 'true');
       document.addEventListener('pointerdown', away, true);
-      syncActive();
       if (!readOnly) setTimeout(() => area.focus({ preventScroll: true }), 60);
     };
-    root.addEventListener('keydown', (e) => { if (e.key === 'Escape' && box.classList.contains('open')) { e.stopPropagation(); e.preventDefault(); closeBox(); fxBtn.focus(); } }, true);
-    if (!(readOnly && v.formulaText.length === 0 && v.problems.length === 0)) bar.append(fxBtn);
-    root.append(bar, box);
+    root.addEventListener('keydown', (e) => { if (e.key === 'Escape' && box.classList.contains('open')) { e.stopPropagation(); e.preventDefault(); closeBox(); } }, true);
+    root.append(box);
     return root;
   }
 }

@@ -10,4 +10,26 @@
   <string name="qm_remind_channel">Reminders</string>
   <string name="qm_remind_title">Qalamark</string>
   <string name="qm_remind_text">Tap to open the note</string>
+  <string name="qm_w_list">Checklist</string>
+  <string name="qm_w_colors">Colours</string>
+  <string name="qm_w_mode_app">Follow the app</string>
+  <string name="qm_w_mode_dark">Dark</string>
+  <string name="qm_w_mode_light">Light</string>
+  <string name="qm_w_mode_system">Material You</string>
+  <string name="qm_w_mode_custom">Custom</string>
+  <string name="qm_w_bg">Background</string>
+  <string name="qm_w_accent">Accent (A = the theme\'s own)</string>
+  <string name="qm_w_opacity">Transparency (100% = solid)</string>
+  <string name="qm_w_text">Text size</string>
+  <string name="qm_w_small">Small</string>
+  <string name="qm_w_normal">Normal</string>
+  <string name="qm_w_large">Large</string>
+  <string name="qm_w_corners">Corners</string>
+  <string name="qm_w_square">Square</string>
+  <string name="qm_w_rounded">Rounded</string>
+  <string name="qm_w_round">Very round</string>
+  <string name="qm_w_hide_done">Finished tasks</string>
+  <string name="qm_w_show">Show</string>
+  <string name="qm_w_hide">Hide</string>
+  <string name="qm_w_save">Save</string>
 </resources>

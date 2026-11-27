@@ -3,4 +3,30 @@
   <string name="qm_remind_channel">التذكيرات</string>
   <string name="qm_remind_title">قلم</string>
   <string name="qm_remind_text">اضغط لفتح الملاحظة</string>
+  <string name="qm_w_list">القائمة</string>
+  <string name="qm_w_colors">الألوان</string>
+  <string name="qm_w_mode_app">مثل التطبيق</string>
+  <string name="qm_w_mode_dark">داكن</string>
+  <string name="qm_w_mode_light">فاتح</string>
+  <string name="qm_w_mode_system">Material You</string>
+  <string name="qm_w_mode_custom">مخصص</string>
+  <string name="qm_w_bg">الخلفية</string>
+  <string name="qm_w_accent">اللون المميّز (A = لون السمة نفسها)</string>
+  <string name="qm_w_opacity">الشفافية (100% = معتم)</string>
+  <string name="qm_w_text">حجم الخط</string>
+  <string name="qm_w_small">صغير</string>
+  <string name="qm_w_normal">عادي</string>
+  <string name="qm_w_large">كبير</string>
+  <string name="qm_w_corners">الزوايا</string>
+  <string name="qm_w_square">حادة</string>
+  <string name="qm_w_rounded">مستديرة</string>
+  <string name="qm_w_round">مستديرة جدًا</string>
+  <string name="qm_w_hide_done">المهام المنجزة</string>
+  <string name="qm_w_show">إظهار</string>
+  <string name="qm_w_hide">إخفاء</string>
+  <string name="qm_w_save">حفظ</string>
+  <string name="qm_widget_name">قائمة قلم</string>
+  <string name="qm_widget_desc">قوائمك على الشاشة الرئيسية: علّم المهام دون فتح التطبيق.</string>
+  <string name="qm_widget_empty">افتح قلم مرة واحدة لتظهر قوائمك هنا.</string>
+  <string name="qm_widget_pick">اختر قائمة</string>
 </resources>

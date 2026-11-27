@@ -10,6 +10,7 @@
   import { pop } from '../lib/motion.ts';
   import { BUILT_IN } from '../lib/templates.ts';
   import { cleanToolbar, TOOLS, type ToolId } from '../lib/toolbar.ts';
+  import { TABLE_EVENT, type TableApi } from '../editor/tables.ts';
   import { createEditor, setTouchLabels, type Editor, type ViewMode } from '../editor/editor.ts';
   import type { TableLabels } from '../editor/tables.ts';
   import type { NoteMeta } from '../lib/server.ts';
@@ -250,6 +251,16 @@
     if (store.pendingHeading) untrack(() => pendingTick?.());
   });
 
+  // The table you are in: its tools show in the toolbar (set when a cell gets focus, cleared a moment after you leave).
+  let tbl = $state<TableApi | null>(null);
+  let tblOff: ReturnType<typeof setTimeout> | undefined;
+  function onTable(e: Event) {
+    const d = (e as CustomEvent<TableApi | null>).detail;
+    clearTimeout(tblOff);
+    if (d) tbl = d;
+    else tblOff = setTimeout(() => (tbl = null), 160); // a table is redrawn on every edit: do not flicker
+  }
+
   const readOnly = first.role === 'view';
   const canRename = first.role === 'owner';
 
@@ -280,6 +291,7 @@
   }
 
   onMount(() => {
+    host.addEventListener(TABLE_EVENT, onTable);
     const server = store.mode === 'server' && !note.id.startsWith('tmp:');
     session = new NoteSession(
       store.storeName(note.id),
@@ -666,6 +678,16 @@
 
     {#if !readOnly && mode !== 'read' && mode !== 'board'}
       <div class="toolbar" role="toolbar" onpointerdown={holdTools} onmousedown={(e) => { if ((e.target as HTMLElement).closest('button')) e.preventDefault(); }}>
+        {#if tbl && !tbl.readOnly}
+          <div class="tb-table" role="group" aria-label={t('table')} transition:pop|global>
+            <button title={t('addRow')} aria-label={t('addRow')} onclick={() => tbl?.addRow()}><Icon name="row-add" /></button>
+            <button title={t('addColumn')} aria-label={t('addColumn')} onclick={() => tbl?.addColumn()}><Icon name="col-add" /></button>
+            <button title={t('deleteRow')} aria-label={t('deleteRow')} onclick={() => tbl?.deleteRow()}><Icon name="row-del" /></button>
+            <button title={t('deleteColumn')} aria-label={t('deleteColumn')} onclick={() => tbl?.deleteColumn()}><Icon name="col-del" /></button>
+            <button title={t('alignColumn')} aria-label={t('alignColumn')} onclick={() => tbl?.align()}><Icon name="text-align" /></button>
+            <button class="fx" class:bad={tbl.problems} title={t('formulas')} aria-label={t('formulas')} onclick={() => tbl?.formulas()}>ƒ</button>
+          </div>
+        {/if}
         <div class="tb-scroll" use:sideWheel>
         {#each toolList as id, i (i + id)}
           {#if id === 'sep'}
@@ -841,6 +863,7 @@
 {#if mobile && store.sheet === 'templates'}
   <Sheet title={t('newFromTemplate')} onClose={() => (store.sheet = null)}>
     <div class="sheet-list">
+      <button onclick={() => { store.sheet = null; store.quickOpen = true; }}><Icon name="bolt" size={20} /> {t('quickNote')}</button>
       <button onclick={() => { store.sheet = null; void store.createNote(); }}><Icon name="note" size={20} /> {t('newNote')}</button>
       {#each BUILT_IN as b (b.id)}
         <button onclick={() => useTemplate('builtin:' + b.id)}><Icon name={b.id.includes('check') || b.id.includes('shopping') ? 'check' : b.id.includes('board') ? 'board' : 'note'} size={20} /> {b.name[store.lang]}</button>

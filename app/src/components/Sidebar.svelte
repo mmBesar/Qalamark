@@ -319,6 +319,7 @@
       <button class="icon" title={t('newNote')} aria-label={t('newNote')} onclick={() => create()}><Icon name="plus" size={18} /></button>
       <button class="icon" title={t('newFromTemplate')} aria-label={t('newFromTemplate')} onclick={showTemplates}><Icon name="layers" /></button>
       <button class="icon" title={t('newFolder')} aria-label={t('newFolder')} onclick={() => ask(t('folderName'), '', (v) => store.createFolder(v))}><Icon name="folder-plus" /></button>
+      <button class="icon" type="button" title={t('quickNote') + ' (Alt+N)'} aria-label={t('quickNote')} onclick={() => (store.quickOpen = true)}><Icon name="bolt" /></button>
       <button class="icon" type="button" title={t('dailyNote')} aria-label={t('dailyNote')} onclick={() => void store.openDaily()}><Icon name="calendar" /></button>
       <button class="icon" title={t('import')} aria-label={t('import')} onclick={() => fileInput.click()}><Icon name="upload" /></button>
       <span class="grow"></span>

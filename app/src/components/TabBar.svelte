@@ -21,12 +21,15 @@
   function menu(e: MouseEvent, id: string) {
     e.preventDefault();
     const i = store.tabs.indexOf(id);
+    const loose = (ids: string[]) => ids.filter((x) => !store.isPinned(x));
     ctxmenu.show(e.clientX, e.clientY, [
-      { label: t('tabClose'), icon: 'close', run: () => store.closeTabs([id]) },
-      { label: t('tabCloseOthers'), icon: 'close', disabled: store.tabs.length < 2, run: () => { store.currentId = id; store.closeTabs(store.tabs.filter((x) => x !== id)); } },
-      { label: t('tabCloseRight'), icon: 'close', disabled: i === store.tabs.length - 1, run: () => store.closeTabs(store.tabs.slice(i + 1)) },
+      { label: store.isPinned(id) ? t('tabUnpin') : t('tabPin'), icon: 'pin', run: () => store.pinTab(id, !store.isPinned(id)) },
       { sep: true },
-      { label: t('tabCloseAll'), icon: 'close', run: () => store.closeTabs([...store.tabs]) },
+      { label: t('tabClose'), icon: 'close', disabled: store.isPinned(id), run: () => store.closeTabs([id]) },
+      { label: t('tabCloseOthers'), icon: 'close', disabled: loose(store.tabs.filter((x) => x !== id)).length === 0, run: () => { store.currentId = id; store.closeTabs(loose(store.tabs.filter((x) => x !== id))); } },
+      { label: t('tabCloseRight'), icon: 'close', disabled: loose(store.tabs.slice(i + 1)).length === 0, run: () => store.closeTabs(loose(store.tabs.slice(i + 1))) },
+      { sep: true },
+      { label: t('tabCloseAll'), icon: 'close', disabled: loose(store.tabs).length === 0, run: () => store.closeTabs(loose([...store.tabs])) },
     ]);
   }
 </script>
@@ -38,6 +41,7 @@
         class="tab"
         class:on={id === store.currentId}
         class:over={over === id && dragging !== id}
+        class:pinned={store.isPinned(id)}
         role="tab"
         tabindex="0"
         aria-selected={id === store.currentId}
@@ -48,13 +52,14 @@
         ondrop={(e) => { e.preventDefault(); if (dragging && dragging !== id) store.moveTab(dragging, id); dragging = over = null; }}
         ondragend={() => (dragging = over = null)}
         onclick={() => (store.currentId = id)}
-        onauxclick={(e) => { if (e.button === 1) { e.preventDefault(); store.closeTabs([id]); } }}
+        onauxclick={(e) => { if (e.button === 1) { e.preventDefault(); if (!store.isPinned(id)) store.closeTabs([id]); } }}
         onkeydown={(e) => { if (e.key === 'Enter') store.currentId = id; }}
         oncontextmenu={(e) => menu(e, id)}
         title={title(id)}
       >
+        {#if store.isPinned(id)}<Icon name="pin" size={12} />{/if}
         <span class="name">{title(id)}</span>
-        <button class="x" aria-label={t('tabClose')} onclick={(e) => { e.stopPropagation(); store.closeTabs([id]); }}><Icon name="close" size={13} /></button>
+        {#if !store.isPinned(id)}<button class="x" aria-label={t('tabClose')} onclick={(e) => { e.stopPropagation(); store.closeTabs([id]); }}><Icon name="close" size={13} /></button>{/if}
       </div>
     {/each}
   </div>
@@ -68,6 +73,8 @@
   .tab.on { background: var(--bg); color: var(--ink); border-color: var(--line); }
   .tab.on::before { content: ''; position: absolute; inset-inline: 8px; top: 0; height: 2px; border-radius: 2px; background: var(--accent); }
   .tab.over { box-shadow: inset 2px 0 0 var(--accent); }
+  .tab.pinned { min-width: 0; max-width: 8rem; padding-inline: 0.7rem; }
+  .tab.pinned .name { font-size: 0.82rem; }
   .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.88rem; }
   .x { width: 1.5rem; height: 1.5rem; border: 0; border-radius: 6px; background: none; color: inherit; display: grid; place-items: center; padding: 0; opacity: 0; }
   .tab:hover .x, .tab.on .x, .tab:focus-within .x { opacity: 0.7; }

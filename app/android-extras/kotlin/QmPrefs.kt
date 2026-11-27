@@ -38,13 +38,40 @@ object QmPrefs {
     if (index < 0 || index >= l.length()) return
     sp(c).edit().putString("note_$widgetId", l.getJSONObject(index).getString("id")).apply()
   }
-  fun forget(c: Context, widgetId: Int) { sp(c).edit().remove("note_$widgetId").apply() }
+  fun forget(c: Context, widgetId: Int) { sp(c).edit().remove("note_$widgetId").remove("style_$widgetId").apply() }
+
+  /** The colours of the app itself (as the page last reported them); Catppuccin dark until it has. */
+  fun appColors(c: Context): WidgetStyle.Colors {
+    val t = try { JSONObject(sp(c).getString("theme", "{}") ?: "{}") } catch (e: Exception) { JSONObject() }
+    val bg = WidgetStyle.parse(t.optString("bg"), 0xFF1E1E2E.toInt())
+    val ink = WidgetStyle.parse(t.optString("ink"), 0xFFCDD6F4.toInt())
+    val muted = WidgetStyle.parse(t.optString("muted"), 0xFF9399B2.toInt())
+    val accent = WidgetStyle.parse(t.optString("accent"), 0xFFCBA6F7.toInt())
+    return WidgetStyle.Colors(bg, ink, muted, accent, bg)
+  }
+
+  fun style(c: Context, widgetId: Int): WidgetStyle {
+    val d = WidgetStyle.DEFAULT
+    val o = try { JSONObject(sp(c).getString("style_$widgetId", "{}") ?: "{}") } catch (e: Exception) { JSONObject() }
+    return WidgetStyle(o.optString("mode", d.mode), o.optString("accent", d.accent), o.optString("bg", d.bg), o.optInt("opacity", d.opacity), o.optInt("text", d.text), o.optInt("corners", d.corners), o.optBoolean("hideDone", d.hideDone))
+  }
+  fun saveStyle(c: Context, widgetId: Int, s: WidgetStyle) {
+    val o = JSONObject().put("mode", s.mode).put("accent", s.accent).put("bg", s.bg).put("opacity", s.opacity).put("text", s.text).put("corners", s.corners).put("hideDone", s.hideDone)
+    sp(c).edit().putString("style_$widgetId", o.toString()).apply()
+  }
 
   private fun pending(c: Context): JSONArray = try { JSONArray(sp(c).getString("ticks", "[]")) } catch (e: Exception) { JSONArray() }
 
   /** A snapshot of the checklists from the app. Ticks not yet applied by the app are shown on top, so nothing jumps back. */
   @Synchronized fun setLists(c: Context, json: String) {
-    val lists = try { JSONArray(json) } catch (e: Exception) { return }
+    // the page sends { lists, theme }; an older page sent just the lists
+    val lists: JSONArray = try {
+      if (json.trimStart().startsWith("{")) {
+        val o = JSONObject(json)
+        o.optJSONObject("theme")?.let { sp(c).edit().putString("theme", it.toString()).apply() }
+        o.getJSONArray("lists")
+      } else JSONArray(json)
+    } catch (e: Exception) { return }
     val p = pending(c)
     for (i in 0 until p.length()) {
       val t = p.getJSONObject(i)

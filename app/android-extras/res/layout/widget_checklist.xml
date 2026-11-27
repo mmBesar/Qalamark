@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
-  android:layout_width="match_parent" android:layout_height="match_parent"
-  android:orientation="vertical" android:padding="10dp" android:background="@drawable/qm_widget_bg">
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+  android:layout_width="match_parent" android:layout_height="match_parent">
+  <ImageView android:id="@+id/w_bg" android:layout_width="match_parent" android:layout_height="match_parent" android:scaleType="fitXY" android:src="@drawable/qm_bg_24" android:importantForAccessibility="no" />
+  <LinearLayout android:layout_width="match_parent" android:layout_height="match_parent" android:orientation="vertical" android:padding="10dp">
   <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
     android:orientation="horizontal" android:gravity="center_vertical" android:layoutDirection="ltr">
     <TextView android:id="@+id/w_prev" android:layout_width="36dp" android:layout_height="36dp" android:gravity="center" android:text="‹" android:textSize="24sp" android:textColor="#CBA6F7" />
@@ -15,3 +16,4 @@
   <TextView android:id="@+id/w_empty" android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1" android:gravity="center" android:visibility="gone"
     android:text="@string/qm_widget_empty" android:textColor="#9399B2" android:textSize="14sp" />
 </LinearLayout>
+</FrameLayout>

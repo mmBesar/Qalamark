@@ -2264,12 +2264,6 @@ dialog.pdf-dlg.wide { width: min(1080px, 97vw); max-width: 97vw; }
 .qt .qt-formulas.open { opacity: 1; visibility: visible; pointer-events: auto; transform: none; }
 @media (prefers-reduced-motion: reduce) { .qt .qt-bar .qt-ctx, .qt .qt-formulas, .qt .qt-fx { transition: none; } }
 
-/* a small window with a mouse: a thin hot strip on the panel's side floats the panel in */
-.edge-zone { display: none; }
-@media (max-width: 760px) and (hover: hover) and (pointer: fine) {
-  .edge-zone { display: block; position: fixed; z-index: 4; top: 0; bottom: 0; inset-inline-start: 0; width: 7px; }
-  .shell.drawer-open .edge-zone { display: none; }
-}
 
 /* the language in a code block's corner opens a small list */
 .cm-code-lang { border: 0; background: transparent; color: inherit; font: inherit; padding: 0.1rem 0.4rem; border-radius: 6px; cursor: pointer; }
@@ -2325,3 +2319,18 @@ dialog.pdf-dlg.wide { width: min(1080px, 97vw); max-width: 97vw; }
 .qt-view mark { background: color-mix(in srgb, var(--gold) 35%, transparent); border-radius: 3px; }
 .qt-view .qt-link { color: var(--accent); text-decoration: underline; }
 .qt-view strong { font-weight: 700; }
+
+/* tables, final form: nothing floats over the text. The tools are in the toolbar; the edges offer a "+" on hover. */
+.qt, .qt.active { margin: 0.25rem 0; }
+.qt .qt-formulas, .qt.active .qt-formulas { top: calc(100% + 0.5rem); }
+.qt .qt-edge { position: absolute; z-index: 4; border: 1px dashed color-mix(in srgb, var(--accent) 55%, transparent); border-radius: 8px; background: color-mix(in srgb, var(--accent) 10%, transparent); color: var(--accent); font: inherit; font-weight: 700; line-height: 1; cursor: pointer; padding: 0; opacity: 0; pointer-events: none; transition: opacity 0.15s, background 0.15s; }
+.qt .qt-edge-row { inset-inline: 0; top: 100%; height: 14px; margin-top: 2px; }
+.qt .qt-edge-col { inset-block: 0; inset-inline-end: -18px; width: 16px; }
+.qt:hover .qt-edge { opacity: 0.55; pointer-events: auto; }
+.qt .qt-edge:hover, .qt .qt-edge:focus-visible { opacity: 1; background: color-mix(in srgb, var(--accent) 22%, transparent); }
+@media (hover: none) { .qt .qt-edge { display: none; } }
+/* the table group in the toolbar */
+.tb-table { display: inline-flex; align-items: center; gap: 2px; padding: 2px 4px; margin-inline-end: 6px; border-radius: 10px; background: color-mix(in srgb, var(--accent) 14%, transparent); flex: none; }
+.tb-table button { white-space: nowrap; }
+.tb-table .fx { font-family: serif; font-style: italic; font-size: 1.05rem; }
+.tb-table .fx.bad { color: var(--danger, #e5484d); }

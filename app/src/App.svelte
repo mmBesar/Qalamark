@@ -33,12 +33,17 @@
     dwell = setTimeout(() => { hoverOpen = true; drawer = true; }, 140);
   }
   function edgeOut() { clearTimeout(dwell); }
+  let lastX = 0;
+  /** Is the pointer on the panel? Measured from its real width, not its rectangle, which is still sliding in just after it opens. */
+  const onPanel = (x: number) => {
+    const w = document.querySelector('aside')?.offsetWidth ?? 304;
+    return (rtl() ? innerWidth - x : x) <= w + 10;
+  };
   function pointerNear(e: PointerEvent) {
+    lastX = e.clientX;
     if (!hoverOpen || !drawer) return;
-    const r = document.querySelector('aside')?.getBoundingClientRect();
-    const inside = !!r && e.clientX >= r.left - 10 && e.clientX <= r.right + 10;
-    if (inside) { clearTimeout(leave); leave = undefined; }
-    else if (!leave) leave = setTimeout(() => { leave = undefined; if (hoverOpen) drawer = false; }, 420);
+    if (onPanel(lastX)) { clearTimeout(leave); leave = undefined; }
+    else if (!leave) leave = setTimeout(() => { leave = undefined; if (hoverOpen && !onPanel(lastX)) drawer = false; }, 420);
   }
   function pin(e: FocusEvent) { if ((e.target as HTMLElement | null)?.matches?.('input, textarea')) hoverOpen = false; } // typing in the search keeps it open
   $effect(() => { if (!drawer) { hoverOpen = false; clearTimeout(leave); leave = undefined; } });

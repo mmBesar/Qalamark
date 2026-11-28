@@ -129,6 +129,14 @@ export class Api {
     if (!r.ok) throw new ApiError(r.status, await r.text());
     return r.json();
   }
+  /** Pictures no note uses any more (older than a day). */
+  unusedImages() {
+    return this.call<{ names: string[] }>('GET', '/api/images/unused');
+  }
+  /** Delete them. */
+  pruneImages() {
+    return this.call<{ names: string[] }>('DELETE', '/api/images/unused');
+  }
   /** A picture as a blob: the page cannot send the sign-in header from a plain <img>. */
   async imageBlob(owner: string, file: string): Promise<Blob> {
     const r = await fetch(`${this.transport}/api/images/${encodeURIComponent(owner)}/${encodeURIComponent(file)}`, {

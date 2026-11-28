@@ -112,6 +112,13 @@ fn vault_write_file(app: AppHandle, path: String, data: String) -> Result<u64, S
     vault::write_file(&root(&app), &path, &bytes).map_err(err)
 }
 
+/// A picture from the notes folder as base64 (null when it is not there).
+#[tauri::command]
+fn vault_read_file(app: AppHandle, path: String) -> Result<Option<String>, String> {
+    use base64::Engine;
+    Ok(vault::read_file(&root(&app), &path).map_err(err)?.map(|b| base64::engine::general_purpose::STANDARD.encode(b)))
+}
+
 /// "Save as": the system's save window (desktop), then the file is written where the person chose. Returns the path, or
 /// nothing when they cancelled.
 #[cfg(desktop)]
@@ -361,8 +368,8 @@ pub fn run() {
             _ => {}
         });
     #[cfg(desktop)]
-    let builder = builder.invoke_handler(tauri::generate_handler![vault_info, vault_set, vault_list, vault_read, vault_write, vault_write_file, save_file_as, notify, vault_trash, vault_rename, vault_mkdir, vault_reveal, tls_probe, system_fonts, system_colors, net_check, net_bridge, tray::tray_get, tray::tray_set, tray::tray_ok]);
+    let builder = builder.invoke_handler(tauri::generate_handler![vault_info, vault_set, vault_list, vault_read, vault_write, vault_write_file, vault_read_file, save_file_as, notify, vault_trash, vault_rename, vault_mkdir, vault_reveal, tls_probe, system_fonts, system_colors, net_check, net_bridge, tray::tray_get, tray::tray_set, tray::tray_ok]);
     #[cfg(not(desktop))]
-    let builder = builder.invoke_handler(tauri::generate_handler![vault_info, vault_set, vault_list, vault_read, vault_write, vault_write_file, vault_trash, vault_rename, vault_mkdir, vault_reveal, tls_probe, system_fonts, system_colors, net_check, net_bridge]);
+    let builder = builder.invoke_handler(tauri::generate_handler![vault_info, vault_set, vault_list, vault_read, vault_write, vault_write_file, vault_read_file, vault_trash, vault_rename, vault_mkdir, vault_reveal, tls_probe, system_fonts, system_colors, net_check, net_bridge]);
     builder.run(tauri::generate_context!()).expect("error while running Qalamark");
 }

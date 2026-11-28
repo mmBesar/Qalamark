@@ -5,7 +5,7 @@
 
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { mkdtempSync, readFileSync, writeFileSync, existsSync, readdirSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync, existsSync, readdirSync, utimesSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, before, test } from 'node:test';
@@ -312,8 +312,11 @@ test('pictures: upload, read back, share rules, bad types refused', async () => 
   const up = await fetch(BASE + '/api/images', { method: 'POST', headers: { authorization: `Bearer ${alice}`, 'content-type': 'image/png' }, body: png });
   assert.equal(up.status, 200);
   const info = await up.json();
-  assert.match(info.markdown, /^!\[\]\(_images\/[0-9a-f]{12}\.png\)$/);
+  assert.match(info.markdown, /^!\[\]\(_images\/[0-9a-f]{16}\.png\)$/);
   assert.ok(existsSync(join(data, 'notes/alice/_images', info.name)));
+  // the same picture again is the same file
+  const again = await (await fetch(BASE + '/api/images', { method: 'POST', headers: { authorization: `Bearer ${alice}`, 'content-type': 'image/png' }, body: png })).json();
+  assert.equal(again.name, info.name);
   const get = async (tok, owner = 'alice', f = info.name) => fetch(`${BASE}/api/images/${owner}/${f}`, { headers: { authorization: `Bearer ${tok}` } });
   const ok = await get(alice);
   assert.equal(ok.status, 200);
@@ -329,6 +332,24 @@ test('pictures: upload, read back, share rules, bad types refused', async () => 
   assert.equal(bad.status, 415);
   assert.equal((await get(alice, 'alice', '..%2Fx.png')).status, 400);
   assert.ok(!(await api('GET', '/api/folders', alice)).body.includes('_images'));
+});
+
+test('pictures: ones no note uses are listed and cleaned up, but never a fresh or a used one', async () => {
+  const up = async (b) => (await (await fetch(BASE + '/api/images', { method: 'POST', headers: { authorization: `Bearer ${alice}`, 'content-type': 'image/png' }, body: Buffer.from(b) })).json());
+  const used = await up('used-picture-bytes');
+  const lone = await up('lonely-picture-bytes');
+  const fresh = await up('fresh-picture-bytes');
+  await api('POST', '/api/notes', alice, { title: 'Uses one', content: `text ${used.markdown} more` });
+  const dir = join(data, 'notes/alice/_images');
+  const old = new Date(Date.now() - 3 * 86400_000);
+  for (const n of [used.name, lone.name]) utimesSync(join(dir, n), old, old);
+  const list = await (await fetch(BASE + '/api/images/unused', { headers: { authorization: `Bearer ${alice}` } })).json();
+  assert.ok(list.names.includes(lone.name));
+  assert.ok(!list.names.includes(used.name) && !list.names.includes(fresh.name));
+  const del = await (await fetch(BASE + '/api/images/unused', { method: 'DELETE', headers: { authorization: `Bearer ${alice}` } })).json();
+  assert.equal(del.removed, true);
+  assert.ok(!existsSync(join(dir, lone.name)));
+  assert.ok(existsSync(join(dir, used.name)) && existsSync(join(dir, fresh.name)));
 });
 
 test('profile pictures: set, show to others, replace, remove, bad ones refused', async () => {

@@ -1113,9 +1113,79 @@ pub async fn upload_image(
     }
     let dir = user_root(&s, &user).join(IMAGES_DIR);
     std::fs::create_dir_all(&dir).map_err(internal)?;
-    let name = format!("{}.{}", &uuid::Uuid::new_v4().simple().to_string()[..12], ext);
-    std::fs::write(dir.join(&name), &body).map_err(internal)?;
+    // named after what is in it: the same picture pasted twice is one file
+    use sha2::{Digest, Sha256};
+    let name = format!("{}.{}", &hex::encode(Sha256::digest(&body))[..16], ext);
+    let path = dir.join(&name);
+    if !path.exists() {
+        std::fs::write(&path, &body).map_err(internal)?;
+    }
     Ok(Json(ImageInfo { markdown: format!("![]({IMAGES_DIR}/{name})"), name }))
+}
+
+/// Every picture name the notes under `dir` mention (`_images/<name>`).
+fn mentioned_images(dir: &std::path::Path, out: &mut std::collections::HashSet<String>) {
+    let Ok(rd) = std::fs::read_dir(dir) else { return };
+    for e in rd.flatten() {
+        let name = e.file_name().to_string_lossy().to_string();
+        let p = e.path();
+        if p.is_dir() {
+            if !name.starts_with('.') && name != IMAGES_DIR {
+                mentioned_images(&p, out);
+            }
+        } else if name.to_lowercase().ends_with(".md") {
+            let Ok(text) = std::fs::read_to_string(&p) else { continue };
+            let mut rest = text.as_str();
+            let key = format!("{IMAGES_DIR}/");
+            while let Some(i) = rest.find(&key) {
+                rest = &rest[i + key.len()..];
+                let n: String = rest.chars().take_while(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-')).collect();
+                if !n.is_empty() {
+                    out.insert(n);
+                }
+            }
+        }
+    }
+}
+
+#[derive(Serialize)]
+pub struct Pruned {
+    /// Pictures no note uses any more (older than a day, so one still being pasted is safe).
+    names: Vec<String>,
+    removed: bool,
+}
+
+fn unused_images(s: &Shared, user: &User) -> Vec<String> {
+    let root = user_root(s, user);
+    let mut used = std::collections::HashSet::new();
+    mentioned_images(&root, &mut used);
+    let mut out = vec![];
+    if let Ok(rd) = std::fs::read_dir(root.join(IMAGES_DIR)) {
+        for e in rd.flatten() {
+            let name = e.file_name().to_string_lossy().to_string();
+            let old = e.metadata().and_then(|m| m.modified()).ok().and_then(|t| t.elapsed().ok()).map(|d| d.as_secs() > 86_400).unwrap_or(false);
+            if old && !used.contains(&name) {
+                out.push(name);
+            }
+        }
+    }
+    out.sort();
+    out
+}
+
+/// Which pictures nothing refers to any more.
+pub async fn list_unused_images(State(s): State<Shared>, user: User) -> ApiResult<Pruned> {
+    Ok(Json(Pruned { names: unused_images(&s, &user), removed: false }))
+}
+
+/// Delete them.
+pub async fn prune_images(State(s): State<Shared>, user: User) -> ApiResult<Pruned> {
+    let names = unused_images(&s, &user);
+    let dir = user_root(&s, &user).join(IMAGES_DIR);
+    for n in &names {
+        let _ = std::fs::remove_file(dir.join(n));
+    }
+    Ok(Json(Pruned { names, removed: true }))
 }
 
 /// Show a picture: its owner may, and so may anyone the owner shared a note with.

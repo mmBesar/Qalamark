@@ -97,16 +97,29 @@ pub fn write(root: &Path, rel: &str, text: &str) -> io::Result<u64> {
     Ok(mtime(&p))
 }
 
-/// Writes a file that is not a note (a PDF made from one) next to it. Same safety rules as notes.
+/// The files the app keeps next to notes besides the notes themselves: a PDF made from one, and pictures.
+const EXTRA: [&str; 8] = [".pdf", ".png", ".jpg", ".jpeg", ".gif", ".webp", ".avif", ".svg"];
+
+/// Writes a file that is not a note (a PDF made from one, a picture) next to it. Same safety rules as notes.
 pub fn write_file(root: &Path, rel: &str, bytes: &[u8]) -> io::Result<u64> {
-    let p = resolve_ext(root, rel, &[".pdf"])?;
+    let p = resolve_ext(root, rel, &EXTRA)?;
     if let Some(d) = p.parent() {
         fs::create_dir_all(d)?;
     }
-    let tmp = p.with_extension("pdf.qalamark-tmp");
+    let tmp = p.with_extension("qalamark-tmp");
     fs::write(&tmp, bytes)?;
     fs::rename(&tmp, &p)?;
     Ok(mtime(&p))
+}
+
+/// Reads one of those files back (a picture to show). `None` when it is not there.
+pub fn read_file(root: &Path, rel: &str) -> io::Result<Option<Vec<u8>>> {
+    let p = resolve_ext(root, rel, &EXTRA)?;
+    match fs::read(&p) {
+        Ok(b) => Ok(Some(b)),
+        Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(None),
+        Err(e) => Err(e),
+    }
 }
 
 /// Moves a note to `.trash` inside the vault instead of deleting it for good.
@@ -206,6 +219,17 @@ mod tests {
     }
 
     #[test]
+    fn pictures_go_in_the_images_folder_and_come_back() {
+        let r = tmp("img");
+        write_file(&r, "_images/3f9a.png", b"\x89PNG").unwrap();
+        assert_eq!(read_file(&r, "_images/3f9a.png").unwrap().unwrap(), b"\x89PNG");
+        assert!(read_file(&r, "_images/none.png").unwrap().is_none());
+        assert!(read_file(&r, "../_images/3f9a.png").is_err());
+        assert!(read_file(&r, "Work/note.md").is_err(), "notes have their own door");
+        assert_eq!(list(&r).unwrap().len(), 0, "pictures are not notes");
+    }
+
+    #[test]
     fn a_pdf_is_written_next_to_its_note_and_nothing_else_is() {
         let r = tmp("pdf");
         write_file(&r, "Work/Invoice.pdf", b"%PDF-1.7 test").unwrap();
@@ -213,7 +237,7 @@ mod tests {
         write_file(&r, "Work/Invoice.pdf", b"%PDF-1.7 again").unwrap(); // replaced, no leftovers
         assert_eq!(fs::read_dir(r.join("Work")).unwrap().count(), 1);
         assert!(write_file(&r, "../Evil.pdf", b"x").is_err(), "cannot leave the notes folder");
-        assert!(write_file(&r, "Work/run.sh", b"x").is_err(), "only PDFs");
+        assert!(write_file(&r, "Work/run.sh", b"x").is_err(), "only PDFs and pictures");
         assert!(write_file(&r, "Work/note.md", b"x").is_err(), "notes go through their own door");
     }
 

@@ -40,6 +40,7 @@ pub fn app(state: Shared) -> Router {
         .route("/api/users/{name}", patch(api::admin_update_user).delete(api::admin_delete_user))
         .route("/api/admin/settings", get(api::admin_get_settings).put(api::admin_set_settings))
         .route("/api/images", post(api::upload_image).layer(axum::extract::DefaultBodyLimit::max(25 * 1024 * 1024)))
+        .route("/api/images/unused", get(api::list_unused_images).delete(api::prune_images))
         .route("/api/images/{owner}/{file}", get(api::get_image))
         .route("/api/folders", get(api::list_folders).post(api::create_folder).patch(api::move_folder).delete(api::delete_folder))
         .route("/api/notes", get(api::list_notes).post(api::create_note))

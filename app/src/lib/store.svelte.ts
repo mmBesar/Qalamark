@@ -1619,9 +1619,29 @@ class Store {
     this.remKickTimer = setTimeout(() => void this.planReminders(), ms);
   }
   /** A tapped notification (Android) asks for its note. */
+  private wantOpen: { id: string; until: number } | null = null;
   openFromNotification() {
     const id = takeOpenNote();
-    if (id && this.notes.some((n) => n.id === id)) this.currentId = id;
+    // the page may still be loading its notes when the tap arrives: keep the wish until they are here
+    if (id) this.wantOpen = { id, until: Date.now() + 60_000 };
+    this.applyWantOpen();
+  }
+  /** Go to the note a notification asked for, as soon as it is in the list. */
+  applyWantOpen() {
+    const w = this.wantOpen;
+    if (!w) return;
+    if (Date.now() > w.until) { this.wantOpen = null; return; }
+    if (this.mode !== 'server' && this.mode !== 'local') return;
+    if (this.notes.some((n) => n.id === w.id)) {
+      this.wantOpen = null;
+      this.currentId = w.id;
+    }
+  }
+  /** A tapped desktop notification names its note. */
+  openNoteFromNotice(id: string) {
+    if (this.ringing?.id === id) this.ringing = null;
+    this.wantOpen = { id, until: Date.now() + 60_000 };
+    this.applyWantOpen();
   }
   /** Open the note of the ringing reminder and dismiss it. */
   openRinging() {

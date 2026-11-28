@@ -69,6 +69,15 @@ export const vault = {
     const { toBase64 } = await import('./pdfexport.ts');
     return call<number>('vault_write_file', { path, data: toBase64(bytes) });
   },
+  /** A picture (or other kept file) from the folder; null when it is not there. */
+  async readFile(path: string): Promise<Uint8Array | null> {
+    const b64 = await call<string | null>('vault_read_file', { path });
+    if (!b64) return null;
+    const bin = atob(b64);
+    const out = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+    return out;
+  },
   trash: (path: string) => call<void>('vault_trash', { path }),
   rename: (from: string, to: string) => call<number>('vault_rename', { from, to }),
   mkdir: (folder: string) => call<void>('vault_mkdir', { folder }),

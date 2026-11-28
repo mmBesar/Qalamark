@@ -52,6 +52,15 @@
   const pick = (id: string) => { tab = id; if (phone) store.settingsPage = true; };
 
   const t = store.t;
+  async function pruneImages() {
+    try {
+      const probe = await store.api.unusedImages();
+      if (!probe.names.length) { store.say(t('picsNone')); return; }
+      if (!confirm(t('picsConfirm').replace('{n}', String(probe.names.length)))) return;
+      const r = await store.api.pruneImages();
+      store.say(t('picsDone').replace('{n}', String(r.names.length)));
+    } catch (e) { store.say(e instanceof Error ? e.message : String(e), { bad: true }); }
+  }
   let avatarInput: HTMLInputElement;
   let avatarError = $state('');
   let avatarBusy = $state(false);
@@ -299,6 +308,11 @@
       <button type="button" class="ghost" onclick={() => { folderDraft = ''; void store.vaultChange(''); }}>{t('defaultFolder')}</button>
     </div>
     {#if store.vaultError}<p class="err">{store.vaultError}</p>{/if}
+  {/if}
+  {#if store.mode === 'server'}
+    <h3>{t('pics')}</h3>
+    <p class="muted small">{t('picsHelp')}</p>
+    <div class="row"><button type="button" onclick={pruneImages}>{t('picsClean')}</button></div>
   {/if}
 
           </div>

@@ -420,7 +420,7 @@
       // no server: the picture is on this device
       const key = `local/${m[1]}`;
       let lp = blobs.get(key);
-      if (!lp) { lp = loadLocalImage(m[1]!).then((b) => (b ? URL.createObjectURL(b) : null)); blobs.set(key, lp); }
+      if (!lp) { lp = loadLocalImage(m[1]!, !!store.vaultPath).then((b) => (b ? URL.createObjectURL(b) : null)); blobs.set(key, lp); }
       return lp;
     }
     const key = `${note.owner}/${m[1]}`;
@@ -436,7 +436,7 @@
   }
   async function uploadImage(blob: Blob): Promise<string | null> {
     try {
-      if (store.mode !== 'server') return await saveLocalImage(blob);
+      if (store.mode !== 'server') return await saveLocalImage(blob, !!store.vaultPath);
       return (await store.api.uploadImage(blob)).markdown;
     } catch (e) {
       err = e instanceof Error ? e.message : String(e);

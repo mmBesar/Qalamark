@@ -29,8 +29,9 @@
 
   // the home-screen widget follows the notes: one refresh after a burst of changes, never on a timer
   $effect(() => {
-    store.notes.map((n) => n.updated).join(',');
-    untrack(() => { store.widgetKick(); store.remindKick(); });
+    void store.mode;
+    store.notes.map((n) => n.id + n.updated).join(',');
+    untrack(() => { store.widgetKick(); store.remindKick(); store.applyWantOpen(); });
   });
   // the tray menu's "New note" and "Settings", and its words in the app's language
   onMount(() => {
@@ -38,7 +39,7 @@
     let off = () => {};
     let off2 = () => {};
     void listenTray(() => void store.createNote(), () => { store.settingsOpen = true; }).then((f) => (off = f));
-    void listenNotify((id) => { if (store.ringing?.id === id) store.openRinging(); else if (store.notes.some((n) => n.id === id)) store.currentId = id; }).then((f) => (off2 = f));
+    void listenNotify((id) => store.openNoteFromNotice(id)).then((f) => (off2 = f));
     return () => { off(); off2(); };
   });
   $effect(() => { void store.s.lang; if (hasTray()) void trayRefresh(store.t); });

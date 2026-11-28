@@ -2187,3 +2187,31 @@ test('tabs 1: pin a tab; quick note adds a dated line to Quick notes', async () 
   assert.match(await page.locator('.cm-content').innerText(), /\d{4}-\d\d-\d\d \d\d:\d\d/);
   assert.deepEqual(errors, []);
 });
+
+test('notif 1: a tapped reminder notification opens ITS note (Android bridge), even when another is open', async () => {
+  const errors = [];
+  const c = await browser.newContext({ viewport: { width: 1100, height: 760 } });
+  const p = await c.newPage();
+  p.on('pageerror', (e) => errors.push(e.message));
+  await p.addInitScript(() => {
+    window.__sched = [];
+    window.QalamarkAndroid = { scheduleReminders(j) { window.__sched = JSON.parse(j); }, takeOpen() { let v = window.__want || ''; window.__want = ''; try { v = v || localStorage.getItem('test-want') || ''; localStorage.removeItem('test-want'); } catch {} return v; }, bars() {}, immersive() {} };
+  });
+  await signIn(p, 'alice', 'alice-password');
+  await freshNote(p, 'Alpha reminder');
+  const d = new Date(Date.now() + 3 * 3600_000);
+  const f = (n) => String(n).padStart(2, '0');
+  await p.keyboard.press('Control+Home');
+  await p.keyboard.insertText(`---\nremind: ${d.getFullYear()}-${f(d.getMonth() + 1)}-${f(d.getDate())} ${f(d.getHours())}:00\n---\n`);
+  await freshNote(p, 'Beta other');
+  const alpha = await p.waitForFunction(() => window.__sched[0]?.id, null, { timeout: 20000 }).then((h) => h.jsonValue());
+  await p.evaluate((id) => { window.__want = id; window.__qmOpen(); }, alpha);
+  const active = () => /Alpha reminder/.test(document.querySelector('.tab.on')?.textContent ?? '');
+  await p.waitForFunction(active, null, { timeout: 8000 });
+  // a cold start by a tapped notification: the note list is not loaded yet when the tap is read
+  await freshNote(p, 'Gamma later');
+  await p.evaluate((id) => localStorage.setItem('test-want', id), alpha);
+  await p.reload();
+  await p.waitForFunction(active, null, { timeout: 20000 });
+  assert.deepEqual(errors, []);
+});
